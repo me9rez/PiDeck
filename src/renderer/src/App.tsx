@@ -730,6 +730,15 @@ export function App() {
 											: "conversation"
 									}
 									onClick={() => {
+										// 有 agent 时，点击整个项目行切换折叠状态
+										if (projectAgents.length > 0) {
+											setCollapsedProjects((prev) => {
+												const next = new Set(prev);
+												if (next.has(project.id)) next.delete(project.id);
+												else next.add(project.id);
+												return next;
+											});
+										}
 										setActiveProjectId(project.id);
 										setActiveAgentId(
 											activeAgentByProject[project.id] ??
@@ -739,17 +748,8 @@ export function App() {
 									}}
 								>
 									<span
-										className={`project-fold${isCollapsed ? " folded" : ""}`}
+										className={`project-fold${isCollapsed ? " folded" : ""}${projectAgents.length > 0 ? " has-agents" : ""}`}
 										title={isCollapsed ? "展开" : "折叠"}
-										onClick={(event) => {
-											event.stopPropagation();
-											setCollapsedProjects((prev) => {
-												const next = new Set(prev);
-												if (next.has(project.id)) next.delete(project.id);
-												else next.add(project.id);
-												return next;
-											});
-										}}
 									>
 										<Play size={12} />
 									</span>
@@ -1756,7 +1756,7 @@ function ChatBubble(props: {
 					<span>{label}</span>
 					<time>{formatTime(message.timestamp)}</time>
 				</div>
-				<div className="msg-bubble markdown-body">
+				<div className={`msg-bubble ${isUser ? "" : "markdown-body"}`}>
 					{/* 显示消息中附加的图片 */}
 					{message.images && message.images.length > 0 && (
 						<div className="message-images">
@@ -1771,12 +1771,17 @@ function ChatBubble(props: {
 							))}
 						</div>
 					)}
-					<ReactMarkdown
-						remarkPlugins={[remarkGfm]}
-						components={{ pre: CodeBlock, a: MarkdownLink }}
-					>
-						{cleanText}
-					</ReactMarkdown>
+					{/* 用户消息使用纯文本显示，避免特殊字符被 markdown 解释导致渲染异常 */}
+					{isUser ? (
+						<div className="user-message-text">{cleanText}</div>
+					) : (
+						<ReactMarkdown
+							remarkPlugins={[remarkGfm]}
+							components={{ pre: CodeBlock, a: MarkdownLink }}
+						>
+							{cleanText}
+						</ReactMarkdown>
+					)}
 					{expanded && <pre className="tool-detail">{cleanDetail}</pre>}
 				</div>
 				<div className="msg-actions">

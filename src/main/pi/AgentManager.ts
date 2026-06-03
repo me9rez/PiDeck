@@ -437,7 +437,12 @@ export class AgentManager {
 			runtime.tab.status = "idle";
 			this.emitState();
 			// 会话结束时发送系统通知，让用户知道 agent 已完成工作
-			this.notifySessionEnd(runtime.tab.title);
+			// 只在最后一条消息是 assistant 消息时通知，避免工具调用结束时也触发通知
+			const messages = this.messages.get(agentId) ?? [];
+			const lastMessage = messages[messages.length - 1];
+			if (lastMessage?.role === "assistant") {
+				this.notifySessionEnd(runtime.tab.title);
+			}
 		}
 
 		if (
@@ -456,6 +461,11 @@ export class AgentManager {
 				toolName: typed.toolName,
 				args: typed.args,
 			});
+			// 工具调用开始时确保 agent 状态为 running，保持 thinking bubble 显示
+			if (runtime) {
+				runtime.tab.status = "running";
+				this.emitState();
+			}
 		}
 
 		if (typed.type === "tool_execution_end") {
@@ -478,6 +488,12 @@ export class AgentManager {
 					detailText,
 				},
 			);
+			// 工具调用完成后保持 agent 状态为 running，等待后续的 agent_end 事件
+			// 这样在工具完成到 agent 生成回复之间，thinking bubble 仍然会显示
+			if (runtime) {
+				runtime.tab.status = "running";
+				this.emitState();
+			}
 		}
 
 		if (typed.type === "extension_error") {
