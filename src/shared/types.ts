@@ -74,6 +74,40 @@ export type SessionSummary = {
 	messageCount: number;
 };
 
+export type CodexImportStatus = "new" | "current" | "outdated";
+
+export type CodexSessionSummary = {
+	id: string;
+	sourcePath: string;
+	targetPath: string;
+	cwd: string;
+	title: string;
+	preview: string;
+	createdAt: number;
+	updatedAt: number;
+	messageCount: number;
+	status: CodexImportStatus;
+	sourceSize: number;
+	importedSourceMtime?: number;
+};
+
+export type CodexImportResult = {
+	id: string;
+	sourcePath: string;
+	targetPath?: string;
+	title?: string;
+	success: boolean;
+	overwritten?: boolean;
+	messageCount?: number;
+	error?: string;
+};
+
+export type CodexImportReport = {
+	results: CodexImportResult[];
+	imported: number;
+	failed: number;
+};
+
 export type PiCommand = {
 	name: string;
 	description?: string;

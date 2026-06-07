@@ -7,6 +7,8 @@ import type {
 	AppSettings,
 	AvailableModel,
 	ChatMessage,
+	CodexImportReport,
+	CodexSessionSummary,
 	CreateAgentInput,
 	FileTreeNode,
 	GitBranchInfo,
@@ -54,6 +56,18 @@ const api = {
 				filePath,
 				newName,
 			) as Promise<void>,
+	},
+	codexSessions: {
+		scan: (projectId: string) =>
+			ipcRenderer.invoke(ipcChannels.codexSessionsScan, projectId) as Promise<
+				CodexSessionSummary[]
+			>,
+		import: (projectId: string, sourcePaths: string[]) =>
+			ipcRenderer.invoke(
+				ipcChannels.codexSessionsImport,
+				projectId,
+				sourcePaths,
+			) as Promise<CodexImportReport>,
 	},
 	git: {
 		branches: (projectId: string) =>

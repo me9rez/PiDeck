@@ -22,6 +22,7 @@ import {
 	AgentContextMenu,
 	BranchSelector,
 	ChatBubble,
+	CodexImportModal,
 	ComposerToolbar,
 	ConversationOutline,
 	DrawerContent,
@@ -33,6 +34,7 @@ import {
 	ModelPicker,
 	PendingBubble,
 	ProjectAvatar,
+	ProjectContextMenu,
 	PromptSuggestions,
 	RpcLogModal,
 	SessionStatus,
@@ -56,6 +58,8 @@ import type {
 	AppSettings,
 	AvailableModel,
 	ChatMessage,
+	CodexImportReport,
+	CodexSessionSummary,
 	FileTreeNode,
 	GitBranchInfo,
 	ImageContent,
@@ -139,6 +143,22 @@ export function App() {
 		y: number;
 		agent: AgentTab;
 	} | null>(null);
+	const [projectMenu, setProjectMenu] = useState<{
+		x: number;
+		y: number;
+		project: Project;
+	} | null>(null);
+	const [codexImportProject, setCodexImportProject] = useState<Project | null>(
+		null,
+	);
+	const [codexImportSessions, setCodexImportSessions] = useState<
+		CodexSessionSummary[]
+	>([]);
+	const [codexImportSelected, setCodexImportSelected] = useState<string[]>([]);
+	const [codexImportLoading, setCodexImportLoading] = useState(false);
+	const [codexImportRunning, setCodexImportRunning] = useState(false);
+	const [codexImportReport, setCodexImportReport] =
+		useState<CodexImportReport | null>(null);
 	const [toast, setToast] = useState<string | null>(null);
 	const [compacting, setCompacting] = useState(false);
 	const [drawer, setDrawer] = useState<DrawerPanel | null>(null);
@@ -488,6 +508,81 @@ export function App() {
 	async function refreshSessions(projectId = activeProjectId) {
 		const next = await api.sessions.list(projectId);
 		setSessions(next);
+	}
+
+	async function openCodexImport(project: Project) {
+		setProjectMenu(null);
+		setCodexImportProject(project);
+		setCodexImportReport(null);
+		setCodexImportSessions([]);
+		setCodexImportSelected([]);
+		await scanCodexSessions(project);
+	}
+
+	async function scanCodexSessions(
+		project = codexImportProject,
+		clearReport = true,
+	) {
+		if (!project) return;
+		setCodexImportLoading(true);
+		if (clearReport) setCodexImportReport(null);
+		try {
+			const next = await api.codexSessions.scan(project.id);
+			setCodexImportSessions(next);
+			setCodexImportSelected(
+				next
+					.filter((session) => session.status !== "current")
+					.map((session) => session.sourcePath),
+			);
+		} catch (error) {
+			setToast(
+				`扫描 Codex 会话失败：${error instanceof Error ? error.message : String(error)}`,
+			);
+			setTimeout(() => setToast(null), 4000);
+		} finally {
+			setCodexImportLoading(false);
+		}
+	}
+
+	function toggleCodexSession(sourcePath: string) {
+		setCodexImportSelected((current) =>
+			current.includes(sourcePath)
+				? current.filter((item) => item !== sourcePath)
+				: [...current, sourcePath],
+		);
+	}
+
+	function toggleAllCodexSessions() {
+		const allPaths = codexImportSessions.map((session) => session.sourcePath);
+		setCodexImportSelected((current) =>
+			allPaths.length > 0 && allPaths.every((path) => current.includes(path))
+				? []
+				: allPaths,
+		);
+	}
+
+	async function importCodexSessions() {
+		if (!codexImportProject || codexImportSelected.length === 0) return;
+		setCodexImportRunning(true);
+		setCodexImportReport(null);
+		try {
+			const report = await api.codexSessions.import(
+				codexImportProject.id,
+				codexImportSelected,
+			);
+			setCodexImportReport(report);
+			await scanCodexSessions(codexImportProject, false);
+			await refreshSessions(codexImportProject.id);
+			setToast(`Codex 会话导入完成：${report.imported} 成功，${report.failed} 失败`);
+			setTimeout(() => setToast(null), 3500);
+		} catch (error) {
+			setToast(
+				`导入 Codex 会话失败：${error instanceof Error ? error.message : String(error)}`,
+			);
+			setTimeout(() => setToast(null), 4000);
+		} finally {
+			setCodexImportRunning(false);
+		}
 	}
 
 	async function addProject() {
@@ -1143,9 +1238,17 @@ export function App() {
 								<button
 									className={
 										project.id === activeProjectId && !activeAgentId
-											? "conversation active"
-											: "conversation"
+										? "conversation active"
+										: "conversation"
 									}
+									onContextMenu={(event) => {
+										event.preventDefault();
+										setProjectMenu({
+											x: event.clientX,
+											y: event.clientY,
+											project,
+										});
+									}}
 									onClick={() => {
 										// 有 agent 时，点击整个项目行切换折叠状态
 										if (projectAgents.length > 0) {
@@ -1642,6 +1745,23 @@ export function App() {
 					}}
 				/>
 			)}
+			{projectMenu && (
+				<ProjectContextMenu
+					menu={projectMenu}
+					onClose={() => setProjectMenu(null)}
+					onImportCodexSessions={() => openCodexImport(projectMenu.project)}
+					onRemoveProject={async () => {
+						const project = projectMenu.project;
+						setProjectMenu(null);
+						const next = await api.projects.remove(project.id);
+						setProjects(next);
+						if (activeProjectId === project.id) {
+							setActiveProjectId(next[0]?.id);
+							setActiveAgentId(undefined);
+						}
+					}}
+				/>
+			)}
 			{agentMenu && (
 				<AgentContextMenu
 					menu={agentMenu}
@@ -1720,6 +1840,24 @@ export function App() {
 				<ImagePreviewModal
 					image={previewImage}
 					onClose={() => setPreviewImage(null)}
+				/>
+			)}
+			{codexImportProject && (
+				<CodexImportModal
+					project={codexImportProject}
+					sessions={codexImportSessions}
+					selectedPaths={codexImportSelected}
+					loading={codexImportLoading}
+					importing={codexImportRunning}
+					report={codexImportReport}
+					onClose={() => {
+						setCodexImportProject(null);
+						setCodexImportReport(null);
+					}}
+					onRefresh={() => scanCodexSessions()}
+					onToggle={toggleCodexSession}
+					onToggleAll={toggleAllCodexSessions}
+					onImport={importCodexSessions}
 				/>
 			)}
 			<ConfigModal

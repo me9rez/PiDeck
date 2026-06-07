@@ -15,7 +15,9 @@ import {
 	GitBranch,
 	Brain,
 	Network,
+	RefreshCw,
 	Settings2,
+	UploadCloud,
 	Wrench,
 } from "lucide-react";
 import type {
@@ -25,12 +27,15 @@ import type {
 	AppSettings,
 	AvailableModel,
 	ChatMessage,
+	CodexImportReport,
+	CodexSessionSummary,
 	FileTreeNode,
 	GitBranchInfo,
 	ImageContent,
 	PendingPrompt,
 	PiCommand,
 	PiInstallStatus,
+	Project,
 	SessionSummary,
 } from "../../../../shared/types";
 
@@ -1578,6 +1583,28 @@ export function FileContextMenu(props: {
 	);
 }
 
+export function ProjectContextMenu(props: {
+	menu: { x: number; y: number; project: Project };
+	onClose: () => void;
+	onImportCodexSessions: () => void;
+	onRemoveProject: () => void;
+}) {
+	return (
+		<div className="context-backdrop" onClick={props.onClose}>
+			<div
+				className="context-menu"
+				style={{ left: props.menu.x, top: props.menu.y }}
+				onClick={(event) => event.stopPropagation()}
+			>
+				<button onClick={props.onImportCodexSessions}>
+					导入 Codex 会话
+				</button>
+				<button onClick={props.onRemoveProject}>删除目录记录</button>
+			</div>
+		</div>
+	);
+}
+
 export function AgentContextMenu(props: {
 	menu: { x: number; y: number; agent: AgentTab };
 	onClose: () => void;
@@ -1911,6 +1938,131 @@ export function SettingsModal(props: {
 			</div>
 		</div>
 	);
+}
+
+export function CodexImportModal(props: {
+	project: Project;
+	sessions: CodexSessionSummary[];
+	selectedPaths: string[];
+	loading: boolean;
+	importing: boolean;
+	report: CodexImportReport | null;
+	onClose: () => void;
+	onRefresh: () => void;
+	onToggle: (sourcePath: string) => void;
+	onToggleAll: () => void;
+	onImport: () => void;
+}) {
+	const selected = new Set(props.selectedPaths);
+	const allSelected =
+		props.sessions.length > 0 &&
+		props.sessions.every((session) => selected.has(session.sourcePath));
+	return (
+		<div className="modal-backdrop">
+			<section className="codex-import-modal">
+				<div className="modal-header">
+					<div>
+						<strong>导入 Codex 会话</strong>
+						<small>{props.project.name}</small>
+					</div>
+					<button onClick={props.onClose}>×</button>
+				</div>
+				<div className="codex-import-toolbar">
+					<div>
+						<strong>{props.sessions.length} 个可导入会话</strong>
+						<span>{displayPath(props.project.path)}</span>
+					</div>
+					<div className="codex-import-actions">
+						<button onClick={props.onRefresh} disabled={props.loading || props.importing}>
+							<RefreshCw size={14} />
+							刷新
+						</button>
+						<button onClick={props.onToggleAll} disabled={props.sessions.length === 0}>
+							<Check size={14} />
+							{allSelected ? "取消全选" : "全选"}
+						</button>
+						<button
+							className="primary-action"
+							onClick={props.onImport}
+							disabled={props.importing || props.selectedPaths.length === 0}
+						>
+							<UploadCloud size={14} />
+							{props.importing ? "导入中..." : `导入 ${props.selectedPaths.length}`}
+						</button>
+					</div>
+				</div>
+				<div className="codex-import-body">
+					{props.loading ? (
+						<div className="history-loading">
+							<div className="loader" />
+							<span>正在扫描当前项目的 Codex 会话...</span>
+						</div>
+					) : props.sessions.length === 0 ? (
+						<div className="codex-import-empty">
+							<strong>没有找到当前项目的 Codex 会话</strong>
+							<span>只会扫描 `~/.codex/sessions` 中 cwd 与当前项目一致的会话。</span>
+						</div>
+					) : (
+						<div className="codex-session-list">
+							{props.sessions.map((session) => (
+								<label key={session.sourcePath} className="codex-session-row">
+									<input
+										type="checkbox"
+										checked={selected.has(session.sourcePath)}
+										onChange={() => props.onToggle(session.sourcePath)}
+									/>
+									<div className="codex-session-main">
+										<div className="codex-session-title">
+											<strong>{session.title}</strong>
+											<span className={`codex-status ${session.status}`}>
+												{formatCodexStatus(session.status)}
+											</span>
+										</div>
+										<p>{session.preview}</p>
+										<small>
+											{new Date(session.updatedAt).toLocaleString()} ·{" "}
+											{session.messageCount} messages ·{" "}
+											{formatBytes(session.sourceSize)}
+										</small>
+									</div>
+								</label>
+							))}
+						</div>
+					)}
+				</div>
+				{props.report && (
+					<div className="codex-import-report">
+						<strong>
+							导入完成：{props.report.imported} 成功，{props.report.failed} 失败
+						</strong>
+						<div>
+							{props.report.results.map((result) => (
+								<span
+									key={result.sourcePath}
+									className={result.success ? "success" : "error"}
+									title={result.error || result.targetPath}
+								>
+									{result.success ? "✓" : "✗"} {result.title || result.sourcePath}
+								</span>
+							))}
+						</div>
+					</div>
+				)}
+			</section>
+		</div>
+	);
+}
+
+function formatCodexStatus(status: CodexSessionSummary["status"]) {
+	if (status === "current") return "已是最新";
+	if (status === "outdated") return "可覆盖更新";
+	return "未导入";
+}
+
+function formatBytes(value: number) {
+	if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+	if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
+	return `${value} B`;
 }
 
 type SettingsTabId = "base" | "proxy" | "dev";

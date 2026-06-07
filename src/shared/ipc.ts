@@ -8,6 +8,8 @@ export const ipcChannels = {
 	filesShowInFolder: "files:show-in-folder",
 	sessionsList: "sessions:list",
 	sessionsRename: "sessions:rename",
+	codexSessionsScan: "codex-sessions:scan",
+	codexSessionsImport: "codex-sessions:import",
 	settingsGet: "settings:get",
 	settingsUpdate: "settings:update",
 	settingsTestPiProxy: "settings:test-pi-proxy",

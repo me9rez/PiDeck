@@ -24,6 +24,7 @@ import { AgentManager } from "./pi/AgentManager";
 import { PiLocator } from "./pi/PiLocator";
 import { testPiProxy } from "./pi/PiProxyTester";
 import { SessionScanner } from "./sessions/SessionScanner";
+import { CodexSessionImporter } from "./sessions/CodexSessionImporter";
 import { SettingsStore } from "./settings/SettingsStore";
 import { applyDesktopProxy } from "./settings/DesktopProxy";
 import { GitService } from "./git/GitService";
@@ -37,6 +38,7 @@ let isQuitting = false;
 let projectStore: ProjectStore;
 let fileSystemService: FileSystemService;
 let sessionScanner: SessionScanner;
+let codexSessionImporter: CodexSessionImporter;
 let settingsStore: SettingsStore;
 let gitService: GitService;
 let piLocator: PiLocator;
@@ -165,6 +167,22 @@ function registerIpc() {
 		ipcChannels.sessionsRename,
 		async (_event, filePath: string, newName: string) => {
 			await sessionScanner.rename(filePath, newName);
+		},
+	);
+	ipcMain.handle(
+		ipcChannels.codexSessionsScan,
+		async (_event, projectId: string) => {
+			const project = projectStore.get(projectId);
+			if (!project) throw new Error(`Project not found: ${projectId}`);
+			return codexSessionImporter.scan(project.path);
+		},
+	);
+	ipcMain.handle(
+		ipcChannels.codexSessionsImport,
+		async (_event, projectId: string, sourcePaths: string[]) => {
+			const project = projectStore.get(projectId);
+			if (!project) throw new Error(`Project not found: ${projectId}`);
+			return codexSessionImporter.import(project.path, sourcePaths);
 		},
 	);
 
@@ -375,6 +393,7 @@ app.whenReady().then(async () => {
 	projectStore = new ProjectStore();
 	fileSystemService = new FileSystemService();
 	sessionScanner = new SessionScanner();
+	codexSessionImporter = new CodexSessionImporter();
 	settingsStore = new SettingsStore();
 	gitService = new GitService();
 	piLocator = new PiLocator();
