@@ -1363,7 +1363,8 @@ function ModelsTab(props: {
 																: undefined,
 														)
 													}
-													placeholder="200k"
+													// 数字输入框不能填写 200k 这类缩写，placeholder 使用真实可保存的 token 数值。
+											placeholder="1000000"
 												/>
 												<input
 													type="number"
@@ -1378,7 +1379,8 @@ function ModelsTab(props: {
 																: undefined,
 														)
 													}
-													placeholder="8k"
+													// 与 contextWindow 一样保持纯数字，避免提示值看起来能输入但实际被 number 控件拒绝。
+											placeholder="128000"
 												/>
 												<label className="config-checkbox-cell">
 													<input
