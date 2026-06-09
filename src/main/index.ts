@@ -291,11 +291,18 @@ function registerIpc() {
 			await sessionScanner.rename(filePath, newName);
 		},
 	);
-	ipcMain.handle(ipcChannels.sessionsCopy, (_event, filePath: string) =>
-		sessionScanner.copy(filePath),
+	ipcMain.handle(
+		ipcChannels.sessionsCopy,
+		(_event, projectId: string, filePath: string) =>
+			agentManager.cloneSessionFile(projectId, filePath),
 	);
-	ipcMain.handle(ipcChannels.sessionsExportHtml, (_event, filePath: string) =>
-		sessionScanner.exportHtml(filePath),
+	ipcMain.handle(
+		ipcChannels.sessionsExportHtml,
+		(_event, projectId: string, filePath: string) =>
+			agentManager.exportSessionHtml(projectId, filePath),
+	);
+	ipcMain.handle(ipcChannels.sessionsDelete, (_event, filePath: string) =>
+		sessionScanner.delete(filePath),
 	);
 	ipcMain.handle(
 		ipcChannels.codexSessionsScan,
@@ -379,6 +386,22 @@ function registerIpc() {
 	);
 	ipcMain.handle(ipcChannels.agentsExportHtml, (_event, agentId: string) =>
 		agentManager.exportHtml(agentId),
+	);
+	ipcMain.handle(ipcChannels.agentsForkMessages, (_event, agentId: string) =>
+		agentManager.getForkMessages(agentId),
+	);
+	ipcMain.handle(
+		ipcChannels.agentsForkSession,
+		(_event, agentId: string, entryId: string) =>
+			agentManager.forkSession(agentId, entryId),
+	);
+	ipcMain.handle(ipcChannels.agentsCloneSession, (_event, agentId: string) =>
+		agentManager.cloneSession(agentId),
+	);
+	ipcMain.handle(
+		ipcChannels.agentsSwitchSession,
+		(_event, agentId: string, sessionPath: string) =>
+			agentManager.switchSession(agentId, sessionPath),
 	);
 	ipcMain.handle(ipcChannels.agentsReload, (_event, agentId: string) =>
 		agentManager.reload(agentId),

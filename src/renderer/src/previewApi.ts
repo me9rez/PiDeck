@@ -135,16 +135,12 @@ export function createPreviewApi(): PiDesktopApi {
 		sessions: {
 			list: async () => sessions,
 			rename: async () => undefined,
-			copy: async (filePath) => ({
-				id: `${filePath}-copy`,
-				filePath: `${filePath}-copy`,
-				projectPath: projects[0].path,
-				name: "预览历史会话 copy",
-				preview: "这里展示复制后的历史会话摘要",
-				updatedAt: Date.now(),
-				messageCount: 3,
+			copy: async (_projectId, filePath) => ({
+				cancelled: false,
+				sessionPath: `${filePath}-copy`,
 			}),
 			exportHtml: async () => ({ path: "preview-session.html" }),
+			delete: async () => undefined,
 		},
 		codexSessions: {
 			scan: async () => [],
@@ -267,6 +263,12 @@ export function createPreviewApi(): PiDesktopApi {
 			prompt: async () => undefined,
 			abort: async () => undefined,
 			exportHtml: async () => ({ path: "preview.html" }),
+			getForkMessages: async () => [
+				{ entryId: "preview-user-1", text: "Preview prompt" },
+			],
+			forkSession: async () => ({ text: "Preview prompt", cancelled: false }),
+			cloneSession: async () => ({ cancelled: false }),
+			switchSession: async () => ({ cancelled: false }),
 			reload: async () => undefined,
 			restart: async (agentId: string) => ({
 				id: agentId,

@@ -227,6 +227,11 @@ export type CreateAgentInput = {
 	sessionPath?: string;
 };
 
+export type ForkMessage = {
+	entryId: string;
+	text: string;
+};
+
 /** 图片内容格式，与 pi RPC 的 ImageContent 一致 */
 export type ImageContent = {
 	type: "image";

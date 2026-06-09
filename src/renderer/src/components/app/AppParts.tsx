@@ -1349,11 +1349,13 @@ export function DrawerContent(props: {
 	onCollapse: () => void;
 	onClose: () => void;
 	onFileContextMenu: (node: FileTreeNode, x: number, y: number) => void;
+	onRefreshFiles: () => void;
 	onRefreshSessions: () => void;
 	onOpenSession: (session: SessionSummary) => void;
 	onRenameSession: (filePath: string, newName: string) => void;
 	onCopySession: (session: SessionSummary) => void | Promise<void>;
 	onExportSession: (session: SessionSummary) => void | Promise<void>;
+	onDeleteSession: (session: SessionSummary) => void | Promise<void>;
 }) {
 	const title =
 		props.panel === "files"
@@ -1399,6 +1401,7 @@ export function DrawerContent(props: {
 					expandedDirs={props.expandedDirs}
 					onToggleDirectory={props.onToggleDirectory}
 					onFileContextMenu={props.onFileContextMenu}
+					onRefreshFiles={props.onRefreshFiles}
 				/>
 			)}
 			{props.panel === "sessions" && (
@@ -1409,6 +1412,7 @@ export function DrawerContent(props: {
 					onRename={props.onRenameSession}
 					onCopy={props.onCopySession}
 					onExport={props.onExportSession}
+					onDelete={props.onDeleteSession}
 				/>
 			)}
 		</>
@@ -1422,9 +1426,14 @@ function FilesPanel(props: {
 	expandedDirs: Set<string>;
 	onToggleDirectory: (path: string) => void;
 	onFileContextMenu: (node: FileTreeNode, x: number, y: number) => void;
+	onRefreshFiles: () => void;
 }) {
 	return (
 		<div className="files-panel">
+			<div className="panel-action-row">
+				<span>{props.files.length} items</span>
+				<button onClick={props.onRefreshFiles}>刷新</button>
+			</div>
 			{props.modifiedFiles.length > 0 && (
 				<div className="modified-files-section">
 					<div className="modified-files-header">本次会话修改</div>
@@ -1586,6 +1595,7 @@ function SessionsPanel(props: {
 	onRename: (filePath: string, newName: string) => void | Promise<void>;
 	onCopy: (session: SessionSummary) => void | Promise<void>;
 	onExport: (session: SessionSummary) => void | Promise<void>;
+	onDelete: (session: SessionSummary) => void | Promise<void>;
 }) {
 	const [renamingPath, setRenamingPath] = useState<string | null>(null);
 	const [editValue, setEditValue] = useState("");
@@ -1593,6 +1603,12 @@ function SessionsPanel(props: {
 		filePath: string;
 		text: string;
 	} | null>(null);
+	const [sessionActionLoading, setSessionActionLoading] = useState<{
+		filePath: string;
+		action: "copy" | "export" | "delete";
+	} | null>(null);
+	const [deleteConfirmSession, setDeleteConfirmSession] =
+		useState<SessionSummary | null>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
 
 	function startRename(session: SessionSummary) {
@@ -1611,9 +1627,20 @@ function SessionsPanel(props: {
 
 	async function runSessionAction(
 		session: SessionSummary,
+		actionType: "copy" | "export" | "delete",
 		action: () => void | Promise<void>,
 		successText: string,
 	) {
+		setSessionActionLoading({ filePath: session.filePath, action: actionType });
+		setSessionActionNotice({
+			filePath: session.filePath,
+			text:
+				actionType === "copy"
+					? "正在复制…"
+					: actionType === "export"
+						? "正在导出…"
+						: "正在删除…",
+		});
 		try {
 			await action();
 			setSessionActionNotice({ filePath: session.filePath, text: successText });
@@ -1624,6 +1651,8 @@ function SessionsPanel(props: {
 				text: error instanceof Error ? error.message : "操作失败",
 			});
 			window.setTimeout(() => setSessionActionNotice(null), 2400);
+		} finally {
+			setSessionActionLoading(null);
 		}
 	}
 
@@ -1690,28 +1719,46 @@ function SessionsPanel(props: {
 								<button
 									className="session-rename-button"
 									title="复制会话"
+									disabled={Boolean(sessionActionLoading)}
 									onClick={() =>
 										void runSessionAction(
 											session,
+											"copy",
 											() => props.onCopy(session),
 											"已复制",
 										)
 									}
 								>
-									<span>复制</span>
+									{sessionActionLoading?.filePath === session.filePath &&
+										sessionActionLoading.action === "copy" && <span className="mini-loader" />}
+									<span>
+										{sessionActionLoading?.filePath === session.filePath &&
+										sessionActionLoading.action === "copy"
+											? "复制中"
+											: "复制"}
+									</span>
 								</button>
 								<button
 									className="session-rename-button"
 									title="导出 HTML"
+									disabled={Boolean(sessionActionLoading)}
 									onClick={() =>
 										void runSessionAction(
 											session,
+											"export",
 											() => props.onExport(session),
 											"已导出",
 										)
 									}
 								>
-									<span>导出</span>
+									{sessionActionLoading?.filePath === session.filePath &&
+										sessionActionLoading.action === "export" && <span className="mini-loader" />}
+									<span>
+										{sessionActionLoading?.filePath === session.filePath &&
+										sessionActionLoading.action === "export"
+											? "导出中"
+											: "导出"}
+									</span>
 								</button>
 								<button
 									className="session-rename-button"
@@ -1719,6 +1766,21 @@ function SessionsPanel(props: {
 									onClick={() => startRename(session)}
 								>
 									<span>重命名</span>
+								</button>
+								<button
+									className="session-rename-button danger"
+									title="删除会话"
+									disabled={Boolean(sessionActionLoading)}
+									onClick={() => setDeleteConfirmSession(session)}
+								>
+									{sessionActionLoading?.filePath === session.filePath &&
+										sessionActionLoading.action === "delete" && <span className="mini-loader" />}
+									<span>
+										{sessionActionLoading?.filePath === session.filePath &&
+										sessionActionLoading.action === "delete"
+											? "删除中"
+											: "删除"}
+									</span>
 								</button>
 							</div>
 							{sessionActionNotice?.filePath === session.filePath && (
@@ -1728,6 +1790,37 @@ function SessionsPanel(props: {
 					)}
 				</div>
 			))}
+			{deleteConfirmSession && (
+				<div className="session-delete-confirm-backdrop" onClick={() => setDeleteConfirmSession(null)}>
+					<section
+						className="session-delete-confirm"
+						onClick={(event) => event.stopPropagation()}
+					>
+						<strong>删除会话？</strong>
+						<p>
+							确认删除「{deleteConfirmSession.name || "Untitled"}」吗？此操作会删除本地会话文件。
+						</p>
+						<div className="session-delete-confirm-actions">
+							<button onClick={() => setDeleteConfirmSession(null)}>取消</button>
+							<button
+								className="danger"
+								onClick={() => {
+									const target = deleteConfirmSession;
+									setDeleteConfirmSession(null);
+									void runSessionAction(
+										target,
+										"delete",
+										() => props.onDelete(target),
+										"已删除",
+									);
+								}}
+							>
+								删除
+							</button>
+						</div>
+					</section>
+				</div>
+			)}
 		</div>
 	);
 }
@@ -1742,6 +1835,7 @@ export function SessionHistoryModal(props: {
 	onRename: (filePath: string, newName: string) => void | Promise<void>;
 	onCopy: (session: SessionSummary) => void | Promise<void>;
 	onExport: (session: SessionSummary) => void | Promise<void>;
+	onDelete: (session: SessionSummary) => void | Promise<void>;
 }) {
 	return (
 		<div className="picker-backdrop session-history-backdrop" onClick={props.onClose}>
@@ -1773,6 +1867,7 @@ export function SessionHistoryModal(props: {
 							onRename={props.onRename}
 							onCopy={props.onCopy}
 							onExport={props.onExport}
+							onDelete={props.onDelete}
 						/>
 					)}
 				</div>
@@ -2044,6 +2139,7 @@ export function ProjectContextMenu(props: {
 
 export function AgentContextMenu(props: {
 	menu: { x: number; y: number; agent: AgentTab };
+	actionLoading?: "copy" | "export" | null;
 	onClose: () => void;
 	onActivate: () => void;
 	onExport: () => void;
@@ -2058,10 +2154,16 @@ export function AgentContextMenu(props: {
 				style={{ left: props.menu.x, top: props.menu.y }}
 				onClick={(event) => event.stopPropagation()}
 			>
-				<button onClick={props.onActivate}>打开会话</button>
-				<button onClick={props.onCopySession}>复制会话</button>
-				<button onClick={props.onExport}>导出 HTML</button>
-				<button onClick={props.onShowLogs}>RPC 日志</button>
+				<button disabled={Boolean(props.actionLoading)} onClick={props.onActivate}>打开会话</button>
+				<button disabled={Boolean(props.actionLoading)} onClick={props.onCopySession}>
+					{props.actionLoading === "copy" && <span className="mini-loader" />}
+					{props.actionLoading === "copy" ? "复制中…" : "复制会话"}
+				</button>
+				<button disabled={Boolean(props.actionLoading)} onClick={props.onExport}>
+					{props.actionLoading === "export" && <span className="mini-loader" />}
+					{props.actionLoading === "export" ? "导出中…" : "导出 HTML"}
+				</button>
+				<button disabled={Boolean(props.actionLoading)} onClick={props.onShowLogs}>RPC 日志</button>
 				<button onClick={props.onCloseAgent}>关闭 Agent</button>
 			</div>
 		</div>

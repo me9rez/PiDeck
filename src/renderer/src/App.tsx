@@ -224,6 +224,7 @@ export function App() {
 		y: number;
 		agent: AgentTab;
 	} | null>(null);
+	const [agentActionLoading, setAgentActionLoading] = useState<"copy" | "export" | null>(null);
 	const [projectMenu, setProjectMenu] = useState<{
 		x: number;
 		y: number;
@@ -914,6 +915,13 @@ export function App() {
 		setSessions(next);
 	}
 
+	async function refreshFiles(projectId = activeProjectId) {
+		if (!projectId) return;
+		const next = await api.files.list(projectId);
+		setFiles(next);
+		showToast("文件列表已刷新", 1800);
+	}
+
 	async function refreshSessionHistory(projectId = sessionsProjectId) {
 		if (!projectId) return;
 		setSessionHistoryLoading(true);
@@ -948,14 +956,44 @@ export function App() {
 	}
 
 	async function copySession(filePath: string, projectId = sessionsProjectId ?? activeProjectId) {
-		const copied = await api.sessions.copy(filePath);
-		showToast(`已复制会话：${copied.name}`);
-		if (projectId) await refreshSessions(projectId);
+		if (!projectId) return;
+		const result = await api.sessions.copy(projectId, filePath);
+		if (result.cancelled) {
+			showToast("复制会话已取消");
+			return;
+		}
+		showToast("已通过 pi RPC 复制会话");
+		await refreshSessions(projectId);
 	}
 
 	async function exportHistorySession(session: SessionSummary) {
-		const result = await api.sessions.exportHtml(session.filePath);
+		const projectId = sessionsProjectId ?? activeProjectId;
+		if (!projectId) return;
+		const result = await api.sessions.exportHtml(projectId, session.filePath);
 		showToast(`已导出：${result.path}`, 3500);
+	}
+
+	async function deleteHistorySession(session: SessionSummary) {
+		await api.sessions.delete(session.filePath);
+		showToast("已删除会话", 2200);
+		await refreshSessions(sessionsProjectId ?? activeProjectId);
+	}
+
+	async function cloneAgentSession(agentId: string) {
+		setAgentActionLoading("copy");
+		try {
+			const result = await api.agents.cloneSession(agentId);
+			if (result?.cancelled) {
+				showToast("复制会话已取消");
+				return;
+			}
+			showToast("已通过 pi RPC 复制当前会话");
+			await refreshRuntimeState(agentId);
+			await refreshSessions(activeProjectId);
+		} finally {
+			setAgentActionLoading(null);
+			setAgentMenu(null);
+		}
 	}
 
 	async function openCodexImport(project: Project) {
@@ -1211,9 +1249,15 @@ export function App() {
 
 	async function exportAgentHtml(agentId: string) {
 		if (isPendingAgentId(agentId)) return;
-		const result = await api.agents.exportHtml(agentId);
-		setToast(`已导出：${result.path}`);
-		setTimeout(() => setToast(null), 3500);
+		setAgentActionLoading("export");
+		try {
+			const result = await api.agents.exportHtml(agentId);
+			setToast(`已导出：${result.path}`);
+			setTimeout(() => setToast(null), 3500);
+		} finally {
+			setAgentActionLoading(null);
+			setAgentMenu(null);
+		}
 	}
 
 	function setTerminalOpenForAgent(agentId: string, open: boolean) {
@@ -2322,6 +2366,7 @@ export function App() {
 						onCollapse={collapseDrawer}
 						onClose={closeDrawer}
 						onFileContextMenu={(node, x, y) => setFileMenu({ node, x, y })}
+						onRefreshFiles={() => refreshFiles(activeProjectId)}
 						onRefreshSessions={() =>
 							refreshSessions(sessionsProjectId ?? activeProjectId)
 						}
@@ -2340,6 +2385,7 @@ export function App() {
 							copySession(session.filePath, sessionsProjectId ?? activeProjectId)
 						}
 						onExportSession={exportHistorySession}
+						onDeleteSession={deleteHistorySession}
 					/>
 				</aside>
 			)}
@@ -2391,7 +2437,10 @@ export function App() {
 			{agentMenu && (
 				<AgentContextMenu
 					menu={agentMenu}
-					onClose={() => setAgentMenu(null)}
+					actionLoading={agentActionLoading}
+					onClose={() => {
+						if (!agentActionLoading) setAgentMenu(null);
+					}}
 					onActivate={() => {
 						setActiveAgentId(agentMenu.agent.id);
 						setActiveProjectId(agentMenu.agent.projectId);
@@ -2399,15 +2448,9 @@ export function App() {
 					}}
 					onExport={() => {
 						void exportAgentHtml(agentMenu.agent.id);
-						setAgentMenu(null);
 					}}
 					onCopySession={() => {
-						if (agentMenu.agent.sessionPath) {
-							void copySession(agentMenu.agent.sessionPath, agentMenu.agent.projectId);
-						} else {
-							showToast("当前 Agent 还没有可复制的会话文件");
-						}
-						setAgentMenu(null);
+						void cloneAgentSession(agentMenu.agent.id);
 					}}
 					onShowLogs={() => {
 						setRpcLogAgentId(agentMenu.agent.id);
@@ -2544,6 +2587,7 @@ export function App() {
 					onRename={renameHistorySession}
 					onCopy={(session) => copySession(session.filePath, sessionsProject.id)}
 					onExport={exportHistorySession}
+					onDelete={deleteHistorySession}
 				/>
 			)}
 			<ConfigModal

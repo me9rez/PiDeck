@@ -7,6 +7,7 @@ import type {
 	AvailableModel,
 	ChatMessage,
 	CreateAgentInput,
+	ForkMessage,
 	ImageContent,
 	Project,
 	SendPromptInput,
@@ -526,6 +527,100 @@ export class AgentManager {
 			120_000,
 		);
 		return response.data;
+	}
+
+	/**
+	 * 对未打开的历史会话执行官方 RPC 导出。
+	 * 使用临时 pi 进程可以复用官方 export_html 样式，同时不切换当前桌面 Agent。
+	 */
+	async exportSessionHtml(projectId: string, sessionPath: string) {
+		return this.withTemporarySession(projectId, sessionPath, async (process) => {
+			const response = await process.client.request(
+				{ type: "export_html" },
+				120_000,
+			);
+			return response.data;
+		});
+	}
+
+	/**
+	 * 对未打开的历史会话执行官方 clone。
+	 * clone 会复制 active branch 到新 session；随后读取 get_state 拿到新 sessionFile 供历史列表刷新。
+	 */
+	async cloneSessionFile(projectId: string, sessionPath: string) {
+		return this.withTemporarySession(projectId, sessionPath, async (process) => {
+			const response = await process.client.request({ type: "clone" }, 120_000);
+			const state = await process.client.request({ type: "get_state" });
+			return {
+				...((response.data as object | undefined) ?? {}),
+				sessionPath: (state.data as { sessionFile?: string } | undefined)?.sessionFile,
+			};
+		});
+	}
+
+	private async withTemporarySession<T>(
+		projectId: string,
+		sessionPath: string,
+		run: (process: PiProcess) => Promise<T>,
+	): Promise<T> {
+		const project = this.getProject(projectId);
+		if (!project) throw new Error(`Project not found: ${projectId}`);
+		const process = new PiProcess(project.path, this.settingsStore.get());
+		process.start(sessionPath);
+		try {
+			return await run(process);
+		} finally {
+			process.stop();
+		}
+	}
+
+	async getForkMessages(agentId: string): Promise<ForkMessage[]> {
+		const runtime = this.requireRuntime(agentId);
+		const response = await runtime.process.client.request({
+			type: "get_fork_messages",
+		});
+		return (
+			(response.data as { messages?: ForkMessage[] } | undefined)?.messages ?? []
+		);
+	}
+
+	async forkSession(agentId: string, entryId: string) {
+		const runtime = this.requireRuntime(agentId);
+		const response = await runtime.process.client.request(
+			{ type: "fork", entryId },
+			120_000,
+		);
+		await this.refreshRuntimeAfterSessionReplacement(agentId);
+		return response.data;
+	}
+
+	async cloneSession(agentId: string) {
+		const runtime = this.requireRuntime(agentId);
+		const response = await runtime.process.client.request({ type: "clone" }, 120_000);
+		await this.refreshRuntimeAfterSessionReplacement(agentId);
+		return response.data;
+	}
+
+	async switchSession(agentId: string, sessionPath: string) {
+		const runtime = this.requireRuntime(agentId);
+		const response = await runtime.process.client.request(
+			{ type: "switch_session", sessionPath },
+			120_000,
+		);
+		await this.refreshRuntimeAfterSessionReplacement(agentId);
+		return response.data;
+	}
+
+	private async refreshRuntimeAfterSessionReplacement(agentId: string) {
+		const runtime = this.requireRuntime(agentId);
+		const stateResponse = await runtime.process.client
+			.request({ type: "get_state" })
+			.catch(() => ({ data: undefined }));
+		const state = stateResponse.data as { sessionFile?: string; sessionName?: string } | undefined;
+		if (state?.sessionFile) runtime.tab.sessionPath = state.sessionFile;
+		if (state?.sessionName) runtime.tab.title = state.sessionName;
+		await this.loadMessages(agentId).catch(() => undefined);
+		this.emitState();
 	}
 
 	async getCommands(agentId: string) {

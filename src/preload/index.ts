@@ -12,6 +12,7 @@ import type {
 	CodexSessionSummary,
 	CreateAgentInput,
 	FileTreeNode,
+	ForkMessage,
 	GitBranchInfo,
 	PiCommand,
 	PiInstallStatus,
@@ -57,14 +58,21 @@ const api = {
 				filePath,
 				newName,
 			) as Promise<void>,
-		copy: (filePath: string) =>
-			ipcRenderer.invoke(ipcChannels.sessionsCopy, filePath) as Promise<
-				SessionSummary
-			>,
-		exportHtml: (filePath: string) =>
-			ipcRenderer.invoke(ipcChannels.sessionsExportHtml, filePath) as Promise<{
+		copy: (projectId: string, filePath: string) =>
+			ipcRenderer.invoke(ipcChannels.sessionsCopy, projectId, filePath) as Promise<{
+				cancelled?: boolean;
+				sessionPath?: string;
+			}>,
+		exportHtml: (projectId: string, filePath: string) =>
+			ipcRenderer.invoke(
+				ipcChannels.sessionsExportHtml,
+				projectId,
+				filePath,
+			) as Promise<{
 				path: string;
 			}>,
+		delete: (filePath: string) =>
+			ipcRenderer.invoke(ipcChannels.sessionsDelete, filePath) as Promise<void>,
 	},
 	codexSessions: {
 		scan: (projectId: string) =>
@@ -210,6 +218,26 @@ const api = {
 			ipcRenderer.invoke(ipcChannels.agentsExportHtml, agentId) as Promise<{
 				path: string;
 			}>,
+		getForkMessages: (agentId: string) =>
+			ipcRenderer.invoke(ipcChannels.agentsForkMessages, agentId) as Promise<
+				ForkMessage[]
+			>,
+		forkSession: (agentId: string, entryId: string) =>
+			ipcRenderer.invoke(
+				ipcChannels.agentsForkSession,
+				agentId,
+				entryId,
+			) as Promise<{ text?: string; cancelled?: boolean }>,
+		cloneSession: (agentId: string) =>
+			ipcRenderer.invoke(ipcChannels.agentsCloneSession, agentId) as Promise<{
+				cancelled?: boolean;
+			}>,
+		switchSession: (agentId: string, sessionPath: string) =>
+			ipcRenderer.invoke(
+				ipcChannels.agentsSwitchSession,
+				agentId,
+				sessionPath,
+			) as Promise<{ cancelled?: boolean }>,
 		reload: (agentId: string) =>
 			ipcRenderer.invoke(ipcChannels.agentsReload, agentId) as Promise<void>,
 		restart: (agentId: string) =>

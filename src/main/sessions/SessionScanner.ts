@@ -1,6 +1,6 @@
 import { app } from "electron";
 import { existsSync, readFileSync } from "node:fs";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import type { SessionSummary } from "../../shared/types";
 
@@ -26,6 +26,10 @@ export class SessionScanner {
     const raw = await readFile(filePath, "utf8");
     const meta = JSON.stringify({ sessionName: newName, ts: Date.now() });
     await writeFile(filePath, `${meta}\n${raw}`, "utf8");
+  }
+
+  async delete(filePath: string): Promise<void> {
+    await unlink(filePath);
   }
 
   /**
