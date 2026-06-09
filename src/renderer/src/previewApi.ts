@@ -135,6 +135,16 @@ export function createPreviewApi(): PiDesktopApi {
 		sessions: {
 			list: async () => sessions,
 			rename: async () => undefined,
+			copy: async (filePath) => ({
+				id: `${filePath}-copy`,
+				filePath: `${filePath}-copy`,
+				projectPath: projects[0].path,
+				name: "预览历史会话 copy",
+				preview: "这里展示复制后的历史会话摘要",
+				updatedAt: Date.now(),
+				messageCount: 3,
+			}),
+			exportHtml: async () => ({ path: "preview-session.html" }),
 		},
 		codexSessions: {
 			scan: async () => [],

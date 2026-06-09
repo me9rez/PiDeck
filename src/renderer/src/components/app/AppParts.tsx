@@ -166,7 +166,7 @@ export function ComposerToolbar(props: {
 	disabled?: boolean;
 	onCycleModel: () => void;
 	onPickModel: () => void;
-	onCycleThinking: () => void;
+	onPickThinking: () => void;
 	onCompact: () => void;
 }) {
 	const ctxPercent = props.state?.contextPercent;
@@ -179,7 +179,7 @@ export function ComposerToolbar(props: {
 			<button onClick={props.onCycleModel} disabled={props.disabled}>
 				Cycle Model
 			</button>
-			<button onClick={props.onCycleThinking} disabled={props.disabled}>
+			<button onClick={props.onPickThinking} disabled={props.disabled}>
 				Think: {props.state?.thinkingLevel ?? "-"}
 			</button>
 			{showCompact && (
@@ -206,31 +206,117 @@ export function ComposerToolbar(props: {
 
 export function ModelPicker(props: {
 	models: AvailableModel[];
+	current?: { provider?: string; modelId?: string; modelName?: string };
 	onClose: () => void;
 	onPick: (model: AvailableModel) => void;
 }) {
+	const [modelPickerSearch, setModelPickerSearch] = useState("");
+	const normalizedSearch = modelPickerSearch.trim().toLowerCase();
+	const currentModelKey = props.current?.provider && props.current?.modelId
+		? `${props.current.provider}/${props.current.modelId}`
+		: undefined;
+	// 搜索同时覆盖模型展示名、模型 id 和 provider，避免用户只记得任一字段时找不到模型。
+	const filteredModels = normalizedSearch
+		? props.models.filter((model) =>
+				[
+					model.name,
+					model.id,
+					model.provider,
+					`${model.provider}/${model.id}`,
+				]
+					.filter(Boolean)
+					.some((value) =>
+						String(value).toLowerCase().includes(normalizedSearch),
+					),
+			)
+		: props.models;
 	return (
-		<div className="modal-backdrop" onClick={props.onClose}>
+		<div className="picker-backdrop" onClick={props.onClose}>
 			<div
-				className="model-picker"
+				className="picker-palette model-picker"
 				onClick={(event) => event.stopPropagation()}
 			>
-				<div className="modal-header">
-					<strong>选择模型</strong>
-					<button onClick={props.onClose}>×</button>
+				<div className="picker-palette-header">
+					<span>选择模型</span>
+					<button className="picker-palette-close" onClick={props.onClose}>×</button>
 				</div>
-				<div className="model-list">
-					{props.models.map((model) => (
-						<button
-							key={`${model.provider}/${model.id}`}
-							onClick={() => props.onPick(model)}
-						>
-							<strong>{model.name ?? model.id}</strong>
-							<span>
-								{model.provider}/{model.id}
-							</span>
-						</button>
-					))}
+				<div className="picker-palette-search">
+					<input
+						autoFocus
+						value={modelPickerSearch}
+						onChange={(event) => setModelPickerSearch(event.target.value)}
+						placeholder="搜索模型、Provider 或 ID"
+					/>
+				</div>
+				<div className="picker-palette-list">
+					{filteredModels.length > 0 ? (
+						filteredModels.map((model) => {
+							const modelKey = `${model.provider}/${model.id}`;
+							const selected = modelKey === currentModelKey;
+							return (
+								<button
+									key={modelKey}
+									className={`picker-palette-item${selected ? " selected" : ""}`}
+									onClick={() => props.onPick(model)}
+								>
+									<span className="picker-palette-label">{model.name ?? model.id}</span>
+									<span className="picker-palette-desc">
+										{model.provider}/{model.id}
+									</span>
+									{selected && <span className="picker-palette-check">✓</span>}
+								</button>
+							);
+						})
+					) : (
+						<div className="picker-palette-empty">没有匹配的模型</div>
+					)}
+				</div>
+			</div>
+		</div>
+	);
+}
+
+const THINKING_LEVELS = [
+	{ value: "off", label: "Off", description: "关闭模型思考，优先速度和成本" },
+	// minimal 是 pi/Codex reasoning 的最轻量档位，放在 Off 与 Low 之间便于按强度递增选择。
+	{ value: "minimal", label: "Minimal", description: "最少量思考，适合简单问答和轻量修改" },
+	{ value: "low", label: "Low", description: "更快响应，适合日常小改动" },
+	{ value: "medium", label: "Medium", description: "平衡速度和推理深度" },
+	{ value: "high", label: "High", description: "更深推理，适合复杂任务" },
+	// xhigh 只在部分模型上可用；选择后以前端收到的 runtime state 为准，必要时提示用户已被回退。
+	{ value: "xhigh", label: "XHigh", description: "最高推理档，需当前模型支持" },
+];
+
+export function ThinkingPicker(props: {
+	current?: string;
+	onClose: () => void;
+	onPick: (level: string) => void;
+}) {
+	return (
+		<div className="picker-backdrop" onClick={props.onClose}>
+			<div
+				className="picker-palette thinking-picker"
+				onClick={(event) => event.stopPropagation()}
+			>
+				<div className="picker-palette-header">
+					<span>选择思考级别</span>
+					<button className="picker-palette-close" onClick={props.onClose}>×</button>
+				</div>
+				<div className="picker-palette-list">
+					{THINKING_LEVELS.map((level) => {
+						const selected = level.value === props.current;
+						return (
+							<button
+								key={level.value}
+								className={`picker-palette-item${selected ? " selected" : ""}`}
+								onClick={() => props.onPick(level.value)}
+							>
+								<span className="picker-palette-label">{level.label}</span>
+								<span className="picker-palette-desc">{level.description}</span>
+								{selected && <span className="picker-palette-check">✓</span>}
+							</button>
+						);
+					})}
 				</div>
 			</div>
 		</div>
@@ -246,6 +332,7 @@ function formatCompact(value?: number | null) {
 
 export function BranchSelector(props: {
 	gitInfo: GitBranchInfo;
+	switchingBranch?: string | null;
 	onSwitch: (branch: string) => void;
 }) {
 	const [open, setOpen] = useState(false);
@@ -273,6 +360,7 @@ export function BranchSelector(props: {
 		<div className="branch-select" ref={ref}>
 			<button
 				className="branch-trigger"
+				disabled={Boolean(props.switchingBranch)}
 				onClick={() => setOpen((v) => !v)}
 				title={`当前分支: ${current}，共 ${branches.length} 个分支`}
 			>
@@ -292,10 +380,13 @@ export function BranchSelector(props: {
 					{branches.length <= 1 && (
 						<div className="branch-empty-hint">仅此一个分支</div>
 					)}
-					{branches.map((branch) => (
+					{branches.map((branch) => {
+						const switching = props.switchingBranch === branch;
+						return (
 						<button
 							key={branch}
 							className={branch === current ? "active" : ""}
+							disabled={Boolean(props.switchingBranch)}
 							onClick={() => {
 								if (branch !== current) props.onSwitch(branch);
 								setOpen(false);
@@ -309,10 +400,11 @@ export function BranchSelector(props: {
 								)}
 							</span>
 							<span className="branch-item-label" title={branch}>
-								{branch}
+								{switching ? "切换中…" : branch}
 							</span>
 						</button>
-					))}
+					);
+					})}
 				</div>
 			)}
 		</div>
@@ -689,6 +781,7 @@ export function AgentRun(props: {
 	showThinking?: boolean;
 	onOpenExternal: (url: string) => void;
 	onResendUserMessage?: (message: ChatMessage) => void;
+	fileSummariesByMessage?: Record<string, SessionModifiedFile[]>;
 }) {
 	return (
 		<article className="agent-run" data-message-id={props.run.id}>
@@ -699,21 +792,27 @@ export function AgentRun(props: {
 					<time>{formatTime(props.run.endedAt)}</time>
 				</div>
 				<div className="agent-run-stack">
-					{props.run.items.map((item) =>
-						item.kind === "tool-group" ? (
-							<ToolGroup key={item.id} group={item} />
-						) : (
-							<ChatBubble
-								key={item.message.id}
-								message={item.message}
-								onPreviewImage={props.onPreviewImage}
-								onOpenExternal={props.onOpenExternal}
-								onResendUserMessage={props.onResendUserMessage}
-								showThinking={props.showThinking}
-								compact
-							/>
-						),
-					)}
+					{props.run.items.map((item) => {
+						if (item.kind === "tool-group") {
+							return <ToolGroup key={item.id} group={item} />;
+						}
+						const fileSummary = props.fileSummariesByMessage?.[item.message.id];
+						return (
+							<div key={item.message.id} className="agent-run-message-stack">
+								<ChatBubble
+									message={item.message}
+									onPreviewImage={props.onPreviewImage}
+									onOpenExternal={props.onOpenExternal}
+									onResendUserMessage={props.onResendUserMessage}
+									showThinking={props.showThinking}
+									compact
+								/>
+								{item.message.role === "assistant" && fileSummary && fileSummary.length > 0 && (
+									<SessionFileSummary files={fileSummary} />
+								)}
+							</div>
+						);
+					})}
 				</div>
 			</div>
 		</article>
@@ -1253,6 +1352,8 @@ export function DrawerContent(props: {
 	onRefreshSessions: () => void;
 	onOpenSession: (session: SessionSummary) => void;
 	onRenameSession: (filePath: string, newName: string) => void;
+	onCopySession: (session: SessionSummary) => void | Promise<void>;
+	onExportSession: (session: SessionSummary) => void | Promise<void>;
 }) {
 	const title =
 		props.panel === "files"
@@ -1306,6 +1407,8 @@ export function DrawerContent(props: {
 					onRefresh={props.onRefreshSessions}
 					onOpen={props.onOpenSession}
 					onRename={props.onRenameSession}
+					onCopy={props.onCopySession}
+					onExport={props.onExportSession}
 				/>
 			)}
 		</>
@@ -1379,42 +1482,41 @@ export function SessionFileSummary(props: { files: SessionModifiedFile[] }) {
 		(total, file) => total + (file.changedLines ?? 0),
 		0,
 	);
-	const visibleFiles = expanded ? props.files : props.files.slice(0, 3);
+	const visibleFiles = expanded ? props.files : props.files.slice(0, 4);
 	const hiddenCount = Math.max(0, props.files.length - visibleFiles.length);
 	return (
-		<section className="session-file-summary tool-group" aria-label="本次会话修改文件摘要">
-			<button
-				className="session-file-summary-head tool-group-header"
-				type="button"
-				onClick={() => setExpanded((current) => !current)}
-			>
-				<span className="tool-status-dot" />
-				<span className="tool-group-title">本次会话修改</span>
-				<strong title={CHANGED_LINES_ESTIMATE_HINT}>
-					{props.files.length} 个文件
-					{totalLines > 0 ? ` · 约 ${totalLines} 行` : ""}
-				</strong>
-				{props.files.length > 3 && <em>{expanded ? "收起" : `展开 ${hiddenCount} 个`}</em>}
-			</button>
-			<p className="session-file-summary-hint" title={CHANGED_LINES_ESTIMATE_HINT}>
-				行数为工具输入估算，并非精确 diff；末尾换行或多次编辑可能偏大。
-			</p>
-			<div className="session-file-summary-list">
+		<section className="session-file-summary-list-card" aria-label="本轮回答修改文件列表">
+			<div className="session-file-summary-title">
+				<span>修改文件</span>
+				<small title={CHANGED_LINES_ESTIMATE_HINT}>
+					{props.files.length} 个{totalLines > 0 ? ` · 约 ${totalLines} 行` : ""}
+				</small>
+			</div>
+			<ul className="session-file-summary-list">
 				{visibleFiles.map((file) => {
 					const fileName = file.path.split(/[/\\]/).pop() ?? file.path;
 					return (
-						<div key={file.path} className="session-file-summary-row" title={file.path}>
+						<li key={file.path} className="session-file-summary-row" title={file.path}>
 							<span className="session-file-summary-name">{fileName}</span>
 							<span
 								className="session-file-summary-lines"
 								title={CHANGED_LINES_ESTIMATE_HINT}
 							>
-								{file.changedLines ? `约 ${file.changedLines} 行` : "已修改"}
+								{file.changedLines ? `~${file.changedLines} 行` : "已修改"}
 							</span>
-						</div>
+						</li>
 					);
 				})}
-			</div>
+			</ul>
+			{props.files.length > 4 && (
+				<button
+					className="session-file-summary-toggle"
+					type="button"
+					onClick={() => setExpanded((current) => !current)}
+				>
+					{expanded ? "收起" : `还有 ${hiddenCount} 个`}
+				</button>
+			)}
 		</section>
 	);
 }
@@ -1482,9 +1584,15 @@ function SessionsPanel(props: {
 	onRefresh: () => void;
 	onOpen: (session: SessionSummary) => void;
 	onRename: (filePath: string, newName: string) => void | Promise<void>;
+	onCopy: (session: SessionSummary) => void | Promise<void>;
+	onExport: (session: SessionSummary) => void | Promise<void>;
 }) {
 	const [renamingPath, setRenamingPath] = useState<string | null>(null);
 	const [editValue, setEditValue] = useState("");
+	const [sessionActionNotice, setSessionActionNotice] = useState<{
+		filePath: string;
+		text: string;
+	} | null>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
 
 	function startRename(session: SessionSummary) {
@@ -1499,6 +1607,24 @@ function SessionsPanel(props: {
 		}
 		setRenamingPath(null);
 		setEditValue("");
+	}
+
+	async function runSessionAction(
+		session: SessionSummary,
+		action: () => void | Promise<void>,
+		successText: string,
+	) {
+		try {
+			await action();
+			setSessionActionNotice({ filePath: session.filePath, text: successText });
+			window.setTimeout(() => setSessionActionNotice(null), 1600);
+		} catch (error) {
+			setSessionActionNotice({
+				filePath: session.filePath,
+				text: error instanceof Error ? error.message : "操作失败",
+			});
+			window.setTimeout(() => setSessionActionNotice(null), 2400);
+		}
 	}
 
 	return (
@@ -1559,16 +1685,45 @@ function SessionsPanel(props: {
 										{session.messageCount} messages
 									</small>
 								</div>
-								<p>{session.preview}</p>
 							</button>
-							<button
-								className="session-rename-button"
-								title="重命名会话"
-								onClick={() => startRename(session)}
-							>
-								<Pencil size={12} />
-								<span>重命名</span>
-							</button>
+							<div className="session-card-actions">
+								<button
+									className="session-rename-button"
+									title="复制会话"
+									onClick={() =>
+										void runSessionAction(
+											session,
+											() => props.onCopy(session),
+											"已复制",
+										)
+									}
+								>
+									<span>复制</span>
+								</button>
+								<button
+									className="session-rename-button"
+									title="导出 HTML"
+									onClick={() =>
+										void runSessionAction(
+											session,
+											() => props.onExport(session),
+											"已导出",
+										)
+									}
+								>
+									<span>导出</span>
+								</button>
+								<button
+									className="session-rename-button"
+									title="重命名会话"
+									onClick={() => startRename(session)}
+								>
+									<span>重命名</span>
+								</button>
+							</div>
+							{sessionActionNotice?.filePath === session.filePath && (
+								<div className="session-action-notice">{sessionActionNotice.text}</div>
+							)}
 						</div>
 					)}
 				</div>
@@ -1585,16 +1740,21 @@ export function SessionHistoryModal(props: {
 	onRefresh: () => void;
 	onOpen: (session: SessionSummary) => void;
 	onRename: (filePath: string, newName: string) => void | Promise<void>;
+	onCopy: (session: SessionSummary) => void | Promise<void>;
+	onExport: (session: SessionSummary) => void | Promise<void>;
 }) {
 	return (
-		<div className="modal-backdrop session-history-backdrop">
-			<section className="session-history-modal">
-				<div className="modal-header">
+		<div className="picker-backdrop session-history-backdrop" onClick={props.onClose}>
+			<section
+				className="session-history-modal command-palette"
+				onClick={(event) => event.stopPropagation()}
+			>
+				<div className="command-palette-header session-history-header">
 					<div>
 						<strong>历史会话</strong>
 						<span>{props.project.name}</span>
 					</div>
-					<button onClick={props.onClose}>×</button>
+					<button className="command-palette-close" onClick={props.onClose}>×</button>
 				</div>
 				<div className="session-history-path" title={props.project.path}>
 					{props.project.path}
@@ -1611,6 +1771,8 @@ export function SessionHistoryModal(props: {
 							onRefresh={props.onRefresh}
 							onOpen={props.onOpen}
 							onRename={props.onRename}
+							onCopy={props.onCopy}
+							onExport={props.onExport}
 						/>
 					)}
 				</div>
@@ -1707,16 +1869,36 @@ function mergeCommands(commands: PiCommand[]) {
 }
 
 const PINNED_COMMAND_NAMES = new Set<string>();
-const HIDDEN_DESKTOP_COMMAND_NAMES = new Set([
+const HIDDEN_DESKTOP_BUILTIN_COMMAND_NAMES = new Set([
 	"new",
 	"model",
 	"resume",
 	"fork",
 	"name",
+	"session",
+	"tree",
+	"clone",
+	"copy",
+	"export",
+	"share",
+	"settings",
+	"reload",
+	"hotkeys",
+	"login",
+	"logout",
 ]);
 
+function isBuiltinDesktopCommand(command: PiCommand) {
+	// get_commands 可能返回 source 为空的 pi 内置命令；扩展/skill 命令通常带有自己的 source。
+	// Desktop 只隐藏 CLI 内置命令，避免误伤用户自己安装的同名扩展能力。
+	return command.source == null || command.source === "builtin";
+}
+
 function isVisibleDesktopCommand(command: PiCommand) {
-	return !HIDDEN_DESKTOP_COMMAND_NAMES.has(command.name.toLowerCase());
+	return !(
+		isBuiltinDesktopCommand(command) &&
+		HIDDEN_DESKTOP_BUILTIN_COMMAND_NAMES.has(command.name.toLowerCase())
+	);
 }
 
 // pi 内置斜杠命令，get_commands 只返回扩展注册的命令，这些需要手动补充
@@ -1865,6 +2047,7 @@ export function AgentContextMenu(props: {
 	onClose: () => void;
 	onActivate: () => void;
 	onExport: () => void;
+	onCopySession: () => void;
 	onShowLogs: () => void;
 	onCloseAgent: () => void;
 }) {
@@ -1876,6 +2059,7 @@ export function AgentContextMenu(props: {
 				onClick={(event) => event.stopPropagation()}
 			>
 				<button onClick={props.onActivate}>打开会话</button>
+				<button onClick={props.onCopySession}>复制会话</button>
 				<button onClick={props.onExport}>导出 HTML</button>
 				<button onClick={props.onShowLogs}>RPC 日志</button>
 				<button onClick={props.onCloseAgent}>关闭 Agent</button>

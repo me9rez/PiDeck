@@ -291,6 +291,12 @@ function registerIpc() {
 			await sessionScanner.rename(filePath, newName);
 		},
 	);
+	ipcMain.handle(ipcChannels.sessionsCopy, (_event, filePath: string) =>
+		sessionScanner.copy(filePath),
+	);
+	ipcMain.handle(ipcChannels.sessionsExportHtml, (_event, filePath: string) =>
+		sessionScanner.exportHtml(filePath),
+	);
 	ipcMain.handle(
 		ipcChannels.codexSessionsScan,
 		async (_event, projectId: string) => {

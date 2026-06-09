@@ -8,7 +8,7 @@ All notable changes to pi-desktop are documented here.
 
 ### Added
 - Project history quick action: each project row now includes a dedicated history button, so historical sessions can be opened without relying on the context menu.
-- Session file-change summary: completed agent runs now show a compact list of modified file names and changed line counts at the end of the chat timeline.
+- Per-answer file-change summary: each completed agent answer now shows a compact list of modified file names and changed line counts directly below that answer, while the Files panel keeps the session-wide overview.
 - In-app update check: pi-desktop now periodically checks the latest GitHub Release and shows release notes plus browser download links when a newer version is available.
 - Update failure guidance: manual update checks now explain GitHub connectivity issues, suggest configuring the desktop proxy, and provide a direct Release-page fallback.
 

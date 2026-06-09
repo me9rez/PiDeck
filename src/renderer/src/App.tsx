@@ -1,4 +1,5 @@
 import {
+	Fragment,
 	useEffect,
 	useMemo,
 	useRef,
@@ -49,6 +50,7 @@ import {
 	SessionFileSummary,
 	SettingsModal,
 	ThinkingBubble,
+	ThinkingPicker,
 	ToolGroup,
 	applySuggestion,
 	buildOutline,
@@ -161,6 +163,8 @@ export function App() {
 	>({});
 	const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
+	const [thinkingPickerOpen, setThinkingPickerOpen] = useState(false);
+	const [switchingBranch, setSwitchingBranch] = useState<string | null>(null);
 	const [prompt, setPrompt] = useState("");
 	/** 当前进行的操作类型，用于按钮 loading 状态 */
 	const [loadingAction, setLoadingAction] = useState<null | "restart">(null);
@@ -185,6 +189,16 @@ export function App() {
 	const [sessionFileSummaryByAgent, setSessionFileSummaryByAgent] = useState<
 		Record<string, SessionModifiedFile[]>
 	>({});
+	/** 每轮回答完成后固化的文件修改摘要，key 为 assistant message id，便于卡片贴在对应回答后。 */
+	const [turnFileSummaryByMessage, setTurnFileSummaryByMessage] = useState<
+		Record<string, SessionModifiedFile[]>
+	>({});
+	// 记录每轮回答开始前已有的修改文件累计状态，用增量差异避免聊天卡片重复展示历史会话文件。
+	const turnFileBaselineByAgentRef = useRef<
+		Record<string, Map<string, SessionModifiedFile>>
+	>({});
+	const finalizedTurnByAgentRef = useRef<Record<string, string | null>>({});
+	const agentStatusByAgentRef = useRef<Record<string, AgentTab["status"]>>({});
 	/** RPC 日志，用于调试 */
 	const [rpcLogs, setRpcLogs] = useState<
 		Array<{
@@ -399,10 +413,6 @@ export function App() {
 		}
 		return Array.from(byPath.values());
 	}, [activeMessages]);
-	const finalizedModifiedFiles = activeAgentId
-		? (sessionFileSummaryByAgent[activeAgentId] ?? [])
-		: [];
-	const shouldShowSessionFileSummary = finalizedModifiedFiles.length > 0;
 	const outlineItems = useMemo(
 		() => buildOutline(activeMessages),
 		[activeMessages],
@@ -703,8 +713,17 @@ export function App() {
 	useEffect(() => {
 		for (const agent of displayAgents) {
 			if (agent.id !== activeAgentId) continue;
+			const previousStatus = agentStatusByAgentRef.current[agent.id];
 			if (agent.status === "running") {
-				sessionStartByAgentRef.current[agent.id] = Date.now();
+				if (previousStatus !== "running") {
+					sessionStartByAgentRef.current[agent.id] = Date.now();
+					// Files 面板展示会话总览；聊天流只展示本轮回答新增触达的文件。
+					// 基线记录累计行数而不是仅记录路径：同一个文件在后续回答再次被编辑时也要显示。
+					turnFileBaselineByAgentRef.current[agent.id] = new Map(
+						modifiedFiles.map((file) => [file.path, file]),
+					);
+					finalizedTurnByAgentRef.current[agent.id] = null;
+				}
 			} else if (agent.status === "idle") {
 				const start = sessionStartByAgentRef.current[agent.id];
 				if (start) {
@@ -714,16 +733,47 @@ export function App() {
 					}));
 				}
 				if (modifiedFiles.length > 0) {
-					// 会话结束时才固化摘要：运行中的临时工具状态不打扰聊天流，
-					// 同时新一轮 prompt 开始后仍保留上一轮完成结果。
+					// 会话级摘要仍保留给右侧 Files 面板作为总览，但不再渲染到聊天底部。
 					setSessionFileSummaryByAgent((current) => ({
 						...current,
 						[agent.id]: modifiedFiles,
 					}));
 				}
+
+				const lastAssistantMessage = [...(messagesByAgent[agent.id] ?? [])]
+					.reverse()
+					.find((message) => message.role === "assistant");
+				const baseline =
+					turnFileBaselineByAgentRef.current[agent.id] ??
+					new Map<string, SessionModifiedFile>();
+				const turnModifiedFiles = modifiedFiles
+					.map<SessionModifiedFile | null>((file) => {
+						const baselineFile = baseline.get(file.path);
+						const changedLines = Math.max(
+							0,
+							(file.changedLines ?? 0) - (baselineFile?.changedLines ?? 0),
+						);
+						return changedLines > 0 || !baselineFile
+							? { ...file, changedLines }
+							: null;
+					})
+					.filter((file): file is SessionModifiedFile => Boolean(file));
+
+				if (
+					lastAssistantMessage &&
+					turnModifiedFiles.length > 0 &&
+					finalizedTurnByAgentRef.current[agent.id] !== lastAssistantMessage.id
+				) {
+					finalizedTurnByAgentRef.current[agent.id] = lastAssistantMessage.id;
+					setTurnFileSummaryByMessage((current) => ({
+						...current,
+						[lastAssistantMessage.id]: turnModifiedFiles,
+					}));
+				}
 			}
+			agentStatusByAgentRef.current[agent.id] = agent.status;
 		}
-	}, [displayAgents, activeAgentId, modifiedFiles]);
+	}, [displayAgents, activeAgentId, modifiedFiles, messagesByAgent]);
 
 	// 监听用户发送消息的编辑事件，将消息填入输入框
 	useEffect(() => {
@@ -779,6 +829,31 @@ export function App() {
 			.then(setGitInfo)
 			.catch(() => setGitInfo({ current: null, branches: [] }));
 	}, [activeProjectId, displayAgents.length]);
+
+	useEffect(() => {
+		if (!activeProjectId) return;
+		let stopped = false;
+		const refreshGitInfo = async () => {
+			try {
+				const next = await api.git.branches(activeProjectId);
+				if (stopped) return;
+				// 分支可能在外部终端/IDE 中切换，轮询只在状态真的变化时更新，避免不必要重渲染。
+				setGitInfo((current) =>
+					current.current === next.current &&
+					current.branches.join("\n") === next.branches.join("\n")
+						? current
+						: next,
+				);
+			} catch {
+				if (!stopped) setGitInfo({ current: null, branches: [] });
+			}
+		};
+		const timer = window.setInterval(refreshGitInfo, 4000);
+		return () => {
+			stopped = true;
+			window.clearInterval(timer);
+		};
+	}, [activeProjectId]);
 
 	async function checkPiInstall(source: "startup" | "manual" = "manual") {
 		setSettingsOpen(false);
@@ -870,6 +945,17 @@ export function App() {
 	async function renameHistorySession(filePath: string, newName: string) {
 		await api.sessions.rename(filePath, newName);
 		if (sessionsProjectId) await refreshSessions(sessionsProjectId);
+	}
+
+	async function copySession(filePath: string, projectId = sessionsProjectId ?? activeProjectId) {
+		const copied = await api.sessions.copy(filePath);
+		showToast(`已复制会话：${copied.name}`);
+		if (projectId) await refreshSessions(projectId);
+	}
+
+	async function exportHistorySession(session: SessionSummary) {
+		const result = await api.sessions.exportHtml(session.filePath);
+		showToast(`已导出：${result.path}`, 3500);
 	}
 
 	async function openCodexImport(project: Project) {
@@ -1075,6 +1161,25 @@ export function App() {
 			...current,
 			[activeAgentId]: state,
 		}));
+	}
+
+	async function selectThinking(level: string) {
+		if (!activeAgentId || isPendingAgentId(activeAgentId)) return;
+		try {
+			// 使用 setThinking 明确落到用户选择的档位，避免 cycle 模式需要反复点击才能到目标级别。
+			const state = await api.agents.setThinking(activeAgentId, level);
+			setRuntimeStateByAgent((current) => ({
+				...current,
+				[activeAgentId]: state,
+			}));
+			setThinkingPickerOpen(false);
+			// pi runtime 会按模型能力 clamp thinking level；对比实际状态，避免用户误以为已运行在不支持的档位。
+			if (state.thinkingLevel && state.thinkingLevel !== level) {
+				showToast(`当前模型不支持 ${level}，已回退为 ${state.thinkingLevel}`);
+			}
+		} catch (error) {
+			showToast(`切换思考级别失败：${error instanceof Error ? error.message : String(error)}`);
+		}
 	}
 
 	async function compactAgent() {
@@ -1523,8 +1628,20 @@ export function App() {
 
 	async function switchBranch(branch: string) {
 		if (!activeProjectId || !branch || branch === gitInfo.current) return;
-		const next = await api.git.checkout(activeProjectId, branch);
-		setGitInfo(next);
+		setSwitchingBranch(branch);
+		try {
+			const next = await api.git.checkout(activeProjectId, branch);
+			setGitInfo(next);
+		} catch (error) {
+			showToast(`切换分支失败：${error instanceof Error ? error.message : String(error)}`);
+			// 失败后主动刷新一次，覆盖 git 拒绝切换或外部同时切换导致的 UI 状态偏差。
+			const refreshed = await api.git
+				.branches(activeProjectId)
+				.catch(() => ({ current: null, branches: [] }));
+			setGitInfo(refreshed);
+		} finally {
+			setSwitchingBranch(null);
+		}
 	}
 
 	function openDrawer(panel: DrawerPanel) {
@@ -1877,7 +1994,11 @@ export function App() {
 					>
 						<>
 							<div className="header-action-group branch-group">
-								<BranchSelector gitInfo={gitInfo} onSwitch={switchBranch} />
+								<BranchSelector
+									gitInfo={gitInfo}
+									switchingBranch={switchingBranch}
+									onSwitch={switchBranch}
+								/>
 							</div>
 							<div className="header-action-group session-group">
 								<button
@@ -1967,18 +2088,26 @@ export function App() {
 										onOpenExternal={(url) => api.app.openExternal(url)}
 										onResendUserMessage={resendUserMessage}
 										showThinking={settings.showThinking}
+										fileSummariesByMessage={turnFileSummaryByMessage}
 									/>
 								) : item.kind === "tool-group" ? (
 									<ToolGroup key={item.id} group={item} />
 								) : (
-									<ChatBubble
-										key={item.message.id}
-										message={item.message}
-										onPreviewImage={setPreviewImage}
-										onOpenExternal={(url) => api.app.openExternal(url)}
-										onResendUserMessage={resendUserMessage}
-										showThinking={settings.showThinking}
-									/>
+									<Fragment key={item.message.id}>
+										<ChatBubble
+											message={item.message}
+											onPreviewImage={setPreviewImage}
+											onOpenExternal={(url) => api.app.openExternal(url)}
+											onResendUserMessage={resendUserMessage}
+											showThinking={settings.showThinking}
+										/>
+										{item.message.role === "assistant" &&
+											turnFileSummaryByMessage[item.message.id]?.length > 0 && (
+												<SessionFileSummary
+													files={turnFileSummaryByMessage[item.message.id]}
+												/>
+											)}
+									</Fragment>
 								),
 							)}
 							{isAwaitingAssistant && (
@@ -1994,9 +2123,7 @@ export function App() {
 									onCancel={() => cancelPendingPrompt(prompt.id)}
 								/>
 							))}
-							{shouldShowSessionFileSummary && (
-								<SessionFileSummary files={finalizedModifiedFiles} />
-							)}
+
 						</div>
 					)}
 					{outlineItems.length > 1 && (
@@ -2049,7 +2176,7 @@ export function App() {
 							disabled={isAgentBusy || isAgentStarting}
 							onCycleModel={cycleModel}
 							onPickModel={openModelPicker}
-							onCycleThinking={cycleThinking}
+							onPickThinking={() => setThinkingPickerOpen(true)}
 							onCompact={compactAgent}
 						/>
 						<textarea
@@ -2209,6 +2336,10 @@ export function App() {
 							await api.sessions.rename(filePath, newName);
 							await refreshSessions(sessionsProjectId ?? activeProjectId);
 						}}
+						onCopySession={(session) =>
+							copySession(session.filePath, sessionsProjectId ?? activeProjectId)
+						}
+						onExportSession={exportHistorySession}
 					/>
 				</aside>
 			)}
@@ -2270,6 +2401,14 @@ export function App() {
 						void exportAgentHtml(agentMenu.agent.id);
 						setAgentMenu(null);
 					}}
+					onCopySession={() => {
+						if (agentMenu.agent.sessionPath) {
+							void copySession(agentMenu.agent.sessionPath, agentMenu.agent.projectId);
+						} else {
+							showToast("当前 Agent 还没有可复制的会话文件");
+						}
+						setAgentMenu(null);
+					}}
 					onShowLogs={() => {
 						setRpcLogAgentId(agentMenu.agent.id);
 						setAgentMenu(null);
@@ -2304,8 +2443,20 @@ export function App() {
 			{modelPickerOpen && (
 				<ModelPicker
 					models={availableModels}
+					current={{
+						provider: activeRuntimeState?.provider,
+						modelId: activeRuntimeState?.modelId,
+						modelName: activeRuntimeState?.modelName,
+					}}
 					onClose={() => setModelPickerOpen(false)}
 					onPick={selectModel}
+				/>
+			)}
+			{thinkingPickerOpen && (
+				<ThinkingPicker
+					current={activeRuntimeState?.thinkingLevel}
+					onClose={() => setThinkingPickerOpen(false)}
+					onPick={selectThinking}
 				/>
 			)}
 			{settingsOpen && (
@@ -2391,6 +2542,8 @@ export function App() {
 					onRefresh={() => refreshSessionHistory(sessionsProject.id)}
 					onOpen={openHistorySession}
 					onRename={renameHistorySession}
+					onCopy={(session) => copySession(session.filePath, sessionsProject.id)}
+					onExport={exportHistorySession}
 				/>
 			)}
 			<ConfigModal

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Check, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import type { ModelItem, ModelsFile } from "./configTypes";
-import { ApiTypeInput, SecretInput } from "./ConfigShared";
+import { ApiTypeInput, ConfigSelect, SecretInput } from "./ConfigShared";
 import {
 	CUSTOM_USER_AGENT_VALUE,
 	USER_AGENT_OPTIONS,
@@ -338,33 +338,25 @@ export function ModelsTab(props: {
 										<div className="config-form-row">
 											<label>User-Agent</label>
 											<div className="config-header-field">
-												<select
+												<ConfigSelect
 													value={userAgentSelectValue}
-													onChange={(e) => {
-														if (e.target.value === CUSTOM_USER_AGENT_VALUE) return;
+													options={[
+														...USER_AGENT_OPTIONS,
+														{ value: CUSTOM_USER_AGENT_VALUE, label: "自定义" },
+													]}
+													onChange={(value) => {
+														if (value === CUSTOM_USER_AGENT_VALUE) return;
 														props.onChangeProvider(
 															name,
 															"headers",
 															setHeaderValue(
 																provider.headers,
 																"User-Agent",
-																e.target.value,
+																value,
 															),
 														);
 													}}
-												>
-													{USER_AGENT_OPTIONS.map((option) => (
-														<option
-															key={option.value || "none"}
-															value={option.value}
-														>
-															{option.label}
-														</option>
-													))}
-													<option value={CUSTOM_USER_AGENT_VALUE}>
-														自定义
-													</option>
-												</select>
+												/>
 												<input
 													value={userAgentValue}
 													onChange={(e) =>

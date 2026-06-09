@@ -1,4 +1,12 @@
+import { ConfigSelect } from "./ConfigShared";
+
 // ── Raw Tab ─────────────────────────────────────────────
+
+const RAW_FILE_OPTIONS = [
+	{ value: "models.json", label: "models.json" },
+	{ value: "auth.json", label: "auth.json" },
+	{ value: "settings.json", label: "settings.json" },
+];
 
 export function RawTab(props: {
 	fileName: string;
@@ -11,14 +19,11 @@ export function RawTab(props: {
 	return (
 		<div className="config-raw-tab">
 			<div className="config-toolbar">
-				<select
+				<ConfigSelect
 					value={props.fileName}
-					onChange={(e) => props.onChangeFileName(e.target.value)}
-				>
-					<option value="models.json">models.json</option>
-					<option value="auth.json">auth.json</option>
-					<option value="settings.json">settings.json</option>
-				</select>
+					options={RAW_FILE_OPTIONS}
+					onChange={props.onChangeFileName}
+				/>
 				<button
 					className="config-btn primary"
 					onClick={props.onSave}

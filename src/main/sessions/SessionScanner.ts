@@ -1,7 +1,7 @@
 import { app } from "electron";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import type { SessionSummary } from "../../shared/types";
 
 export class SessionScanner {
@@ -26,6 +26,63 @@ export class SessionScanner {
     const raw = await readFile(filePath, "utf8");
     const meta = JSON.stringify({ sessionName: newName, ts: Date.now() });
     await writeFile(filePath, `${meta}\n${raw}`, "utf8");
+  }
+
+  /**
+   * 复制会话文件并写入新的 sessionName 元数据。
+   * 这不是 CLI 的 fork：不裁剪会话树，只生成一个可独立打开/继续的新历史会话文件。
+   */
+  async copy(filePath: string): Promise<SessionSummary> {
+    const raw = await readFile(filePath, "utf8");
+    const current = await this.readSummary(filePath).catch(() => null);
+    const copyName = `${current?.name || "Untitled"} copy`;
+    const targetPath = this.nextCopyPath(filePath);
+    const meta = JSON.stringify({ sessionName: copyName, copiedFrom: filePath, ts: Date.now() });
+    await writeFile(targetPath, `${meta}\n${raw}`, "utf8");
+    const summary = await this.readSummary(targetPath);
+    if (!summary) throw new Error("复制后的会话文件无法读取");
+    return summary;
+  }
+
+  /** 将历史 JSONL 会话直接导出为基础 HTML，避免为了导出历史记录而启动 Agent。 */
+  async exportHtml(filePath: string): Promise<{ path: string }> {
+    const summary = await this.readSummary(filePath);
+    if (!summary) throw new Error("会话文件无法读取");
+    const raw = await readFile(filePath, "utf8");
+    const rows = raw.split(/\r?\n/).filter(Boolean).map((line) => {
+      try {
+        const entry = JSON.parse(line) as any;
+        const message = entry.message ?? entry.data?.message ?? entry;
+        if (!message?.role) return "";
+        const text = this.extractText(message.content).trim();
+        if (!text) return "";
+        return `<section class=\"msg ${this.escapeHtml(message.role)}\"><h2>${this.escapeHtml(message.role)}</h2><pre>${this.escapeHtml(text)}</pre></section>`;
+      } catch {
+        return "";
+      }
+    }).filter(Boolean).join("\n");
+    const title = summary.name || "Untitled";
+    const html = `<!doctype html><html><head><meta charset=\"utf-8\"><title>${this.escapeHtml(title)}</title><style>body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:920px;margin:32px auto;padding:0 20px;color:#1f2937}.msg{border:1px solid #e5e7eb;border-radius:10px;padding:14px;margin:12px 0;background:#fff}.msg h2{margin:0 0 8px;font-size:13px;color:#64748b}.msg pre{white-space:pre-wrap;margin:0;font:14px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}</style></head><body><h1>${this.escapeHtml(title)}</h1><p>${new Date(summary.updatedAt).toLocaleString()} · ${summary.messageCount} messages</p>${rows}</body></html>`;
+    const safeName = title.replace(/[\\/:*?\"<>|]/g, "_").slice(0, 80) || "session";
+    const targetPath = join(app.getPath("downloads"), `${safeName}-${Date.now()}.html`);
+    await writeFile(targetPath, html, "utf8");
+    return { path: targetPath };
+  }
+
+  private nextCopyPath(filePath: string) {
+    const dir = dirname(filePath);
+    const ext = extname(filePath) || ".jsonl";
+    const base = basename(filePath, ext);
+    for (let index = 1; index < 1000; index += 1) {
+      const suffix = index === 1 ? "copy" : `copy-${index}`;
+      const candidate = join(dir, `${base}-${suffix}${ext}`);
+      if (!existsSync(candidate)) return candidate;
+    }
+    throw new Error("无法生成唯一的复制会话文件名");
+  }
+
+  private escapeHtml(value: string) {
+    return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
   }
 
   private async collectJsonl(dir: string): Promise<string[]> {

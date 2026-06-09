@@ -57,6 +57,14 @@ const api = {
 				filePath,
 				newName,
 			) as Promise<void>,
+		copy: (filePath: string) =>
+			ipcRenderer.invoke(ipcChannels.sessionsCopy, filePath) as Promise<
+				SessionSummary
+			>,
+		exportHtml: (filePath: string) =>
+			ipcRenderer.invoke(ipcChannels.sessionsExportHtml, filePath) as Promise<{
+				path: string;
+			}>,
 	},
 	codexSessions: {
 		scan: (projectId: string) =>

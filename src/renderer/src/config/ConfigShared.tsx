@@ -63,6 +63,55 @@ export function SecretInput(props: {
 
 // ── Models Tab ──────────────────────────────────────────
 
+export function ConfigSelect(props: {
+	value: string;
+	options: Array<{ value: string; label: string }>;
+	onChange: (value: string) => void;
+	placeholder?: string;
+}) {
+	const [open, setOpen] = useState(false);
+	const selected = props.options.find((option) => option.value === props.value);
+	return (
+		<div
+			className="config-combobox config-select"
+			onBlur={() => {
+				// 和 API 类型 combobox 保持一致：先让选项 mouseDown 完成，再关闭菜单。
+				window.setTimeout(() => setOpen(false), 80);
+			}}
+		>
+			<button
+				type="button"
+				className="config-select-trigger"
+				onFocus={() => setOpen(true)}
+				onMouseDown={(e) => {
+					e.preventDefault();
+					setOpen((current) => !current);
+				}}
+			>
+				<span>{selected?.label ?? props.placeholder ?? props.value}</span>
+				<ChevronDown size={14} />
+			</button>
+			{open && (
+				<div className="config-combobox-menu">
+					{props.options.map((option) => (
+						<button
+							key={option.value || "none"}
+							type="button"
+							className={option.value === props.value ? "active" : ""}
+							onMouseDown={(e) => {
+								e.preventDefault();
+								props.onChange(option.value);
+								setOpen(false);
+							}}
+						>
+							{option.label}
+						</button>
+					))}
+				</div>
+			)}
+		</div>
+	);
+}
 
 /** API 类型输入：自定义 combobox，避免原生 datalist 在 Electron 滚动容器中出现弹层错位或选项显示不完整。 */
 export function ApiTypeInput(props: {
