@@ -15,6 +15,7 @@ import type {
 } from "../../shared/types";
 import { ipcChannels } from "../../shared/ipc";
 import { PiProcess } from "./PiProcess";
+import { formatBashToolMessage } from "./bashResult";
 import type { SettingsStore } from "../settings/SettingsStore";
 
 export class AgentManager {
@@ -351,21 +352,13 @@ export class AgentManager {
 				this.addMessage(agentId, "system", "命令已取消");
 			} else {
 				// 以 tool 消息展示命令输出，与 pi 终端的 bash 结果展示保持一致
-				const statusIcon = exitCode === 0 ? "✓" : "✗";
-				const header = `${statusIcon} ${command}`;
-				const detailSections = [
-					`命令：${command}`,
-					`退出码：${exitCode}`,
-					output ? `输出：\n${output}` : "(无输出)",
-				].filter(Boolean);
-				this.addMessage(agentId, "tool", header, {
-					status: exitCode === 0 ? "done" : "error",
-					toolName: "bash",
-					args: { command },
-					result: { output, exitCode },
-					isError: exitCode !== 0,
-					detailText: detailSections.join("\n\n"),
+				const toolMessage = formatBashToolMessage({
+					command,
+					output,
+					exitCode,
+					excludeFromContext,
 				});
+				this.addMessage(agentId, "tool", toolMessage.text, toolMessage.meta);
 			}
 		} catch (error) {
 			this.addMessage(
