@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { Component, useState, useEffect, useCallback, type ReactNode } from "react";
 import type { PiDesktopApi } from "../../preload";
 import { AuthTab } from "./config/AuthTab";
 import { ModelsTab } from "./config/ModelsTab";
@@ -12,7 +12,7 @@ import type {
 	ModelsFile,
 	SettingsFile,
 } from "./config/configTypes";
-import type { PiSkillListResult, PiSkillLocation, PiSkillSummary } from "../../shared/types";
+import type { ConfigFileDiagnostic, PiSkillListResult, PiSkillLocation, PiSkillSummary } from "../../shared/types";
 import { getProviderHeaders } from "./config/providerHeaders";
 
 const api: PiDesktopApi = (window as unknown as { piDesktop: PiDesktopApi })
@@ -26,18 +26,141 @@ const DEFAULT_MODEL_CONFIG: Pick<
 	reasoning: true,
 };
 
-/** 配置管理弹窗：支持 models/auth/settings 三个 tab 的可视化编辑和源文件编辑 */
-export function ConfigModal(props: {
+/**
+ * 配置页必须能打开用户手写/旧版本生成的非标准 models.json。
+ * pi 自身对配置较宽松，但 UI 会访问 provider.models.length / map；这里先把缺失或异常字段归一化，
+ * 避免单个 provider 配置错误导致整个 renderer 白屏。
+ */
+function normalizeModelsFile(value: unknown): ModelsFile {
+	const rawProviders =
+		value && typeof value === "object" && !Array.isArray(value)
+			? (value as { providers?: unknown }).providers
+			: undefined;
+	const providers: ModelsFile["providers"] = {};
+	if (!rawProviders || typeof rawProviders !== "object" || Array.isArray(rawProviders)) {
+		return { providers };
+	}
+	for (const [name, rawProvider] of Object.entries(rawProviders)) {
+		const provider =
+			rawProvider && typeof rawProvider === "object" && !Array.isArray(rawProvider)
+				? (rawProvider as Record<string, unknown>)
+				: {};
+		const rawModels = provider.models;
+		providers[name] = {
+			...provider,
+			models: Array.isArray(rawModels)
+				? rawModels.filter((model): model is ModelItem =>
+						Boolean(model) && typeof model === "object" && !Array.isArray(model),
+					)
+				: [],
+		};
+	}
+	return { providers };
+}
+
+function ConfigDiagnosticCard(props: {
+	diagnostic: ConfigFileDiagnostic;
+	onOpenDocs: () => void;
+	onOpenRaw: () => void;
+}) {
+	const { diagnostic } = props;
+	return (
+		<div className="config-diagnostic-card">
+			<div>
+				<strong>{diagnostic.fileName} 加载失败</strong>
+				<span>
+					{diagnostic.line && diagnostic.column
+						? `第 ${diagnostic.line} 行，第 ${diagnostic.column} 列：${diagnostic.message}`
+						: diagnostic.message}
+				</span>
+				<small>
+					已保留源文件内容，可切到“源文件”修复。复杂 provider/model 字段（如 compat、headers、thinkingLevelMap、modelOverrides）建议参考{" "}
+					<a href={diagnostic.docsUrl} target="_blank" rel="noreferrer">
+						pi 官方配置文档
+					</a>
+					。
+				</small>
+			</div>
+			{diagnostic.snippet && <pre>{diagnostic.snippet}</pre>}
+			<div className="config-diagnostic-actions">
+				<button className="config-btn primary" onClick={props.onOpenRaw}>打开源文件</button>
+				<button className="config-btn" onClick={props.onOpenDocs}>查看官方文档</button>
+			</div>
+		</div>
+	);
+}
+
+type ConfigModalProps = {
 	open: boolean;
 	onClose: () => void;
 	onSaved: () => void;
-}) {
+};
+
+class ConfigModalErrorBoundary extends Component<
+	{ open: boolean; onClose: () => void; children: ReactNode },
+	{ error: Error | null }
+> {
+	override state = { error: null as Error | null };
+
+	static getDerivedStateFromError(error: Error) {
+		return { error };
+	}
+
+	override componentDidUpdate(prevProps: { open: boolean }) {
+		if (prevProps.open !== this.props.open && this.state.error) {
+			this.setState({ error: null });
+		}
+	}
+
+	override render() {
+		if (!this.state.error) return this.props.children;
+		if (!this.props.open) return null;
+		return (
+			<div className="modal-backdrop">
+				<div className="config-modal">
+					<div className="modal-header">
+						<strong>配置管理加载失败</strong>
+						<button className="modal-close-btn" onClick={this.props.onClose}>×</button>
+					</div>
+					<div className="config-content">
+						<div className="config-diagnostic-card">
+							<div>
+								<strong>配置管理渲染异常</strong>
+								<span>{this.state.error.message}</span>
+								<small>
+									这通常是某个配置字段结构超出了当前可视化表单的兼容范围。配置文件不会被修改，建议先查看{" "}
+									<a href="https://pi.dev/docs/latest/models" target="_blank" rel="noreferrer">pi models 文档</a>
+									{" / "}
+									<a href="https://pi.dev/docs/latest/settings" target="_blank" rel="noreferrer">settings 文档</a>
+									，并把控制台错误和配置片段反馈给我们。
+								</small>
+							</div>
+							<pre>{this.state.error.stack ?? this.state.error.message}</pre>
+						</div>
+					</div>
+				</div>
+			</div>
+		);
+	}
+}
+
+/** 配置管理弹窗：支持 models/auth/settings 三个 tab 的可视化编辑和源文件编辑 */
+export function ConfigModal(props: ConfigModalProps) {
+	return (
+		<ConfigModalErrorBoundary open={props.open} onClose={props.onClose}>
+			<ConfigModalContent {...props} />
+		</ConfigModalErrorBoundary>
+	);
+}
+
+function ConfigModalContent(props: ConfigModalProps) {
 	const { open, onClose, onSaved } = props;
 	const [section, setSection] = useState<"config" | "skills">("config");
 	const [tab, setTab] = useState<ConfigTab>("models");
 	const [loading, setLoading] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [configDiagnostic, setConfigDiagnostic] = useState<ConfigFileDiagnostic | null>(null);
 	const [toast, setToast] = useState<string | null>(null);
 
 	// 各 tab 的数据
@@ -94,22 +217,26 @@ export function ConfigModal(props: {
 		async (target: ConfigTab) => {
 			setLoading(true);
 			setError(null);
+			setConfigDiagnostic(null);
 			try {
 				if (target === "models") {
 					const res = await api.config.getModels();
-					setModelsData(res.parsed as ModelsFile);
+					setModelsData(normalizeModelsFile(res.parsed));
 					setRawContent(res.raw);
 					setRawFileName("models.json");
+					setConfigDiagnostic(res.diagnostic ?? null);
 				} else if (target === "auth") {
 					const res = await api.config.getAuth();
 					setAuthData(res.parsed as AuthFile);
 					setRawContent(res.raw);
 					setRawFileName("auth.json");
+					setConfigDiagnostic(res.diagnostic ?? null);
 				} else if (target === "settings") {
 					const res = await api.config.getSettings();
 					setSettingsData(res.parsed as SettingsFile);
 					setRawContent(res.raw);
 					setRawFileName("settings.json");
+					setConfigDiagnostic(res.diagnostic ?? null);
 				} else if (target === "raw") {
 					// 源文件 tab 复用当前 tab 对应的文件
 					const fileName =
@@ -126,6 +253,7 @@ export function ConfigModal(props: {
 								? await api.config.getAuth()
 								: await api.config.getSettings();
 					setRawContent(res.raw);
+					setConfigDiagnostic(res.diagnostic ?? null);
 				}
 			} catch (e) {
 				setError(e instanceof Error ? e.message : String(e));
@@ -583,6 +711,13 @@ export function ConfigModal(props: {
 				<div className="config-content">
 					{loading && <div className="config-loading">加载中…</div>}
 					{error && <div className="config-error">{error}</div>}
+					{section === "config" && configDiagnostic && (
+						<ConfigDiagnosticCard
+							diagnostic={configDiagnostic}
+							onOpenDocs={() => api.app.openExternal(configDiagnostic.docsUrl)}
+							onOpenRaw={() => setTab("raw")}
+						/>
+					)}
 
 					{section === "config" && !loading && tab === "models" && (
 						<ModelsTab
