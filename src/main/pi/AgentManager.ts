@@ -229,6 +229,34 @@ export class AgentManager {
 		return tab;
 	}
 
+	async rename(agentId: string, name: string) {
+		const runtime = this.requireRuntime(agentId);
+		const trimmed = name.replace(/\s+/g, " ").trim();
+		if (!trimmed) throw new Error("Agent name cannot be empty");
+
+		// 会话名属于 pi 原生 session 元数据；通过 RPC 修改，避免 desktop 手写 JSONL 后与 pi 格式演进脱节。
+		const response = await runtime.process.client.request(
+			{ type: "set_session_name", name: trimmed },
+			20_000,
+		);
+		if (!response.success) {
+			throw new Error(response.error ?? "Failed to rename session");
+		}
+
+		runtime.tab.title = trimmed;
+		const state = await runtime.process.client
+			.request({ type: "get_state" }, 10_000)
+			.catch(() => ({ data: undefined }));
+		const data = state.data as
+			| { sessionId?: string; sessionFile?: string; sessionName?: string }
+			| undefined;
+		runtime.tab.sessionId = data?.sessionId ?? runtime.tab.sessionId;
+		runtime.tab.sessionPath = data?.sessionFile ?? runtime.tab.sessionPath;
+		runtime.tab.title = data?.sessionName || runtime.tab.title;
+		this.emitState();
+		return runtime.tab;
+	}
+
 	async sendPrompt(input: SendPromptInput) {
 		const runtime = this.requireRuntime(input.agentId);
 		const trimmed = input.message.trim();

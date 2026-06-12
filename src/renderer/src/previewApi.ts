@@ -358,6 +358,11 @@ export function createPreviewApi(): PiDesktopApi {
 		agents: {
 			list: async () => agents,
 			create: async () => agents[0],
+			rename: async (agentId, name) => {
+				const agent = agents.find((item) => item.id === agentId) ?? agents[0];
+				agent.title = name;
+				return agent;
+			},
 			stop: async () => undefined,
 			prompt: async () => undefined,
 			abort: async () => undefined,

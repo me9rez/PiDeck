@@ -35,6 +35,7 @@ export const ipcChannels = {
 	appOpenExternal: "app:open-external",
 	agentsList: "agents:list",
 	agentsCreate: "agents:create",
+	agentsRename: "agents:rename",
 	agentsStop: "agents:stop",
 	agentsPrompt: "agents:prompt",
 	agentsAbort: "agents:abort",

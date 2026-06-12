@@ -14,7 +14,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  History,
   Info,
   Search,
   Play,
@@ -99,6 +98,7 @@ const api =
 const COMPOSER_MIN_HEIGHT = 132;
 const COMPOSER_DEFAULT_TERMINAL_HEIGHT = 220;
 const COMPOSER_MIN_TIMELINE_HEIGHT = 160;
+const SIDEBAR_SESSION_PAGE_SIZE = 5;
 
 function countContentLines(value: unknown) {
   if (typeof value !== "string") return 0;
@@ -156,6 +156,19 @@ function isPendingAgentId(agentId?: string) {
   return Boolean(agentId?.startsWith("pending-"));
 }
 
+function formatSidebarSessionTime(updatedAt: number) {
+  const date = new Date(updatedAt);
+  const now = new Date();
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return date.toLocaleString(undefined, {
+    month: "2-digit",
+    day: "2-digit",
+    ...(sameYear ? {} : { year: "numeric" }),
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function migrateAgentRecord<T>(
   current: Record<string, T>,
   replacementById: Map<string, string>,
@@ -197,6 +210,14 @@ export function App() {
   >({});
   const [files, setFiles] = useState<FileTreeNode[]>([]);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessionsByProject, setSessionsByProject] = useState<
+    Record<string, SessionSummary[]>
+  >({});
+  const [sessionLoadingByProject, setSessionLoadingByProject] = useState<
+    Record<string, boolean>
+  >({});
+  const [visibleSessionCountByProject, setVisibleSessionCountByProject] =
+    useState<Record<string, number>>({});
   const [gitInfo, setGitInfo] = useState<GitBranchInfo>({
     current: null,
     branches: [],
@@ -271,6 +292,11 @@ export function App() {
   const [agentActionLoading, setAgentActionLoading] = useState<
     "copy" | "export" | null
   >(null);
+  const [agentRenameTarget, setAgentRenameTarget] = useState<AgentTab | null>(
+    null,
+  );
+  const [agentRenameValue, setAgentRenameValue] = useState("");
+  const [agentRenaming, setAgentRenaming] = useState(false);
   const [projectMenu, setProjectMenu] = useState<{
     x: number;
     y: number;
@@ -538,10 +564,28 @@ export function App() {
   const filteredAgents = visibleAgents;
   const filteredProjects = useMemo(
     () =>
-      projects.filter((project) =>
-        matches(project.name + project.path, search),
-      ),
-    [projects, search],
+      projects.filter((project) => {
+        const projectSessions = sessionsByProject[project.id] ?? [];
+        return (
+          matches(project.name + project.path, search) ||
+          displayAgents.some(
+            (agent) =>
+              agent.projectId === project.id &&
+              matches(agent.title + agent.cwd + (agent.sessionId ?? ""), search),
+          ) ||
+          projectSessions.some((session) =>
+            matches(
+              `${session.name ?? ""}${session.preview}${session.filePath}`,
+              search,
+            ),
+          )
+        );
+      }),
+    [displayAgents, projects, search, sessionsByProject],
+  );
+  const projectIdsKey = useMemo(
+    () => projects.map((project) => project.id).join("\n"),
+    [projects],
   );
   const canReorderProjects = search.trim().length === 0;
 
@@ -684,6 +728,34 @@ export function App() {
       offRpcLog();
     };
   }, []);
+
+  useEffect(() => {
+    const projectIds = new Set(projects.map((project) => project.id));
+    setSessionsByProject((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([projectId]) =>
+          projectIds.has(projectId),
+        ),
+      ),
+    );
+    setVisibleSessionCountByProject((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([projectId]) =>
+          projectIds.has(projectId),
+        ),
+      ),
+    );
+    setSessionLoadingByProject((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([projectId]) =>
+          projectIds.has(projectId),
+        ),
+      ),
+    );
+    for (const project of projects) {
+      void refreshProjectSessions(project.id).catch(() => undefined);
+    }
+  }, [projectIdsKey]);
 
   useEffect(() => {
     const timer = window.setInterval(
@@ -1121,7 +1193,32 @@ export function App() {
 
   async function refreshSessions(projectId = activeProjectId) {
     const next = await api.sessions.list(projectId);
-    setSessions(next);
+    setSessions([...next].sort((a, b) => b.updatedAt - a.updatedAt));
+  }
+
+  async function refreshProjectSessions(projectId: string) {
+    setSessionLoadingByProject((current) => ({
+      ...current,
+      [projectId]: true,
+    }));
+    try {
+      const next = await api.sessions.list(projectId);
+      const sorted = [...next].sort((a, b) => b.updatedAt - a.updatedAt);
+      setSessionsByProject((current) => ({
+        ...current,
+        [projectId]: sorted,
+      }));
+      setVisibleSessionCountByProject((current) => ({
+        ...current,
+        [projectId]: current[projectId] ?? SIDEBAR_SESSION_PAGE_SIZE,
+      }));
+      return sorted;
+    } finally {
+      setSessionLoadingByProject((current) => ({
+        ...current,
+        [projectId]: false,
+      }));
+    }
   }
 
   async function refreshFiles(projectId = activeProjectId) {
@@ -1162,6 +1259,7 @@ export function App() {
   async function renameHistorySession(filePath: string, newName: string) {
     await api.sessions.rename(filePath, newName);
     if (sessionsProjectId) await refreshSessions(sessionsProjectId);
+    if (sessionsProjectId) await refreshProjectSessions(sessionsProjectId);
   }
 
   async function copySession(
@@ -1176,6 +1274,7 @@ export function App() {
     }
     showToast("已通过 pi RPC 复制会话");
     await refreshSessions(projectId);
+    await refreshProjectSessions(projectId);
   }
 
   async function exportHistorySession(session: SessionSummary) {
@@ -1188,7 +1287,9 @@ export function App() {
   async function deleteHistorySession(session: SessionSummary) {
     await api.sessions.delete(session.filePath);
     showToast("已删除会话", 2200);
-    await refreshSessions(sessionsProjectId ?? activeProjectId);
+    const projectId = sessionsProjectId ?? activeProjectId;
+    await refreshSessions(projectId);
+    if (projectId) await refreshProjectSessions(projectId);
   }
 
   async function cloneAgentSession(agentId: string) {
@@ -1202,9 +1303,44 @@ export function App() {
       showToast("已通过 pi RPC 复制当前会话");
       await refreshRuntimeState(agentId);
       await refreshSessions(activeProjectId);
+      if (activeProjectId) await refreshProjectSessions(activeProjectId);
     } finally {
       setAgentActionLoading(null);
       setAgentMenu(null);
+    }
+  }
+
+  function openAgentRename(agent: AgentTab) {
+    setAgentMenu(null);
+    setAgentRenameTarget(agent);
+    setAgentRenameValue(agent.title);
+  }
+
+  async function submitAgentRename() {
+    if (!agentRenameTarget) return;
+    const name = agentRenameValue.replace(/\s+/g, " ").trim();
+    if (!name) {
+      showToast("会话名称不能为空", 2200);
+      return;
+    }
+    setAgentRenaming(true);
+    try {
+      const tab = await api.agents.rename(agentRenameTarget.id, name);
+      setAgents((current) =>
+        current.map((agent) => (agent.id === tab.id ? tab : agent)),
+      );
+      setAgentRenameTarget(null);
+      setAgentRenameValue("");
+      showToast("已重命名会话", 2200);
+      await refreshProjectSessions(tab.projectId);
+      if (sessionsProjectId === tab.projectId) await refreshSessions(tab.projectId);
+    } catch (error) {
+      showToast(
+        `重命名失败：${error instanceof Error ? error.message : String(error)}`,
+        4000,
+      );
+    } finally {
+      setAgentRenaming(false);
     }
   }
 
@@ -1267,6 +1403,7 @@ export function App() {
       );
       setCodexImportReport(report);
       await scanCodexSessions(codexImportProject, false);
+      await refreshProjectSessions(codexImportProject.id);
       if (sessionsProjectId === codexImportProject.id)
         await refreshSessions(codexImportProject.id);
       setToast(
@@ -1394,6 +1531,16 @@ export function App() {
     removedProjectId: string,
     next: Project[],
   ) {
+    setSessionsByProject((current) => {
+      const updated = { ...current };
+      delete updated[removedProjectId];
+      return updated;
+    });
+    setVisibleSessionCountByProject((current) => {
+      const updated = { ...current };
+      delete updated[removedProjectId];
+      return updated;
+    });
     if (activeProjectId === removedProjectId) {
       setActiveProjectId(next[0]?.id);
       setActiveAgentId(undefined);
@@ -1474,6 +1621,7 @@ export function App() {
         delete next[pendingTab.id];
         return next;
       });
+      void refreshProjectSessions(projectId).catch(() => undefined);
       void refreshRuntimeState(tab.id);
     } catch (e) {
       pendingAgentsRef.current = pendingAgentsRef.current.filter(
@@ -2145,6 +2293,34 @@ export function App() {
             const projectAgents = filteredAgents.filter(
               (agent) => agent.projectId === project.id,
             );
+            const projectSessions = sessionsByProject[project.id] ?? [];
+            const projectSearch = search.trim();
+            const visibleProjectSessions = projectSearch
+              ? projectSessions.filter((session) =>
+                  matches(
+                    `${session.name ?? ""}${session.preview}${session.filePath}`,
+                    projectSearch,
+                  ),
+                )
+              : projectSessions;
+            const sessionDisplayCount =
+              visibleSessionCountByProject[project.id] ??
+              SIDEBAR_SESSION_PAGE_SIZE;
+            const displayedProjectSessions = visibleProjectSessions.slice(
+              0,
+              sessionDisplayCount,
+            );
+            const hiddenSessionCount = Math.max(
+              0,
+              visibleProjectSessions.length - displayedProjectSessions.length,
+            );
+            const projectSessionsLoading = Boolean(
+              sessionLoadingByProject[project.id],
+            );
+            const hasProjectChildren =
+              projectAgents.length > 0 ||
+              visibleProjectSessions.length > 0 ||
+              projectSessionsLoading;
             const isCollapsed = collapsedProjects.has(project.id);
             const agentDisplay = getVisibleAgentsForProject(
               projectAgents,
@@ -2190,8 +2366,8 @@ export function App() {
                   }}
                   onClick={() => {
                     if (projectDragPreventClickRef.current) return;
-                    // 有 agent 时，点击整个项目行切换折叠状态
-                    if (projectAgents.length > 0) {
+                    // 项目节点现在同时承载运行中的 Agent 和历史会话；有任一子项时点击项目行切换展开状态。
+                    if (hasProjectChildren) {
                       setCollapsedProjects((prev) => {
                         const next = new Set(prev);
                         if (next.has(project.id)) next.delete(project.id);
@@ -2204,7 +2380,7 @@ export function App() {
                   }}
                 >
                   <span
-                    className={`project-fold${isCollapsed ? " folded" : ""}${projectAgents.length > 0 ? " has-agents" : ""}`}
+                    className={`project-fold${isCollapsed ? " folded" : ""}${hasProjectChildren ? " has-agents" : ""}`}
                     title={isCollapsed ? "展开" : "折叠"}
                   >
                     <Play size={12} />
@@ -2224,21 +2400,11 @@ export function App() {
                   </div>
                   <span className="project-row-actions">
                     <span
-                      className="project-action"
-                      title="历史会话"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void openProjectSessions(project);
-                      }}
-                    >
-                      <History size={14} />
-                    </span>
-                    <span
                       className="project-info"
                       title={
                         projectIsChat
                           ? "Chat 是固定置顶的内置对话区；会话写入应用用户目录，不需要先添加项目。"
-                          : "点击历史按钮可打开历史会话；右键项目可导入 Codex 会话或删除目录记录；点击项目可切换或折叠该目录的 Agent。"
+                          : "项目下方默认展示运行中的 Agent 和最近历史会话；右键项目可导入 Codex 会话或删除目录记录。"
                       }
                       onClick={(event) => event.stopPropagation()}
                     >
@@ -2312,6 +2478,63 @@ export function App() {
                   >
                     <span className="agent-more-branch" />
                     <span>更多 {agentDisplay.hiddenCount} 个 Agent</span>
+                  </button>
+                )}
+                {!isCollapsed && displayedProjectSessions.length > 0 && (
+                  <div className="project-session-list">
+                    <div className="project-session-heading">
+                      <span>历史会话</span>
+                      <em>{visibleProjectSessions.length}</em>
+                    </div>
+                    {displayedProjectSessions.map((session) => (
+                      <button
+                        key={session.filePath}
+                        className={
+                          activeAgent?.sessionPath === session.filePath
+                            ? "conversation session-row active"
+                            : "conversation session-row"
+                        }
+                        title={session.filePath}
+                        onClick={() =>
+                          createAgent(
+                            project.id,
+                            session.filePath,
+                            session.name || "历史会话",
+                          )
+                        }
+                      >
+                        <span className="session-node-marker" aria-hidden="true" />
+                        <div className="conversation-body">
+                          <div className="conversation-title">
+                            <strong>{session.name || "Untitled"}</strong>
+                            <span>
+                              {formatSidebarSessionTime(session.updatedAt)} ·{" "}
+                              {session.messageCount} messages
+                            </span>
+                          </div>
+                          <p>{session.preview}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {!isCollapsed && projectSessionsLoading && (
+                  <div className="project-session-loading">正在加载历史会话…</div>
+                )}
+                {!isCollapsed && hiddenSessionCount > 0 && (
+                  <button
+                    className="session-more-row"
+                    onClick={() => {
+                      setVisibleSessionCountByProject((current) => ({
+                        ...current,
+                        [project.id]:
+                          (current[project.id] ?? SIDEBAR_SESSION_PAGE_SIZE) +
+                          SIDEBAR_SESSION_PAGE_SIZE,
+                      }));
+                    }}
+                  >
+                    <span className="agent-more-branch" />
+                    <span>查看更多 {hiddenSessionCount} 个历史会话</span>
                   </button>
                 )}
               </div>
@@ -2805,7 +3028,6 @@ export function App() {
         <ProjectContextMenu
           menu={projectMenu}
           onClose={() => setProjectMenu(null)}
-          onOpenSessions={() => openProjectSessions(projectMenu.project)}
           onImportCodexSessions={() => openCodexImport(projectMenu.project)}
           onRemoveProject={async () => {
             const project = projectMenu.project;
@@ -2828,6 +3050,7 @@ export function App() {
             setActiveProjectId(agentMenu.agent.projectId);
             setAgentMenu(null);
           }}
+          onRename={() => openAgentRename(agentMenu.agent)}
           onExport={() => {
             void exportAgentHtml(agentMenu.agent.id);
           }}
@@ -2843,6 +3066,53 @@ export function App() {
             setAgentMenu(null);
           }}
         />
+      )}
+      {agentRenameTarget && (
+        <div
+          className="modal-backdrop rename-dialog-backdrop"
+          onClick={() => {
+            if (!agentRenaming) setAgentRenameTarget(null);
+          }}
+        >
+          <form
+            className="rename-dialog"
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitAgentRename();
+            }}
+          >
+            <div className="rename-dialog-header">
+              <strong>重命名会话</strong>
+              <button
+                type="button"
+                disabled={agentRenaming}
+                onClick={() => setAgentRenameTarget(null)}
+              >
+                <X size={15} />
+              </button>
+            </div>
+            <input
+              autoFocus
+              value={agentRenameValue}
+              onChange={(event) => setAgentRenameValue(event.target.value)}
+              placeholder="输入新的会话名称"
+              disabled={agentRenaming}
+            />
+            <div className="rename-dialog-actions">
+              <button
+                type="button"
+                disabled={agentRenaming}
+                onClick={() => setAgentRenameTarget(null)}
+              >
+                取消
+              </button>
+              <button type="submit" disabled={agentRenaming}>
+                {agentRenaming ? "保存中..." : "保存"}
+              </button>
+            </div>
+          </form>
+        </div>
       )}
       {/* RPC 日志弹窗 */}
       {rpcLogAgentId && (

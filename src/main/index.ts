@@ -452,6 +452,11 @@ function registerIpc() {
 	ipcMain.handle(ipcChannels.agentsCreate, (_event, input: CreateAgentInput) =>
 		agentManager.create(input),
 	);
+	ipcMain.handle(
+		ipcChannels.agentsRename,
+		(_event, agentId: string, name: string) =>
+			agentManager.rename(agentId, name),
+	);
 	ipcMain.handle(ipcChannels.agentsStop, async (_event, agentId: string) => {
 		terminalManager.closeAgent(agentId);
 		await agentManager.stop(agentId);

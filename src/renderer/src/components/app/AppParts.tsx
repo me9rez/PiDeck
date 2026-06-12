@@ -2184,7 +2184,6 @@ export function FileContextMenu(props: {
 export function ProjectContextMenu(props: {
 	menu: { x: number; y: number; project: Project };
 	onClose: () => void;
-	onOpenSessions: () => void;
 	onImportCodexSessions: () => void;
 	onRemoveProject: () => void;
 }) {
@@ -2196,7 +2195,6 @@ export function ProjectContextMenu(props: {
 				style={{ left: props.menu.x, top: props.menu.y }}
 				onClick={(event) => event.stopPropagation()}
 			>
-				<button onClick={props.onOpenSessions}>历史会话</button>
 				{!isChatProject && (
 					<>
 						<button onClick={props.onImportCodexSessions}>
@@ -2215,6 +2213,7 @@ export function AgentContextMenu(props: {
 	actionLoading?: "copy" | "export" | null;
 	onClose: () => void;
 	onActivate: () => void;
+	onRename: () => void;
 	onExport: () => void;
 	onCopySession: () => void;
 	onShowLogs: () => void;
@@ -2228,6 +2227,7 @@ export function AgentContextMenu(props: {
 				onClick={(event) => event.stopPropagation()}
 			>
 				<button disabled={Boolean(props.actionLoading)} onClick={props.onActivate}>打开会话</button>
+				<button disabled={Boolean(props.actionLoading)} onClick={props.onRename}>重命名</button>
 				<button disabled={Boolean(props.actionLoading)} onClick={props.onCopySession}>
 					{props.actionLoading === "copy" && <span className="mini-loader" />}
 					{props.actionLoading === "copy" ? "复制中..." : "复制会话"}

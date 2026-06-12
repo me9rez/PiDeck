@@ -14,8 +14,7 @@ export class SessionScanner {
     return summaries
       .filter((summary): summary is SessionSummary => Boolean(summary))
       .filter(summary => !projectPath || this.isSameProject(summary, projectPath))
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, 80);
+      .sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
   /**

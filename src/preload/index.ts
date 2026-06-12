@@ -254,6 +254,12 @@ const api = {
 			ipcRenderer.invoke(ipcChannels.agentsList) as Promise<AgentTab[]>,
 		create: (input: CreateAgentInput) =>
 			ipcRenderer.invoke(ipcChannels.agentsCreate, input) as Promise<AgentTab>,
+		rename: (agentId: string, name: string) =>
+			ipcRenderer.invoke(
+				ipcChannels.agentsRename,
+				agentId,
+				name,
+			) as Promise<AgentTab>,
 		stop: (agentId: string) =>
 			ipcRenderer.invoke(ipcChannels.agentsStop, agentId) as Promise<void>,
 		prompt: (input: SendPromptInput) =>
