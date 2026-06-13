@@ -709,7 +709,7 @@ body:not(.is-list-resizing) .list-collapsed .chat-list-pane:hover .list-collapse
 	gap: 7px;
 	align-items: center;
 	border: 0;
-	border-radius: 6px;
+	border-radius: var(--radius-md);
 	background: transparent;
 	text-align: left;
 	padding: 4px 6px;
@@ -737,7 +737,7 @@ body:not(.is-list-resizing) .list-collapsed .chat-list-pane:hover .list-collapse
 .conversation-avatar {
 	width: 24px;
 	height: 24px;
-	border-radius: 5px;
+	border-radius: var(--radius-sm);
 	display: grid;
 	place-items: center;
 	color: white;
@@ -853,7 +853,7 @@ body:not(.is-list-resizing) .list-collapsed .chat-list-pane:hover .list-collapse
 	gap: 1px;
 	min-width: max-content;
 	padding: 0;
-	border-radius: 6px;
+	border-radius: var(--radius-md);
 	background: transparent;
 }
 .project-action,
@@ -1221,7 +1221,7 @@ body.is-terminal-resizing {
 	border: 1px solid transparent;
 	background: #fff;
 	color: #2b3038;
-	border-radius: 8px;
+	border-radius: var(--radius-lg);
 	padding: 0 8px 0 9px;
 	font-size: 12.5px;
 	max-width: 200px;
@@ -1491,7 +1491,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
 .terminal-actions button {
 	height: 24px;
 	border: 1px solid transparent;
-	border-radius: 6px;
+	border-radius: var(--radius-md);
 	background: transparent;
 	color: var(--terminal-muted);
 	font-size: 12px;
@@ -1525,7 +1525,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
 	display: inline-grid;
 	place-items: center;
 	width: 20px;
-	border-radius: 5px;
+	border-radius: var(--radius-sm);
 	opacity: 0.62;
 }
 .terminal-tab.active {
@@ -1607,7 +1607,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
 	min-width: 26px;
 	height: 24px;
 	border: 1px solid transparent;
-	border-radius: 6px;
+	border-radius: var(--radius-md);
 	background: transparent;
 	color: var(--terminal-muted);
 	padding: 0;
@@ -1678,7 +1678,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
 .terminal-confirm {
 	width: min(360px, 100%);
 	border: 1px solid var(--terminal-border);
-	border-radius: 8px;
+	border-radius: var(--radius-lg);
 	background: var(--terminal-bg);
 	color: var(--terminal-fg);
 	box-shadow: 0 16px 38px rgba(15, 23, 42, 0.22);
@@ -1704,7 +1704,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
 .terminal-confirm-actions button {
 	height: 30px;
 	border: 1px solid var(--terminal-border);
-	border-radius: 7px;
+	border-radius: var(--radius-lg);
 	background: var(--terminal-panel);
 	color: var(--terminal-fg);
 	padding: 0 12px;
@@ -1785,7 +1785,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
 .msg-avatar {
 	width: 38px;
 	height: 38px;
-	border-radius: 8px;
+	border-radius: var(--radius-lg);
 	display: grid;
 	place-items: center;
 	flex: 0 0 auto;
@@ -1908,7 +1908,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
 	word-break: break-word;
 	line-height: 1.62;
 	padding: 11px 14px;
-	border-radius: 8px;
+	border-radius: var(--radius-lg);
 	background: #fff;
 	border: 1px solid #e1e4e8;
 	box-shadow: 0 1px 1px rgba(0, 0, 0, 0.02);
@@ -2567,7 +2567,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	border: 0;
 	background: #95d991;
 	color: #fff;
-	border-radius: 8px;
+	border-radius: var(--radius-lg);
 	padding: 7px 20px;
 	min-width: 72px;
 }
@@ -2688,7 +2688,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	width: 24px;
 	height: 24px;
 	border: 0;
-	border-radius: 6px;
+	border-radius: var(--radius-md);
 	background: transparent;
 	color: #94a3b8;
 	font-size: 16px;
@@ -2710,7 +2710,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	align-items: center;
 	gap: 12px;
 	border: 0;
-	border-radius: 8px;
+	border-radius: var(--radius-lg);
 	background: transparent;
 	padding: 10px 12px;
 	text-align: left;
@@ -3377,7 +3377,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 .feedback-actions button {
 	height: 34px;
 	border: 1px solid #d7dce4;
-	border-radius: 9px;
+	border-radius: var(--radius-lg);
 	background: #fff;
 	color: #344054;
 	padding: 0 14px;
@@ -3478,7 +3478,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	gap: 5px;
 	height: 30px;
 	border: 1px solid #dce3ec;
-	border-radius: 7px;
+	border-radius: var(--radius-lg);
 	background: #fff;
 	color: #4b5563;
 	padding: 0 10px;
@@ -3520,7 +3520,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	gap: 9px;
 	align-items: start;
 	border: 1px solid #e2e8f0;
-	border-radius: 9px;
+	border-radius: var(--radius-lg);
 	background: #fff;
 	padding: 10px;
 	cursor: pointer;
@@ -3708,7 +3708,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	place-items: center;
 	width: 18px;
 	height: 20px;
-	border-radius: 6px;
+	border-radius: var(--radius-md);
 	color: #94a3b8;
 	cursor: ns-resize;
 	touch-action: none;
@@ -3733,7 +3733,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 .outline-expand {
 	width: 100%;
 	border: 0;
-	border-radius: 8px;
+	border-radius: var(--radius-lg);
 	background: #f0fdf4;
 	color: #16a34a;
 	padding: 6px 8px;
@@ -3751,7 +3751,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	gap: 8px;
 	border: 0;
 	border-left: 2px solid transparent;
-	border-radius: 8px;
+	border-radius: var(--radius-lg);
 	background: transparent;
 	padding: 7px 8px;
 	text-align: left;
@@ -4004,7 +4004,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 .picker-palette-search input {
 	width: 100%;
 	border: 1px solid #e2e8f0;
-	border-radius: 8px;
+	border-radius: var(--radius-lg);
 	background: #f8fafc;
 	color: #1e293b;
 	font-size: 13px;
@@ -4027,7 +4027,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	align-items: center;
 	gap: 12px;
 	border: 0;
-	border-radius: 8px;
+	border-radius: var(--radius-lg);
 	background: transparent;
 	padding: 10px 12px;
 	text-align: left;
@@ -4352,7 +4352,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 }
 .setting-pi-path-actions button {
 	border: 1px solid #b8d8ff;
-	border-radius: 8px;
+	border-radius: var(--radius-lg);
 	background: #fff;
 	color: #1677ff;
 	padding: 7px 12px;
@@ -4365,7 +4365,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 }
 .setting-row button {
 	border: 1px solid #b8d8ff;
-	border-radius: 8px;
+	border-radius: var(--radius-lg);
 	background: #fff;
 	color: #1677ff;
 	padding: 7px 12px;
@@ -5758,7 +5758,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	height: 28px;
 	padding: 0 10px;
 	border: 1px solid #d7dce4;
-	border-radius: 6px;
+	border-radius: var(--radius-md);
 	background: #fff;
 	color: #6b7280;
 	font-size: 12px;
@@ -5782,7 +5782,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 .message-image {
 	max-width: 300px;
 	max-height: 300px;
-	border-radius: 8px;
+	border-radius: var(--radius-lg);
 	object-fit: contain;
 	cursor: pointer;
 	border: 1px solid #e5e7eb;
@@ -5867,7 +5867,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	border: 1px solid #3a4150;
 	background: #1f2530;
 	color: #c8cdd5;
-	border-radius: 6px;
+	border-radius: var(--radius-md);
 	padding: 4px 8px;
 	font-size: 12px;
 	cursor: pointer;
@@ -5895,7 +5895,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	flex: 1;
 	min-width: 0;
 	border: 1px solid #343b4a;
-	border-radius: 8px;
+	border-radius: var(--radius-lg);
 	background: #141923;
 	color: #d5dae3;
 	padding: 6px 9px;
@@ -5975,7 +5975,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	background: transparent;
 	color: #5a6678;
 	padding: 3px 10px;
-	border-radius: 6px;
+	border-radius: var(--radius-md);
 	font-size: 12px;
 	cursor: pointer;
 }
@@ -6009,7 +6009,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	align-items: center;
 	gap: 7px;
 	padding: 6px 8px;
-	border-radius: 7px;
+	border-radius: var(--radius-lg);
 	font-size: 13px;
 	color: #2b3038;
 	overflow: hidden;
@@ -6054,7 +6054,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	font-size: 11px;
 	color: #6b7583;
 	padding: 2px 6px;
-	border-radius: 4px;
+	border-radius: var(--radius-xs);
 	background: #eef1f5;
 }
 
@@ -6069,7 +6069,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	margin: 0 0 6px 0;
 	padding: 6px 8px 5px;
 	border: 1px solid #e2e8f0;
-	border-radius: 7px;
+	border-radius: var(--radius-lg);
 	background: #fbfcfd;
 	color: #64748b;
 }
