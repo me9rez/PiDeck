@@ -3715,7 +3715,7 @@ function UpdateModal(props: {
       <section className="update-modal">
         <div className="modal-header">
           <strong>{t("update.availableTitle", { version: props.info.latestVersion })}</strong>
-          <button onClick={props.onClose}>×</button>
+          <CloseIconButton label={t("common.close")} onClick={props.onClose} />
         </div>
         <div className="update-body">
           <p className="update-version-line">
@@ -3764,7 +3764,7 @@ function UpdateErrorModal(props: {
       <section className="update-modal update-error-modal">
         <div className="modal-header">
           <strong>{t("update.checkFailedTitle")}</strong>
-          <button onClick={props.onClose}>×</button>
+          <CloseIconButton label={t("common.close")} onClick={props.onClose} />
         </div>
         <div className="update-body">
           <p className="update-version-line">
