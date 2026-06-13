@@ -3706,7 +3706,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	border: 1px solid var(--color-border-subtle);
 	border-radius: var(--radius-lg);
 	background: var(--color-bg-panel);
-	box-shadow: 0 18px 60px rgba(31, 35, 41, 0.16);
+	box-shadow: var(--shadow-popover);
 	opacity: 0;
 	pointer-events: none;
 	transition:
@@ -3725,7 +3725,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 }
 .outline-title {
 	padding: 8px 8px 6px;
-	color: #9aa2ad;
+	color: var(--color-text-tertiary);
 	font-size: var(--font-size-caption);
 	white-space: nowrap;
 	display: flex;
@@ -3740,19 +3740,19 @@ body.is-composer-resizing .composer-resize-handle::after {
 	width: 18px;
 	height: 20px;
 	border-radius: var(--radius-md);
-	color: #94a3b8;
+	color: var(--color-text-tertiary);
 	cursor: ns-resize;
 	touch-action: none;
 	font-size: 13px;
 	line-height: 1;
 }
 .outline-drag-handle:hover {
-	background: #eef6ee;
-	color: #16a34a;
+	background: var(--color-bg-active);
+	color: var(--color-accent);
 }
 .outline-count {
-	background: #f0f3f7;
-	color: #6b7280;
+	background: var(--color-bg-hover);
+	color: var(--color-text-tertiary);
 	font-size: var(--font-size-micro);
 	padding: 1px 6px;
 	border-radius: 999px;
@@ -3765,15 +3765,15 @@ body.is-composer-resizing .composer-resize-handle::after {
 	width: 100%;
 	border: 0;
 	border-radius: var(--radius-lg);
-	background: #f0fdf4;
-	color: #16a34a;
+	background: var(--color-bg-active);
+	color: var(--color-accent);
 	padding: 6px 8px;
 	font-size: var(--font-size-caption);
 	cursor: pointer;
 	margin-bottom: 4px;
 }
 .outline-expand:hover {
-	background: #dcfce7;
+	background: var(--color-accent-soft);
 }
 .conversation-outline button {
 	width: 100%;
@@ -3786,11 +3786,11 @@ body.is-composer-resizing .composer-resize-handle::after {
 	background: transparent;
 	padding: 7px 8px;
 	text-align: left;
-	color: #4f5966;
+	color: var(--color-text-secondary);
 }
 .conversation-outline button:hover {
-	border-left-color: #14b814;
-	background: #f1f5f1;
+	border-left-color: var(--color-accent);
+	background: var(--color-bg-hover);
 }
 .conversation-outline strong {
 	overflow: hidden;
@@ -3800,11 +3800,11 @@ body.is-composer-resizing .composer-resize-handle::after {
 	font-weight: 500;
 }
 .conversation-outline span {
-	color: #a7afb9;
+	color: var(--color-text-tertiary);
 	font-size: var(--font-size-micro);
 }
 .conversation-outline .outline-user strong {
-	color: #2f6fed;
+	color: var(--color-info);
 }
 @media (max-width: 1280px) {
 	.outline-hover {
