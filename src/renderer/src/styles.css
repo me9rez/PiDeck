@@ -1278,7 +1278,7 @@ body.is-terminal-resizing {
 	padding: 1px 6px;
 	border-radius: 999px;
 	font-weight: 500;
-	line-height: 16px;
+	line-height: var(--line-height-micro);
 }
 .branch-empty-hint {
 	text-align: center;
@@ -1598,7 +1598,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
 .terminal-theme-menu strong,
 .terminal-theme-menu span {
 	padding: 0 4px;
-	line-height: 18px;
+	line-height: var(--line-height-caption);
 }
 .terminal-theme-menu strong {
 	font-size: var(--font-size-caption);
@@ -1711,7 +1711,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
 }
 .terminal-confirm strong {
 	display: block;
-	font-size: 14px;
+	font-size: var(--font-size-body);
 	margin-bottom: 6px;
 }
 .terminal-confirm p {
@@ -2245,7 +2245,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	font-size: 13px;
+	font-size: var(--font-size-control);
 }
 .tool-summary small,
 .tool-more {
@@ -2363,7 +2363,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
 .chat-message.tool .msg-bubble {
 	background: #eef0f3;
 	color: #626b77;
-	font-size: 13px;
+	font-size: var(--font-size-control);
 }
 .chat-message.error .msg-bubble {
 	background: #fff0f0;
@@ -2756,7 +2756,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	min-width: 140px;
 	max-width: 200px;
 	color: #1e293b;
-	font-size: 13px;
+	font-size: var(--font-size-control);
 	font-weight: 600;
 	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	overflow: hidden;
@@ -3482,7 +3482,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	gap: 3px;
 }
 .codex-import-toolbar strong {
-	font-size: 14px;
+	font-size: var(--font-size-body);
 	color: #26323f;
 }
 .codex-import-toolbar span {
@@ -3575,7 +3575,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	font-size: 13px;
+	font-size: var(--font-size-control);
 	font-weight: 600;
 	color: #26323f;
 }
@@ -3619,7 +3619,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	background: #fbfcfe;
 }
 .codex-import-report strong {
-	font-size: 13px;
+	font-size: var(--font-size-control);
 	color: #26323f;
 }
 .codex-import-report div {
@@ -4036,7 +4036,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	border-radius: var(--radius-lg);
 	background: #f8fafc;
 	color: #1e293b;
-	font-size: 13px;
+	font-size: var(--font-size-control);
 	padding: 8px 10px;
 	outline: none;
 }
@@ -4087,7 +4087,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	min-width: 140px;
 	max-width: 220px;
 	color: #1e293b;
-	font-size: 13px;
+	font-size: var(--font-size-control);
 	font-weight: 600;
 	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	overflow: hidden;
@@ -4408,7 +4408,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 .settings-panel p {
 	color: #8a9099;
 	line-height: 1.5;
-	font-size: 13px;
+	font-size: var(--font-size-control);
 }
 @media (max-width: 820px) {
 	.config-layout {
@@ -5047,7 +5047,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	gap: 4px;
 }
 .config-diagnostic-card strong {
-	font-size: 14px;
+	font-size: var(--font-size-body);
 }
 .config-diagnostic-card span,
 .config-diagnostic-card small {
@@ -6051,7 +6051,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 	gap: 7px;
 	padding: 6px 8px;
 	border-radius: var(--radius-lg);
-	font-size: 13px;
+	font-size: var(--font-size-control);
 	color: #2b3038;
 	overflow: hidden;
 	transition: background 0.12s;
