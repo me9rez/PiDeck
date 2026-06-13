@@ -42,6 +42,7 @@
 	--font-size-control: 13px;
 	--font-size-body: 14px;
 	--font-size-title: 16px;
+	--font-size-brand: 18px;
 	--font-size-heading: 20px;
 	--line-height-micro: 16px;
 	--line-height-caption: 18px;
@@ -64,6 +65,9 @@
 	--color-accent: #238636;
 	--color-accent-strong: #1f7a32;
 	--color-accent-soft: #e9f6ed;
+	--color-brand-green: #0f766e;
+	--color-brand-blue: #2563eb;
+	--color-brand-amber: #b45309;
 	--color-danger: #b42318;
 	--color-danger-soft: #fdecea;
 	--color-warning: #b7791f;
@@ -99,6 +103,18 @@
 	--overlay-backdrop: rgba(15, 18, 24, 0.35);
 	--overlay-backdrop-soft: rgba(15, 23, 42, 0.14);
 	--overlay-backdrop-subtle: rgba(15, 23, 42, 0.08);
+	--brand-wordmark-gradient: linear-gradient(
+		120deg,
+		var(--color-brand-green) 0%,
+		var(--color-brand-blue) 54%,
+		var(--color-brand-amber) 100%
+	);
+	--brand-wordmark-underline: linear-gradient(
+		90deg,
+		var(--color-brand-green) 0%,
+		color-mix(in srgb, var(--color-brand-blue) 48%, transparent) 52%,
+		transparent 100%
+	);
 	font-family: var(--font-family-base);
 	background: var(--color-bg-app);
 	color: var(--color-text-primary);
@@ -693,19 +709,20 @@ select:focus-visible {
 	min-width: 0;
 }
 .brand-wordmark {
-	display: inline-flex;
-	align-items: baseline;
-	gap: 0;
+	display: inline-block;
 	position: relative;
-	font-family: "PiDeckPlantin", var(--font-family-base);
-	font-size: var(--font-size-title);
+	font-family: var(--font-family-brand);
+	font-size: var(--font-size-brand);
 	line-height: 1;
-	font-style: normal;
-	font-weight: 800;
+	font-style: italic;
+	font-weight: 760;
 	letter-spacing: 0;
-	color: var(--color-text-primary);
-	transform: translateY(-1px);
-	filter: drop-shadow(0 1px 0 color-mix(in srgb, var(--color-bg-panel) 72%, transparent));
+	color: transparent;
+	background: var(--brand-wordmark-gradient);
+	background-clip: text;
+	-webkit-background-clip: text;
+	transform: translateY(-2px);
+	filter: drop-shadow(0 1px 0 color-mix(in srgb, var(--color-bg-panel) 70%, transparent));
 }
 .brand-wordmark::after {
 	content: "";
@@ -715,49 +732,8 @@ select:focus-visible {
 	bottom: -7px;
 	height: 2px;
 	border-radius: 999px;
-	background: linear-gradient(
-		90deg,
-		var(--color-accent) 0%,
-		color-mix(in srgb, var(--color-accent) 42%, transparent) 48%,
-		transparent 100%
-	);
-	opacity: 0.74;
-}
-.brand-wordmark-pi {
-	position: relative;
-	padding-right: 1px;
-	color: transparent;
-	background: linear-gradient(145deg, var(--color-accent) 0%, var(--color-accent-strong) 100%);
-	background-clip: text;
-	-webkit-background-clip: text;
-	font-weight: 900;
-	font-style: normal;
-}
-.brand-wordmark-deck {
-	position: relative;
-	padding-left: 2px;
-	color: transparent;
-	background: linear-gradient(
-		100deg,
-		color-mix(in srgb, var(--color-text-primary) 96%, var(--color-accent)) 0%,
-		color-mix(in srgb, var(--color-text-secondary) 80%, var(--color-accent)) 100%
-	);
-	background-clip: text;
-	-webkit-background-clip: text;
-	font-weight: 620;
-	font-style: italic;
-	text-shadow: 0.45px 0 0 color-mix(in srgb, var(--color-text-primary) 28%, transparent);
-}
-.brand-wordmark-deck::before {
-	content: "";
-	position: absolute;
-	left: 2px;
-	top: -3px;
-	width: 10px;
-	height: 2px;
-	border-radius: 999px;
-	background: color-mix(in srgb, var(--color-accent) 58%, transparent);
-	transform: skewX(-18deg);
+	background: var(--brand-wordmark-underline);
+	opacity: 0.56;
 }
 .logo-mark {
 	position: relative;

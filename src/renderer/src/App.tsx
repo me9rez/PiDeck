@@ -2432,8 +2432,7 @@ export function App() {
           <div className="app-badge">
             <LogoMark />
             <span className="brand-wordmark" aria-label="PiDeck">
-              <span className="brand-wordmark-pi">Pi</span>
-              <span className="brand-wordmark-deck">Deck</span>
+              PiDeck
             </span>
           </div>
         </div>
