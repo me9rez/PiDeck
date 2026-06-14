@@ -193,6 +193,10 @@ export function createPreviewApi(): PiDesktopApi {
 			scan: async () => [],
 			import: async () => ({ results: [], imported: 0, failed: 0 }),
 		},
+		claudeSessions: {
+			scan: async () => [],
+			import: async () => ({ results: [], imported: 0, failed: 0 }),
+		},
 		git: {
 			branches: async () => ({ current: "main", branches: ["main", "dev"] }),
 			checkout: async (_projectId, branch) => ({

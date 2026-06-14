@@ -51,6 +51,7 @@ import {
   BranchSelector,
   ChatBubble,
   CodexImportModal,
+  ClaudeImportModal,
   ComposerToolbar,
   ConversationOutline,
   DrawerContent,
@@ -70,6 +71,7 @@ import {
   SessionFileSummary,
   SettingsModal,
   ThinkingBubble,
+  ThinkingGroup,
   ThinkingPicker,
   ToolGroup,
   applySuggestion,
@@ -94,6 +96,8 @@ import type {
   ChatMessage,
   CodexImportReport,
   CodexSessionSummary,
+  ClaudeImportReport,
+  ClaudeSessionSummary,
   FileTreeNode,
   GitBranchInfo,
   ImageContent,
@@ -340,7 +344,23 @@ export function App() {
   const [codexImportRunning, setCodexImportRunning] = useState(false);
   const [codexImportReport, setCodexImportReport] =
     useState<CodexImportReport | null>(null);
+  const [claudeImportProject, setClaudeImportProject] = useState<Project | null>(
+    null,
+  );
+  const [claudeImportSessions, setClaudeImportSessions] = useState<
+    ClaudeSessionSummary[]
+  >([]);
+  const [claudeImportSelected, setClaudeImportSelected] = useState<string[]>([]);
+  const [claudeImportLoading, setClaudeImportLoading] = useState(false);
+  const [claudeImportRunning, setClaudeImportRunning] = useState(false);
+  const [claudeImportReport, setClaudeImportReport] =
+    useState<ClaudeImportReport | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // 历史命令相关状态
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [historyNavigating, setHistoryNavigating] = useState(false);
+  const [savedPrompt, setSavedPrompt] = useState("");
   const [compacting, setCompacting] = useState(false);
   const [drawer, setDrawer] = useState<DrawerPanel | null>(null);
   const [sessionsProjectId, setSessionsProjectId] = useState<string>();
@@ -511,7 +531,7 @@ export function App() {
     : undefined;
 
   // 消息分页：超过 100 条消息时启用，大幅减少输入卡顿
-  // 首屏 150 条，每次加载 150 条，一页一页懒加载
+  // 首屏 100 条，每次加载 100 条，一页一页懒加载
   const {
     visibleMessages: paginatedMessages,
     hasMore: hasMoreMessages,
@@ -519,8 +539,8 @@ export function App() {
     isLoading: isLoadingMoreMessages,
   } = useMessagePagination({
     messages: activeMessages,
-    initialPageSize: 150, // 首屏 150 条
-    pageSize: 150,        // 每次加载 150 条
+    initialPageSize: 100, // 首屏 100 条
+    pageSize: 100,        // 每次加载 100 条
     enabled: activeMessages.length > 100, // 超过 100 条才启用
   });
 
@@ -688,6 +708,16 @@ export function App() {
         window.setTimeout(() => void checkPiInstall("startup"), 300);
       }
     });
+
+    // 加载历史命令
+    try {
+      const savedHistory = localStorage.getItem("pideck-command-history");
+      if (savedHistory) {
+        setCommandHistory(JSON.parse(savedHistory));
+      }
+    } catch (error) {
+      console.error("Failed to load command history:", error);
+    }
 
     const offProjects = api.projects.onChanged((next) => {
       setProjects(next);
@@ -1027,6 +1057,17 @@ export function App() {
   useEffect(() => {
     setSelectedSuggestionIndex(0);
   }, [suggestionItems.length]);
+
+  // 持久化历史命令
+  useEffect(() => {
+    if (commandHistory.length > 0) {
+      try {
+        localStorage.setItem("pideck-command-history", JSON.stringify(commandHistory));
+      } catch (error) {
+        console.error("Failed to save command history:", error);
+      }
+    }
+  }, [commandHistory]);
 
   useEffect(() => {
     const timeline = timelineRef.current;
@@ -1671,6 +1712,87 @@ export function App() {
     }
   }
 
+  async function openClaudeImport(project: Project) {
+    setProjectMenu(null);
+    setClaudeImportProject(project);
+    setClaudeImportReport(null);
+    setClaudeImportSessions([]);
+    setClaudeImportSelected([]);
+    await scanClaudeSessions(project);
+  }
+
+  async function scanClaudeSessions(
+    project = claudeImportProject,
+    clearReport = true,
+  ) {
+    if (!project) return;
+    setClaudeImportLoading(true);
+    if (clearReport) setClaudeImportReport(null);
+    try {
+      const next = await api.claudeSessions.scan(project.id);
+      setClaudeImportSessions(next);
+      setClaudeImportSelected([]);
+    } catch (error) {
+      showToast(
+        t("claude.scanFailed", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+        4000,
+      );
+    } finally {
+      setClaudeImportLoading(false);
+    }
+  }
+
+  function toggleClaudeSession(sourcePath: string) {
+    setClaudeImportSelected((current) =>
+      current.includes(sourcePath)
+        ? current.filter((item) => item !== sourcePath)
+        : [...current, sourcePath],
+    );
+  }
+
+  function toggleAllClaudeSessions() {
+    const allPaths = claudeImportSessions.map((session) => session.sourcePath);
+    setClaudeImportSelected((current) =>
+      allPaths.length > 0 && allPaths.every((path) => current.includes(path))
+        ? []
+        : allPaths,
+    );
+  }
+
+  async function importClaudeSessions() {
+    if (!claudeImportProject || claudeImportSelected.length === 0) return;
+    setClaudeImportRunning(true);
+    setClaudeImportReport(null);
+    try {
+      const report = await api.claudeSessions.import(
+        claudeImportProject.id,
+        claudeImportSelected,
+      );
+      setClaudeImportReport(report);
+      await scanClaudeSessions(claudeImportProject, false);
+      await refreshProjectSessions(claudeImportProject.id);
+      if (sessionsProjectId === claudeImportProject.id)
+        await refreshSessions(claudeImportProject.id);
+      showToast(
+        t("claude.importDone", {
+          imported: report.imported,
+          failed: report.failed,
+        }),
+      );
+    } catch (error) {
+      showToast(
+        t("claude.importFailed", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+        4000,
+      );
+    } finally {
+      setClaudeImportRunning(false);
+    }
+  }
+
   async function reorderProjects(
     sourceProjectId: string,
     targetProjectId: string,
@@ -2058,9 +2180,63 @@ export function App() {
       }
     }
 
+    // 历史命令导航：只在光标位于第一行时生效
+    const textarea = event.currentTarget;
+    const cursorPos = textarea.selectionStart;
+    const textBeforeCursor = textarea.value.substring(0, cursorPos);
+    const isFirstLine = !textBeforeCursor.includes('\n');
+    const textAfterCursor = textarea.value.substring(cursorPos);
+    const isLastLine = !textAfterCursor.includes('\n');
+
+    if (event.key === "ArrowUp" && isFirstLine && commandHistory.length > 0) {
+      event.preventDefault();
+
+      // 首次导航时保存当前输入
+      if (!historyNavigating) {
+        setSavedPrompt(prompt);
+        setHistoryNavigating(true);
+        const newIndex = 0;
+        setHistoryIndex(newIndex);
+        setPrompt(commandHistory[newIndex]);
+      } else {
+        // 继续向上导航
+        const newIndex = Math.min(historyIndex + 1, commandHistory.length - 1);
+        if (newIndex !== historyIndex) {
+          setHistoryIndex(newIndex);
+          setPrompt(commandHistory[newIndex]);
+        }
+      }
+      return;
+    }
+
+    if (event.key === "ArrowDown" && isLastLine && historyNavigating) {
+      event.preventDefault();
+
+      if (historyIndex > 0) {
+        // 向下导航
+        const newIndex = historyIndex - 1;
+        setHistoryIndex(newIndex);
+        setPrompt(commandHistory[newIndex]);
+      } else {
+        // 回到最初输入的内容
+        setHistoryIndex(-1);
+        setHistoryNavigating(false);
+        setPrompt(savedPrompt);
+        setSavedPrompt("");
+      }
+      return;
+    }
+
     if (event.key === "Escape") {
       setPrompt((current) => clearSuggestionTrigger(current));
       setSuggestionsOpen(false);
+      // 如果正在历史导航，ESC 退出并恢复原始输入
+      if (historyNavigating) {
+        setPrompt(savedPrompt);
+        setHistoryIndex(-1);
+        setHistoryNavigating(false);
+        setSavedPrompt("");
+      }
     }
     const enterIntent = getComposerEnterIntent(event, settings.sendShortcut);
     if (enterIntent === "send") {
@@ -2089,6 +2265,23 @@ export function App() {
       return;
     const message = prompt;
     const images = attachedImages.length > 0 ? attachedImages : undefined;
+
+    // 保存到历史记录（只保存非空的文本命令）
+    if (message.trim() && !message.startsWith("!")) {
+      setCommandHistory((prev) => {
+        // 避免重复保存相同的命令
+        const filtered = prev.filter(cmd => cmd !== message.trim());
+        // 保留最近 50 条
+        const newHistory = [message.trim(), ...filtered].slice(0, 50);
+        return newHistory;
+      });
+    }
+
+    // 重置历史导航状态
+    setHistoryIndex(-1);
+    setHistoryNavigating(false);
+    setSavedPrompt("");
+
     // 发送前先保留快照，再立即清空 composer；运行中发送会走官方 steer 队列，
     // 由 pi runtime 保证在当前工具调用结束后、下一次 LLM 调用前注入。
     setPrompt("");
@@ -3210,6 +3403,12 @@ export function App() {
                   />
                 ) : item.kind === "tool-group" ? (
                   <ToolGroup key={item.id} group={item} />
+                ) : item.kind === "thinking-group" ? (
+                  <ThinkingGroup
+                    key={item.id}
+                    group={item}
+                    showThinking={settings.showThinking}
+                  />
                 ) : (
                   <Fragment key={item.message.id}>
                     <ChatBubble
@@ -3346,8 +3545,20 @@ export function App() {
               }
               onFocus={() => setSuggestionsOpen(true)}
               onChange={(event) => {
-                setPrompt(event.target.value);
+                const newValue = event.target.value;
+                setPrompt(newValue);
                 setSuggestionsOpen(true);
+
+                // 如果正在历史导航，检测到用户手动编辑内容则退出历史模式
+                if (historyNavigating) {
+                  const currentHistoryCommand = commandHistory[historyIndex];
+                  // 如果编辑后的内容与当前历史命令不同，说明用户在编辑
+                  if (newValue !== currentHistoryCommand) {
+                    setHistoryIndex(-1);
+                    setHistoryNavigating(false);
+                    setSavedPrompt("");
+                  }
+                }
               }}
               onKeyDown={handleComposerKeyDown}
               onPaste={handlePaste}
@@ -3559,6 +3770,7 @@ export function App() {
             setProjectMenu(null);
           }}
           onImportCodexSessions={() => openCodexImport(projectMenu.project)}
+          onImportClaudeSessions={() => openClaudeImport(projectMenu.project)}
           onRemoveProject={async () => {
             const project = projectMenu.project;
             setProjectMenu(null);
@@ -3832,6 +4044,24 @@ export function App() {
           onToggle={toggleCodexSession}
           onToggleAll={toggleAllCodexSessions}
           onImport={importCodexSessions}
+        />
+      )}
+      {claudeImportProject && (
+        <ClaudeImportModal
+          project={claudeImportProject}
+          sessions={claudeImportSessions}
+          selectedPaths={claudeImportSelected}
+          loading={claudeImportLoading}
+          importing={claudeImportRunning}
+          report={claudeImportReport}
+          onClose={() => {
+            setClaudeImportProject(null);
+            setClaudeImportReport(null);
+          }}
+          onRefresh={() => scanClaudeSessions()}
+          onToggle={toggleClaudeSession}
+          onToggleAll={toggleAllClaudeSessions}
+          onImport={importClaudeSessions}
         />
       )}
       {sessionsProject && (

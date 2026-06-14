@@ -11,6 +11,8 @@ import type {
 	ChatMessage,
 	CodexImportReport,
 	CodexSessionSummary,
+	ClaudeImportReport,
+	ClaudeSessionSummary,
 	CreateAgentInput,
 	FileTreeNode,
 	ForkMessage,
@@ -96,6 +98,18 @@ const api = {
 				projectId,
 				sourcePaths,
 			) as Promise<CodexImportReport>,
+	},
+	claudeSessions: {
+		scan: (projectId: string) =>
+			ipcRenderer.invoke(ipcChannels.claudeSessionsScan, projectId) as Promise<
+				ClaudeSessionSummary[]
+			>,
+		import: (projectId: string, sourcePaths: string[]) =>
+			ipcRenderer.invoke(
+				ipcChannels.claudeSessionsImport,
+				projectId,
+				sourcePaths,
+			) as Promise<ClaudeImportReport>,
 	},
 	git: {
 		branches: (projectId: string) =>

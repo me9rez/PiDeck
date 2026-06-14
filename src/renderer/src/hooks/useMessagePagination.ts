@@ -23,8 +23,8 @@ interface MessagePaginationResult {
   visibleCount: number;
 }
 
-const DEFAULT_INITIAL_PAGE_SIZE = 150; // 首屏加载最近150条消息
-const DEFAULT_PAGE_SIZE = 150; // 每次加载150条历史消息
+const DEFAULT_INITIAL_PAGE_SIZE = 100; // 首屏加载最近100条消息
+const DEFAULT_PAGE_SIZE = 100; // 每次加载100条历史消息
 const DEFAULT_MAX_VISIBLE = Infinity; // 默认无限制，但分批加载
 
 export function useMessagePagination({

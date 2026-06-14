@@ -42,6 +42,8 @@ import type {
 	ChatMessage,
 	CodexImportReport,
 	CodexSessionSummary,
+	ClaudeImportReport,
+	ClaudeSessionSummary,
 	FileTreeNode,
 	GitBranchInfo,
 	ImageContent,
@@ -251,9 +253,6 @@ export function SessionStatus(props: {
 				{props.state.provider ? `${props.state.provider}/` : ""}{props.state.modelName ?? props.state.modelId ?? "model"}
 			</span>
 			<span>{t("app.think")}: {props.state.thinkingLevel ?? "-"}</span>
-			{props.duration != null && (
-				<span title={t("app.sessionDuration")}>⏱ {formatDuration(props.duration)}</span>
-			)}
 			{props.state.contextPercent != null && (
 				<span>
 					ctx:{" "}
@@ -697,25 +696,73 @@ export type ToolGroupItem = {
 
 export type MessageItem = { kind: "message"; message: ChatMessage };
 
-export type AgentRunItem = {
-	kind: "agent-run";
+export type ThinkingGroupItem = {
+	kind: "thinking-group";
 	id: string;
-	items: Array<MessageItem | ToolGroupItem>;
+	messages: ChatMessage[];
+	text: string;
 	startedAt: number;
 	endedAt: number;
 };
 
-export type RenderMessage = MessageItem | ToolGroupItem | AgentRunItem;
+export type AgentRunItem = {
+	kind: "agent-run";
+	id: string;
+	items: Array<MessageItem | ToolGroupItem | ThinkingGroupItem>;
+	startedAt: number;
+	endedAt: number;
+};
+
+export type RenderMessage = MessageItem | ToolGroupItem | ThinkingGroupItem | AgentRunItem;
 
 export function groupToolMessages(messages: ChatMessage[]): RenderMessage[] {
 	const result: RenderMessage[] = [];
 	let currentTools: ChatMessage[] = [];
-	let currentRun: Array<MessageItem | ToolGroupItem> = [];
+	let currentThinking: ChatMessage[] = [];
+	let currentRun: Array<MessageItem | ToolGroupItem | ThinkingGroupItem> = [];
 	let runStartedAt = 0;
 	let runEndedAt = 0;
 
+	function isThinkingOnly(message: ChatMessage) {
+		return (
+			message.role === "assistant" &&
+			Boolean(message.thinking?.trim()) &&
+			!stripThinkingTags(stripAnsi(message.text)).trim()
+		);
+	}
+
+	function flushThinking() {
+		if (currentThinking.length === 0) return;
+		const previous = currentRun[currentRun.length - 1];
+		const nextGroup: ThinkingGroupItem = {
+			kind: "thinking-group",
+			id: currentThinking.map((message) => message.id).join("|"),
+			messages: currentThinking,
+			text: currentThinking
+				.map((message) => stripAnsi(message.thinking ?? ""))
+				.filter(Boolean)
+				.join("\n\n"),
+			startedAt: currentThinking[0]?.timestamp ?? runStartedAt,
+			endedAt:
+				currentThinking[currentThinking.length - 1]?.timestamp ?? runEndedAt,
+		};
+		if (previous?.kind === "thinking-group") {
+			// 历史会话可能把多段纯 thinking 拆成多条 assistant 消息；如果展示层上已经相邻，
+			// 继续合并成一个折叠块，避免一轮回答里出现一串重复“思考过程”卡片。
+			previous.id = `${previous.id}|${nextGroup.id}`;
+			previous.messages = [...previous.messages, ...nextGroup.messages];
+			previous.text = [previous.text, nextGroup.text].filter(Boolean).join("\n\n");
+			previous.endedAt = nextGroup.endedAt;
+		} else {
+			currentRun.push(nextGroup);
+		}
+		runEndedAt = nextGroup.endedAt;
+		currentThinking = [];
+	}
+
 	function flushTools() {
 		if (currentTools.length === 0) return;
+		flushThinking();
 		// 同一轮问答里的连续 tool 消息聚合显示,减少工具调用刷屏;详情仍保留在每条 tool 的 meta 里可展开查看。
 		const group: ToolGroupItem = {
 			kind: "tool-group",
@@ -729,13 +776,12 @@ export function groupToolMessages(messages: ChatMessage[]): RenderMessage[] {
 
 	function flushRun() {
 		flushTools();
+		flushThinking();
 		if (currentRun.length === 0) return;
 		result.push({
 			kind: "agent-run",
 			id: currentRun
-				.map((item) =>
-					item.kind === "tool-group" ? item.id : item.message.id,
-				)
+				.map((item) => (item.kind === "message" ? item.message.id : item.id))
 				.join("|"),
 			items: currentRun,
 			startedAt: runStartedAt,
@@ -747,6 +793,7 @@ export function groupToolMessages(messages: ChatMessage[]): RenderMessage[] {
 	}
 
 	function appendRunMessage(message: ChatMessage) {
+		flushThinking();
 		flushTools();
 		if (currentRun.length === 0) runStartedAt = message.timestamp;
 		runEndedAt = message.timestamp;
@@ -754,9 +801,17 @@ export function groupToolMessages(messages: ChatMessage[]): RenderMessage[] {
 	}
 
 	for (const message of messages) {
-		if (message.role === "assistant") {
+		if (isThinkingOnly(message)) {
+			flushTools();
+			if (currentRun.length === 0 && currentThinking.length === 0) {
+				runStartedAt = message.timestamp;
+			}
+			currentThinking.push(message);
+			runEndedAt = message.timestamp;
+		} else if (message.role === "assistant") {
 			appendRunMessage(message);
 		} else if (message.role === "tool") {
+			flushThinking();
 			if (currentRun.length === 0) runStartedAt = message.timestamp;
 			currentTools.push(message);
 		} else {
@@ -766,6 +821,361 @@ export function groupToolMessages(messages: ChatMessage[]): RenderMessage[] {
 	}
 	flushRun();
 	return result;
+}
+
+export const ThinkingGroup = memo(function ThinkingGroup(props: {
+	group: ThinkingGroupItem;
+	showThinking?: boolean;
+}) {
+	const [expanded, setExpanded] = useState(false);
+	if (!props.showThinking || !props.group.text.trim()) return null;
+
+	const previewLen = 220;
+	const needsTruncate = props.group.text.length > previewLen;
+	const previewText =
+		expanded || !needsTruncate
+			? props.group.text
+			: `${props.group.text.slice(0, previewLen)}...`;
+
+	return (
+		<section className="thinking-block thinking-group-block">
+			<button
+				className="thinking-header"
+				onClick={() => setExpanded((value) => !value)}
+			>
+				<Brain size={14} />
+				<span>{t("thinking.title")}</span>
+				<small>{formatTime(props.group.endedAt)}</small>
+				<em>{expanded ? t("common.collapse") : t("common.expand")}</em>
+			</button>
+			{expanded && <div className="thinking-content">{previewText}</div>}
+		</section>
+	);
+});
+
+type RunActivityItem = MessageItem | ToolGroupItem | ThinkingGroupItem;
+
+type ActivityEvent =
+	| {
+			kind: "thinking";
+			id: string;
+			text: string;
+			timestamp: number;
+			sourceCount: number;
+	  }
+	| {
+			kind: "tool";
+			id: string;
+			message: ChatMessage;
+			name: string;
+			status: "running" | "done" | "error";
+			tone: "running" | "ok" | "warning" | "error";
+			statusLabel: string;
+			detailText: string;
+			timestamp: number;
+	  }
+	| {
+			kind: "answer";
+			id: string;
+			preview: string;
+			timestamp: number;
+	  };
+
+function RunActivity(props: {
+	items: RunActivityItem[];
+	showThinking?: boolean;
+}) {
+	const events = buildActivityEvents(props.items, Boolean(props.showThinking));
+	const toolEvents = events.filter((event) => event.kind === "tool");
+	const thinkingEvents = events.filter((event) => event.kind === "thinking");
+	const answerEvents = events.filter((event) => event.kind === "answer");
+	const hasProcessEvents = toolEvents.length > 0 || thinkingEvents.length > 0;
+	const runningCount = toolEvents.filter((event) => event.tone === "running").length;
+	const warningCount = toolEvents.filter(
+		(event) => event.tone === "warning" || event.tone === "error",
+	).length;
+	const visibleTools = toolEvents.slice(0, 8);
+	const hiddenToolCount = toolEvents.length - visibleTools.length;
+	const defaultExpanded =
+		runningCount > 0 || warningCount > 0 || answerEvents.length === 0;
+	const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);
+	const expanded = manualExpanded ?? defaultExpanded;
+	const toggleExpanded = () =>
+		setManualExpanded((value) => !(value ?? defaultExpanded));
+
+	if (!hasProcessEvents) return null;
+
+	return (
+		<section
+			className={[
+				"run-activity",
+				expanded ? "expanded" : "",
+				runningCount > 0 ? "running" : "",
+				warningCount > 0 ? "has-warning" : "",
+			]
+				.filter(Boolean)
+				.join(" ")}
+		>
+			<button
+				className="run-activity-header"
+				onClick={toggleExpanded}
+				aria-expanded={expanded}
+			>
+				<ChevronRight
+					size={14}
+					className={expanded ? "run-activity-chevron open" : "run-activity-chevron"}
+				/>
+				<Wrench size={14} />
+				<span className="run-activity-title">{t("activity.title")}</span>
+				<span className="run-activity-summary">
+					{thinkingEvents.length > 0 && (
+						<b>{t("activity.thinkingCount", { count: thinkingEvents.length })}</b>
+					)}
+					{toolEvents.length > 0 && (
+						<b>{t("activity.toolCount", { count: toolEvents.length })}</b>
+					)}
+					{answerEvents.length > 0 && (
+						<b>{t("activity.answerCount", { count: answerEvents.length })}</b>
+					)}
+					{warningCount > 0 && (
+						<b className="warning">
+							{t("activity.warningCount", { count: warningCount })}
+						</b>
+					)}
+					{runningCount > 0 && (
+						<b className="running">{t("activity.running")}</b>
+					)}
+				</span>
+				<em>{expanded ? t("common.collapse") : t("common.details")}</em>
+			</button>
+			{!expanded && toolEvents.length > 0 && (
+				<div className="run-activity-strip">
+					{visibleTools.map((event) => (
+						<button
+							key={event.id}
+							className={`activity-tool-chip ${event.tone}`}
+							title={`${event.name} · ${event.statusLabel}`}
+							onClick={() => setManualExpanded(true)}
+						>
+							{event.name}
+						</button>
+					))}
+					{hiddenToolCount > 0 && (
+						<span className="activity-tool-chip muted">+{hiddenToolCount}</span>
+					)}
+				</div>
+			)}
+			{expanded && (
+				<div className="run-activity-timeline">
+					{events.map((event) => (
+						<ActivityEventRow key={event.id} event={event} />
+					))}
+				</div>
+			)}
+		</section>
+	);
+}
+
+function buildActivityEvents(
+	items: RunActivityItem[],
+	showThinking: boolean,
+): ActivityEvent[] {
+	const events: ActivityEvent[] = [];
+	for (const item of items) {
+		if (item.kind === "thinking-group") {
+			if (showThinking && item.text.trim()) {
+				events.push({
+					kind: "thinking",
+					id: item.id,
+					text: item.text,
+					timestamp: item.endedAt,
+					sourceCount: item.messages.length,
+				});
+			}
+			continue;
+		}
+		if (item.kind === "tool-group") {
+			for (const message of item.messages) {
+				events.push(createToolActivityEvent(message));
+			}
+			continue;
+		}
+		const message = item.message;
+		if (showThinking && message.thinking?.trim()) {
+			events.push({
+				kind: "thinking",
+				id: `${message.id}-thinking`,
+				text: stripAnsi(message.thinking),
+				timestamp: message.timestamp,
+				sourceCount: 1,
+			});
+		}
+		const answerText = getMessageDisplayText(message);
+		if (message.role === "assistant" && answerText.trim()) {
+			events.push({
+				kind: "answer",
+				id: `${message.id}-answer`,
+				preview: createAnswerPreview(answerText),
+				timestamp: message.timestamp,
+			});
+		}
+	}
+	return events;
+}
+
+function createToolActivityEvent(message: ChatMessage): ActivityEvent {
+	const status = getToolStatus(message);
+	const exitCode = getToolExitCode(message);
+	const isToolError = status === "error" || message.meta?.isError === true;
+	const tone =
+		status === "running"
+			? "running"
+			: isToolError
+				? "error"
+				: typeof exitCode === "number" && exitCode !== 0
+					? "warning"
+					: "ok";
+	const statusLabel =
+		status === "running"
+			? t("tool.statusRunning")
+			: isToolError
+				? t("tool.statusError")
+				: typeof exitCode === "number"
+					? t("activity.exitCode", { code: exitCode })
+					: t("tool.statusDone");
+	return {
+		kind: "tool",
+		id: message.id,
+		message,
+		name: getToolName(message),
+		status,
+		tone,
+		statusLabel,
+		detailText: getToolDetailText(message),
+		timestamp: message.timestamp,
+	};
+}
+
+function ActivityEventRow(props: { event: ActivityEvent }) {
+	const [expanded, setExpanded] = useState(false);
+	const event = props.event;
+	const canExpand = event.kind !== "answer";
+	const tone = event.kind === "tool" ? event.tone : event.kind;
+	const label =
+		event.kind === "thinking"
+			? t("activity.thinking")
+			: event.kind === "tool"
+				? t("activity.tool")
+				: t("activity.answer");
+	const title =
+		event.kind === "thinking"
+			? t("thinking.title")
+			: event.kind === "tool"
+				? event.name
+				: event.preview;
+	const meta =
+		event.kind === "thinking"
+			? event.sourceCount > 1
+				? t("activity.thinkingParts", { count: event.sourceCount })
+				: t("activity.thinking")
+			: event.kind === "tool"
+				? event.statusLabel
+				: t("activity.answerMarker");
+	const eventContent = (
+		<>
+			<span className="activity-event-kind">
+				{event.kind === "thinking" ? (
+					<Brain size={13} />
+				) : event.kind === "tool" ? (
+					<Wrench size={13} />
+				) : (
+					<Check size={13} />
+				)}
+				{label}
+			</span>
+			<strong title={title}>{title}</strong>
+			<small title={meta}>
+				{formatTime(event.timestamp)} · {meta}
+			</small>
+			{canExpand && (
+				<em>{expanded ? t("common.collapse") : t("common.details")}</em>
+			)}
+		</>
+	);
+
+	return (
+		<div className={`activity-event ${event.kind} ${tone}`}>
+			<span className="activity-event-rail" aria-hidden="true">
+				<span className="activity-event-dot" />
+			</span>
+			{canExpand ? (
+				<button
+					className="activity-event-main"
+					onClick={() => setExpanded((value) => !value)}
+					aria-expanded={expanded}
+				>
+					{eventContent}
+				</button>
+			) : (
+				<div className="activity-event-main static">{eventContent}</div>
+			)}
+			{expanded && event.kind === "thinking" && (
+				<pre className="activity-event-detail thinking-detail">{event.text}</pre>
+			)}
+			{expanded && event.kind === "tool" && (
+				<div className="activity-event-detail tool-event-detail">
+					<pre>{event.detailText}</pre>
+					<button
+						onClick={() => navigator.clipboard.writeText(event.detailText)}
+						title={t("tool.copyDetail")}
+					>
+						{t("common.copy")}
+					</button>
+				</div>
+			)}
+		</div>
+	);
+}
+
+function getToolStatus(message: ChatMessage): "running" | "done" | "error" {
+	const status = String(message.meta?.status ?? "done");
+	if (status === "running" || status === "error") return status;
+	return "done";
+}
+
+function getToolName(message: ChatMessage) {
+	const name = message.meta?.toolName;
+	if (typeof name === "string" && name.trim()) return name.trim();
+	const text = stripAnsi(message.text).replace(/^[▶✓✗]\s*/u, "").trim();
+	return text || "tool";
+}
+
+function getToolDetailText(message: ChatMessage) {
+	if (typeof message.meta?.detailText === "string") {
+		return stripAnsi(message.meta.detailText);
+	}
+	return stripAnsi(JSON.stringify(message.meta ?? {}, null, 2));
+}
+
+function getToolExitCode(message: ChatMessage) {
+	const result = message.meta?.result;
+	if (!result || typeof result !== "object") return undefined;
+	const value = (result as { exitCode?: unknown }).exitCode;
+	if (typeof value === "number") return value;
+	if (typeof value === "string" && value.trim()) {
+		const parsed = Number(value);
+		return Number.isFinite(parsed) ? parsed : undefined;
+	}
+	return undefined;
+}
+
+function getMessageDisplayText(message: ChatMessage) {
+	return stripThinkingTags(stripAnsi(message.text));
+}
+
+function createAnswerPreview(text: string) {
+	const collapsed = text.replace(/\s+/g, " ").trim();
+	return collapsed.length > 180 ? `${collapsed.slice(0, 180)}...` : collapsed;
 }
 
 export function ThinkingBubble(props: { thinking?: string; showThinking?: boolean }) {
@@ -876,7 +1286,11 @@ export const ToolGroup = memo(function ToolGroup(props: {
 			) : (
 				<div className="tool-compact-row">
 					{visibleChips.map((message) => (
-						<ToolChip key={message.id} message={message} />
+						<ToolChip
+							key={message.id}
+							message={message}
+							onClick={() => setExpanded(true)}
+						/>
 					))}
 					{hiddenCount > 0 && (
 						<span className="tool-chip muted">+{hiddenCount}</span>
@@ -887,13 +1301,17 @@ export const ToolGroup = memo(function ToolGroup(props: {
 	);
 });
 
-function ToolChip(props: { message: ChatMessage }) {
+function ToolChip(props: { message: ChatMessage; onClick?: () => void }) {
 	const status = String(props.message.meta?.status ?? "done");
 	const toolName = String(props.message.meta?.toolName ?? props.message.text);
 	return (
-		<span className={`tool-chip ${status}`} title={props.message.text}>
+		<button
+			className={`tool-chip ${status}`}
+			title={props.message.text}
+			onClick={props.onClick}
+		>
 			{toolName}
-		</span>
+		</button>
 	);
 }
 
@@ -913,7 +1331,11 @@ function ToolSummary(props: { message: ChatMessage }) {
 			: JSON.stringify(props.message.meta ?? {}, null, 2);
 	return (
 		<div className={`tool-summary ${status}`}>
-			<div className="tool-summary-main">
+			<div
+				className="tool-summary-main"
+				onClick={() => setExpanded((value) => !value)}
+				style={{ cursor: 'pointer' }}
+			>
 				<strong>{toolName}</strong>
 				<small>
 					{statusLabel} · {formatTime(props.message.timestamp)}
@@ -943,42 +1365,11 @@ export const AgentRun = memo(function AgentRun(props: {
 	onResendUserMessage?: (message: ChatMessage) => void;
 	fileSummariesByMessage?: Record<string, SessionModifiedFile[]>;
 }) {
-	// 计算工具组的总数和索引
-	const toolGroups = props.run.items.filter((item) => item.kind === "tool-group");
-	const toolGroupCount = toolGroups.length;
-
-	// 统计信息
-	const totalToolCalls = toolGroups.reduce(
-		(sum, tg) => sum + tg.messages.length,
-		0
+	const activityItems = props.run.items;
+	const messageItems = props.run.items.filter(
+		(item): item is MessageItem => item.kind === "message",
 	);
-	// 移除失败统计 - 工具调用本身不会失败
-	const failedToolCalls = 0;
-
-	// 自动折叠逻辑
 	const isComplete = props.run.endedAt > 0;
-	const hasMultipleTools = toolGroupCount > 1;
-	// 移除错误检查 - 始终可以折叠
-	const hasError = false;
-	const [autoCollapsed, setAutoCollapsed] = useState(false);
-
-	useEffect(() => {
-		// 智能折叠策略：
-		// 1. 只在完成时折叠
-		// 2. 需要多个工具组
-		// 3. 移除错误检查 - 始终折叠
-		if (isComplete && hasMultipleTools && !autoCollapsed) {
-			// 完成后 0.8 秒自动折叠
-			const timer = setTimeout(() => {
-				setAutoCollapsed(true);
-			}, 800);
-			return () => clearTimeout(timer);
-		}
-	}, [isComplete, hasMultipleTools, autoCollapsed]);
-
-	// 手动展开/折叠
-	const [manuallyExpanded, setManuallyExpanded] = useState(false);
-	const isCollapsed = autoCollapsed && !manuallyExpanded;
 
 	return (
 		<article className="agent-run" data-message-id={props.run.id}>
@@ -987,36 +1378,28 @@ export const AgentRun = memo(function AgentRun(props: {
 				<div className="msg-name">
 					<span>pi</span>
 					<time>{formatTime(props.run.endedAt)}</time>
-				</div>
-				{isCollapsed && toolGroupCount > 0 && (
-					<button
-						className="agent-run-summary"
-						onClick={() => {
-							setManuallyExpanded(true);
-							setAutoCollapsed(false); // 记住用户手动展开
-						}}
-					>
-						<span className="summary-icon">▸</span>
-						<span className="summary-text">
-							执行了 {totalToolCalls} 个操作 ✓
+					{isComplete && props.run.startedAt > 0 && (
+						<span className="agent-run-duration">
+							⏱ {formatDuration(props.run.endedAt - props.run.startedAt)}
 						</span>
-						<em>点击展开</em>
-					</button>
-				)}
-				<div className="agent-run-stack" style={{ display: isCollapsed ? 'none' : 'block' }}>
-					{props.run.items.map((item, itemIndex) => {
-						if (item.kind === "tool-group") {
-							// 计算当前工具组在所有工具组中的索引
-							const toolGroupIndex = toolGroups.findIndex((tg) => tg.id === item.id);
-							return (
-								<ToolGroup
-									key={item.id}
-									group={item}
-									index={toolGroupIndex}
-									total={toolGroupCount}
-								/>
-							);
+					)}
+				</div>
+				<RunActivity
+					items={activityItems}
+					showThinking={props.showThinking}
+				/>
+				<div className="agent-run-stack">
+					{messageItems.map((item) => {
+						// 过滤掉只有 thinking 没有文本的消息
+						const hasText = item.message.text && item.message.text.trim().length > 0;
+						const hasThinking = item.message.thinking && item.message.thinking.trim().length > 0;
+
+						// 如果只有 thinking 没有文本，跳过不显示
+						if (hasThinking && !hasText) {
+							return null;
 						}
+
+						// assistant 消息始终显示（不受折叠影响）
 						const fileSummary = props.fileSummariesByMessage?.[item.message.id];
 						return (
 							<div key={item.message.id} className="agent-run-message-stack">
@@ -1025,7 +1408,7 @@ export const AgentRun = memo(function AgentRun(props: {
 									onPreviewImage={props.onPreviewImage}
 									onOpenExternal={props.onOpenExternal}
 									onResendUserMessage={props.onResendUserMessage}
-									showThinking={props.showThinking}
+									showThinking={false}
 									compact
 								/>
 								{item.message.role === "assistant" && fileSummary && fileSummary.length > 0 && (
@@ -1070,6 +1453,11 @@ function stripAnsi(text: string): string {
 	return text.replace(ANSI_RE, "");
 }
 
+/** 去除文本中的 <thinking> 标签 */
+function stripThinkingTags(text: string): string {
+	return text.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "").trim();
+}
+
 export const ChatBubble = memo(function ChatBubble(props: {
 	message: ChatMessage;
 	onPreviewImage: (image: ImageContent) => void;
@@ -1110,7 +1498,7 @@ export const ChatBubble = memo(function ChatBubble(props: {
 			? message.meta.detailText
 			: JSON.stringify(message.meta ?? {}, null, 2);
 	// 过滤 ANSI 转义码,pi 终端输出的颜色序列在桌面 UI 中无意义
-	const cleanText = stripAnsi(message.text);
+	const cleanText = stripThinkingTags(stripAnsi(message.text));
 	const cleanDetail = stripAnsi(detailText);
 	return (
 		<article
@@ -2391,6 +2779,7 @@ export function ProjectContextMenu(props: {
 	onClose: () => void;
 	onRevealProject: () => void;
 	onImportCodexSessions: () => void;
+	onImportClaudeSessions: () => void;
 	onRemoveProject: () => void;
 }) {
 	return (
@@ -2403,6 +2792,9 @@ export function ProjectContextMenu(props: {
 				<button onClick={props.onRevealProject}>{t("menu.revealProject")}</button>
 				<button onClick={props.onImportCodexSessions}>
 					{t("menu.importCodex")}
+				</button>
+				<button onClick={props.onImportClaudeSessions}>
+					{t("menu.importClaude")}
 				</button>
 				<button onClick={props.onRemoveProject}>{t("menu.removeProject")}</button>
 			</div>
@@ -3107,6 +3499,137 @@ function formatCodexStatus(status: CodexSessionSummary["status"]) {
 	if (status === "current") return t("codex.status.current");
 	if (status === "outdated") return t("codex.status.outdated");
 	return t("codex.status.new");
+}
+
+function formatClaudeStatus(status: ClaudeSessionSummary["status"]) {
+	if (status === "current") return t("claude.status.current");
+	if (status === "outdated") return t("claude.status.outdated");
+	return t("claude.status.new");
+}
+
+export function ClaudeImportModal(props: {
+	project: Project;
+	sessions: ClaudeSessionSummary[];
+	selectedPaths: string[];
+	loading: boolean;
+	importing: boolean;
+	report: ClaudeImportReport | null;
+	onClose: () => void;
+	onRefresh: () => void;
+	onToggle: (sourcePath: string) => void;
+	onToggleAll: () => void;
+	onImport: () => void;
+}) {
+	const selected = new Set(props.selectedPaths);
+	const allSelected =
+		props.sessions.length > 0 &&
+		props.sessions.every((session) => selected.has(session.sourcePath));
+	return (
+		<div className="modal-backdrop">
+			<section className="codex-import-modal">
+				<div className="modal-header">
+					<div>
+						<strong>{t("claude.title")}</strong>
+						<small>{props.project.name}</small>
+					</div>
+					<CloseIconButton
+						label={t("common.close")}
+						onClick={props.onClose}
+					/>
+				</div>
+				<div className="codex-import-toolbar">
+					<div>
+						<strong>{t("claude.importCount", { count: props.sessions.length })}</strong>
+						<span>{displayPath(props.project.path)}</span>
+					</div>
+					<div className="codex-import-actions">
+						<button onClick={props.onRefresh} disabled={props.loading || props.importing}>
+							<RefreshCw size={14} />
+							{t("common.refresh")}
+						</button>
+						<button onClick={props.onToggleAll} disabled={props.sessions.length === 0}>
+							<Check size={14} />
+							{allSelected ? t("claude.selectNone") : t("common.selectAll")}
+						</button>
+						<button
+							className="primary-action"
+							onClick={props.onImport}
+							disabled={props.importing || props.selectedPaths.length === 0}
+						>
+							<UploadCloud size={14} />
+							{props.importing
+								? t("claude.importing")
+								: t("claude.importSelected", {
+										count: props.selectedPaths.length,
+									})}
+						</button>
+					</div>
+				</div>
+				<div className="codex-import-body">
+					{props.loading ? (
+						<div className="history-loading">
+							<div className="loader" />
+							<span>{t("claude.scanning")}</span>
+						</div>
+					) : props.sessions.length === 0 ? (
+						<div className="codex-import-empty">
+							<strong>{t("claude.emptyTitle")}</strong>
+							<span>{t("claude.emptyDesc")}</span>
+						</div>
+					) : (
+						<div className="codex-session-list">
+							{props.sessions.map((session) => (
+								<label key={session.sourcePath} className="codex-session-row">
+									<input
+										type="checkbox"
+										checked={selected.has(session.sourcePath)}
+										onChange={() => props.onToggle(session.sourcePath)}
+									/>
+									<div className="codex-session-main">
+										<div className="codex-session-title">
+											<strong>{session.title}</strong>
+											<span className={`codex-status ${session.status}`}>
+												{formatClaudeStatus(session.status)}
+											</span>
+										</div>
+										<p>{session.preview}</p>
+										<small>
+											{new Date(session.updatedAt).toLocaleString()} ·{" "}
+											{t("drawer.sessionMessages", {
+												count: session.messageCount,
+											})} ·{" "}
+											{formatBytes(session.sourceSize)}
+										</small>
+									</div>
+								</label>
+							))}
+						</div>
+					)}
+				</div>
+				{props.report && (
+					<div className="codex-import-report">
+						<strong>
+							{t("claude.importDone", {
+								imported: props.report.imported,
+								failed: props.report.failed,
+							})}
+						</strong>
+						<div>
+							{props.report.results.map((result) => (
+								<span
+									key={result.sourcePath}
+									className={result.success ? "success" : "error"}
+									title={result.error || result.targetPath}
+								>
+									{result.success ? "✓" : "✗"} {result.title || result.sourcePath}
+								</span>
+							))}
+						</div>
+					</div>
+				)}
+			</section>
+		</div>
+	);
 }
 
 function formatBytes(value: number) {

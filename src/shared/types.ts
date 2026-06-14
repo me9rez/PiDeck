@@ -111,6 +111,40 @@ export type CodexImportReport = {
 	failed: number;
 };
 
+export type ClaudeImportStatus = "new" | "current" | "outdated";
+
+export type ClaudeSessionSummary = {
+	id: string;
+	sourcePath: string;
+	targetPath: string;
+	cwd: string;
+	title: string;
+	preview: string;
+	createdAt: number;
+	updatedAt: number;
+	messageCount: number;
+	status: ClaudeImportStatus;
+	sourceSize: number;
+	importedSourceMtime?: number;
+};
+
+export type ClaudeImportResult = {
+	id: string;
+	sourcePath: string;
+	targetPath?: string;
+	title?: string;
+	success: boolean;
+	overwritten?: boolean;
+	messageCount?: number;
+	error?: string;
+};
+
+export type ClaudeImportReport = {
+	results: ClaudeImportResult[];
+	imported: number;
+	failed: number;
+};
+
 export type PiCommand = {
 	name: string;
 	description?: string;
