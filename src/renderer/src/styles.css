@@ -6188,28 +6188,34 @@ body.is-composer-resizing .composer-resize-handle::after {
 }
 
 .config-advanced-preserved {
-	display: grid;
-	gap: 4px;
-	margin: 4px 0 10px;
-	padding: 10px 12px;
-	border: 1px solid color-mix(in srgb, var(--color-info) 18%, var(--color-border-subtle));
-	border-radius: var(--radius-md);
-	background: color-mix(in srgb, var(--color-info) 8%, var(--color-bg-panel));
-	color: var(--color-info);
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 6px 0 10px;
+	padding: 6px 10px;
+	border-left: 3px solid var(--color-border-default);
+	border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+	background: var(--color-bg-muted);
+	color: var(--color-text-secondary);
 }
 .config-advanced-preserved strong {
-	font-size: var(--font-size-caption);
+	font-size: var(--font-size-micro);
+	font-weight: 600;
+	color: var(--color-text-primary);
+	white-space: nowrap;
+	flex-shrink: 0;
 }
 .config-advanced-preserved span {
-	font-size: var(--font-size-caption);
-	line-height: 1.5;
+	font-size: var(--font-size-micro);
+	line-height: 1.45;
+	color: var(--color-text-secondary);
 }
 .config-advanced-preserved a,
 .config-model-advanced-note a,
 .config-diagnostic-card a {
-	color: var(--color-info);
+	color: var(--color-accent);
 	text-decoration: none;
-	font-weight: 600;
+	font-weight: 500;
 }
 .config-advanced-preserved a:hover,
 .config-model-advanced-note a:hover,
