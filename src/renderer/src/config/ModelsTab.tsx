@@ -206,6 +206,35 @@ export function ModelsTab(props: {
 						{t("config.providerGuide")}
 					</button>
 					<button
+						className="config-btn"
+						onClick={() => {
+							if (batchMode) {
+								setBatchMode(false);
+								setSelectedProviders(new Set());
+							} else {
+								setBatchMode(true);
+							}
+						}}
+						disabled={saving || providerNames.length === 0}
+					>
+						{batchMode ? t("common.cancel") : t("common.deleteBatch")}
+					</button>
+					{batchMode && (
+						<button
+							className="config-btn danger"
+							onClick={() => {
+								if (selectedProviders.size > 0) {
+									props.onDeleteProviders([...selectedProviders] as string[]);
+									setSelectedProviders(new Set());
+									setBatchMode(false);
+								}
+							}}
+							disabled={selectedProviders.size === 0}
+						>
+							{t("common.deleteSelected")} ({selectedProviders.size})
+						</button>
+					)}
+					<button
 						className="config-btn primary"
 						onClick={props.onSave}
 						disabled={saving}

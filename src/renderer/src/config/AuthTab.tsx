@@ -92,6 +92,35 @@ export function AuthTab(props: {
 						{t("config.authGuide")}
 					</button>
 					<button
+						className="config-btn"
+						onClick={() => {
+							if (batchMode) {
+								setBatchMode(false);
+								setSelectedAuths(new Set());
+							} else {
+								setBatchMode(true);
+							}
+						}}
+						disabled={saving || providers.length === 0}
+					>
+						{batchMode ? t("common.cancel") : t("common.deleteBatch")}
+					</button>
+					{batchMode && (
+						<button
+							className="config-btn danger"
+							onClick={() => {
+								if (selectedAuths.size > 0) {
+									props.onDeleteAuths([...selectedAuths] as string[]);
+									setSelectedAuths(new Set());
+									setBatchMode(false);
+								}
+							}}
+							disabled={selectedAuths.size === 0}
+						>
+							{t("common.deleteSelected")} ({selectedAuths.size})
+						</button>
+					)}
+					<button
 						className="config-btn primary"
 						onClick={props.onSave}
 						disabled={saving}
@@ -210,6 +239,23 @@ export function AuthTab(props: {
 								className="config-auth-card-header"
 								onClick={() => props.onToggleAuth(name)}
 							>
+						{batchMode && (
+							<label className="config-batch-checkbox">
+								<input
+									type="checkbox"
+									checked={selectedAuths.has(name)}
+									onChange={(e) => {
+										e.stopPropagation();
+										setSelectedAuths(prev => {
+											const next = new Set(prev);
+											if (next.has(name)) next.delete(name);
+											else next.add(name);
+											return next;
+										});
+									}}
+								/>
+							</label>
+						)}
 								<span className="config-auth-provider">{name}</span>
 								<span className="config-auth-key-preview">
 									{auth.key
