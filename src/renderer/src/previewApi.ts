@@ -218,8 +218,13 @@ export function createPreviewApi(): PiDesktopApi {
 			originalContent: async () => "",
 			changedFiles: async () => [],
 		},
+		logs: {
+			list: async () => [],
+			clear: async () => undefined,
+			openFolder: async () => undefined,
+		},
 		pi: {
-			check: async () => ({
+			check: async () => ({ 
 				installed: true,
 				command: "pi",
 				version: "preview",
@@ -246,6 +251,12 @@ export function createPreviewApi(): PiDesktopApi {
 				releaseUrl: "https://github.com/ayuayue/pi-desktop/releases",
 				assets: [],
 			}),
+			downloadUpdate: async (asset) => ({
+				filePath: asset.name,
+				assetName: asset.name,
+			}),
+			installUpdate: async () => undefined,
+			onUpdateProgress: () => () => undefined,
 			feedbackEnvironment: async () => ({
 				appVersion: "preview",
 				platform: "win32",

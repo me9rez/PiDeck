@@ -43,6 +43,16 @@ const RECOMMENDED_PACKAGES: PiPackageInfo[] = [
 		repoUrl: "https://github.com/nicobailon/pi-mcp-adapter",
 	},
 	{
+		name: "pi-memory",
+		description: "长期记忆扩展，用于在 Pi 会话之间保存和检索偏好、项目事实与经验教训。",
+		installCmd: "npm:pi-memory",
+		tags: ["extension", "memory"],
+		downloads: "",
+		updated: "",
+		npmUrl: "https://www.npmjs.com/package/pi-memory",
+		piPackageName: "memory",
+	},
+	{
 		name: "pi-subagents",
 		description: "任务委派扩展，支持链式、并行执行和 TUI 澄清。可将复杂任务拆解给多个子 Agent。",
 		installCmd: "npm:pi-subagents",
@@ -92,7 +102,11 @@ export function ExtensionsTab(props: {
 						<div
 							key={pkg.name}
 							className="extensions-recommended-row"
-							onClick={() => window.open(`https://pi.dev/packages/${pkg.name}?name=${pkg.name}`, '_blank')}
+							onClick={() => {
+								// pi.dev 的详情路由使用 npm 包名,但查询参数可能是扩展内部展示名。
+								const packageName = pkg.piPackageName ?? pkg.name;
+								window.open(`https://pi.dev/packages/${pkg.name}?name=${packageName}`, '_blank');
+							}}
 							title={`${t("config.openPackageDetail")}: ${pkg.name}`}
 						>
 							<div className="extensions-recommended-info">

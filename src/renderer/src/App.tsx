@@ -95,6 +95,7 @@ import type {
   AgentTab,
   AppInfo,
   AppSettings,
+  AppUpdateDownloadProgress,
   AppUpdateInfo,
   AvailableModel,
   FeedbackEnvironment,
@@ -292,7 +293,9 @@ export function App() {
   const goalIterationRef = useRef(0);
   /** 标记是否已经在等待自动续接,防止多个异步续接冲突 */
   const goalContinuationPendingRef = useRef(false);
-  /** 最大自动续接次数，达到后自动标记完成避免死循环 */
+  /** 记录上次续接前已看到的 agent 响应,用于识别运行状态抖动造成的无进展空转。 */
+  const goalLastResponseSignatureRef = useRef("");
+  /** 最大自动续接次数,达到后暂停而不是伪装完成,避免目标未完成时进入死循环。 */
   const GOAL_MAX_CONTINUATIONS = 5;
   /** 上一次 isAgentBusy 状态,用于检测 busy→idle 转换 */
   const prevIsAgentBusyRef = useRef(false);
@@ -423,6 +426,9 @@ export function App() {
   const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateDownloading, setUpdateDownloading] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<AppUpdateDownloadProgress | null>(null);
+  const [downloadedUpdatePath, setDownloadedUpdatePath] = useState<string | null>(null);
   const [upToDateVersion, setUpToDateVersion] = useState<string | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -895,6 +901,16 @@ export function App() {
     const offSettings = api.settings.onApplyWindow(() =>
       setSettingsNotice(t("settings.restartNotice")),
     );
+    const offUpdateProgress = api.app.onUpdateProgress((progress) => {
+      setUpdateProgress(progress);
+      if (progress.state === "completed") {
+        setUpdateDownloading(false);
+        setDownloadedUpdatePath(progress.filePath ?? null);
+      } else if (progress.state === "failed") {
+        setUpdateDownloading(false);
+        setUpdateError(progress.error ?? t("update.downloadFailed"));
+      }
+    });
     // 监听后端主动推送的 runtimeState 更新(如 agent_end 时重置 isStreaming),
     // 确保前端 isAgentBusy 判断基于最新状态,排队 flush 能正常触发。
     const offRuntimeState = api.agents.onRuntimeState((payload) =>
@@ -936,6 +952,7 @@ export function App() {
       offMessages();
       offLog();
       offSettings();
+      offUpdateProgress();
       offRuntimeState();
       offThinking();
       offRpcLog();
@@ -1129,7 +1146,8 @@ export function App() {
     if (activeAgentId && !isPendingAgentId(activeAgentId))
       void api.agents
         .commands(activeAgentId)
-        .then((cmds) => setCommands([...cmds, { name: "goal", description: "设置任务目标: /goal <目标>", source: "builtin" }]))
+        // goal 模式这版先不公开入口；保留底层实现,等待官方 plan/goal 能力稳定后再决定是否恢复。
+        .then((cmds) => setCommands(cmds))
         .catch(() => setCommands([]));
     else setCommands([]);
   }, [activeAgentId]);
@@ -1476,6 +1494,39 @@ export function App() {
   function showToast(message: string, duration = 3500) {
     setToast(message);
     window.setTimeout(() => setToast(null), duration);
+  }
+
+  async function downloadAppUpdate() {
+    const asset = updateInfo?.recommendedAsset;
+    if (!asset) {
+      await api.app.openExternal(updateInfo?.releaseUrl ?? appInfo.releasesUrl);
+      return;
+    }
+    setUpdateDownloading(true);
+    setDownloadedUpdatePath(null);
+    setUpdateProgress({
+      assetName: asset.name,
+      receivedBytes: 0,
+      totalBytes: asset.size,
+      percent: 0,
+      state: "downloading",
+    });
+    try {
+      const result = await api.app.downloadUpdate(asset);
+      setDownloadedUpdatePath(result.filePath);
+      showToast(t("update.downloadCompleted"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setUpdateError(message);
+      showToast(t("update.downloadFailed"));
+    } finally {
+      setUpdateDownloading(false);
+    }
+  }
+
+  async function installDownloadedAppUpdate() {
+    if (!downloadedUpdatePath) return;
+    await api.app.installUpdate(downloadedUpdatePath);
   }
 
   async function checkAppUpdate(source: "auto" | "manual" = "manual") {
@@ -2407,6 +2458,13 @@ export function App() {
     (activeAgent.status === "running" || activeRuntimeState?.isStreaming),
   );
 
+  // 切换 agent 时不能沿用上一会话的 busy 边沿,否则旧 agent 结束可能误触发新 agent 的 goal 续接。
+  useEffect(() => {
+    prevIsAgentBusyRef.current = false;
+    goalContinuationPendingRef.current = false;
+    goalLastResponseSignatureRef.current = "";
+  }, [activeAgentId]);
+
   // 自动续接：busy → idle 时，如果 goal 仍 active 则自动发送续接
   useEffect(() => {
     const busy = isAgentBusy;
@@ -2423,19 +2481,40 @@ export function App() {
         return;
       }
 
-      const iteration = goalIterationRef.current + 1;
-      goalIterationRef.current = iteration;
+      const latestResponseSignature =
+        goalMsgs
+          ?.filter((message) => message.role === "assistant" || message.role === "tool")
+          .slice(-1)
+          .map((message) => `${message.role}:${message.id}:${message.timestamp}`)[0] ?? "";
 
-      // 达到最大续接次数时自动完成，防止死循环
+      // 如果上一次自动续接后没有产生新的 assistant/tool 消息,说明只是状态抖动或发送失败重入,
+      // 继续 followUp 只会堆叠同一目标,因此暂停交给用户检查而不是无限循环。
+      if (
+        goalIterationRef.current > 0 &&
+        goalLastResponseSignatureRef.current === latestResponseSignature
+      ) {
+        goalStatusRef.current = "paused";
+        goalContinuationPendingRef.current = false;
+        setGoalStatus("paused");
+        showToast("🎯 Goal paused: no new agent response after auto continuation.", 4000);
+        return;
+      }
+
+      const iteration = goalIterationRef.current + 1;
+
+      // 达到最大续接次数时暂停,保留未完成状态,避免模型未调用 goal_complete 时无限自动续接。
       if (iteration > GOAL_MAX_CONTINUATIONS) {
-        goalStatusRef.current = "complete";
-        setGoalStatus("complete");
-        setGoalCompletedAt(Date.now());
+        goalStatusRef.current = "paused";
+        goalContinuationPendingRef.current = false;
+        setGoalStatus("paused");
+        showToast(`🎯 Goal paused after ${GOAL_MAX_CONTINUATIONS} auto continuations.`, 4000);
         return;
       }
 
       if (!goalContinuationPendingRef.current && text) {
+        goalIterationRef.current = iteration;
         goalContinuationPendingRef.current = true;
+        goalLastResponseSignatureRef.current = latestResponseSignature;
         const continuationMsg = `[goal 自动续接 #${iteration}]
 当前目标仍未完成，请继续工作:
 <goal_objective>
@@ -2455,7 +2534,7 @@ ${text}
     if (busy) {
       goalContinuationPendingRef.current = false;
     }
-  }, [isAgentBusy, activeAgentId, api.agents]);
+  }, [isAgentBusy, activeAgentId, api.agents, messagesByAgent]);
 
   async function sendPrompt() {
     if (
@@ -2538,6 +2617,7 @@ ${text}
       goalStartedAtRef.current = 0;
       goalIterationRef.current = 0;
       goalContinuationPendingRef.current = false;
+      goalLastResponseSignatureRef.current = "";
       setGoalStatus("none");
       setGoalText("");
       setGoalStartedAt(0);
@@ -2566,6 +2646,7 @@ ${text}
       goalStatusRef.current = "active";
       setGoalStatus("active");
       goalContinuationPendingRef.current = false;
+      goalLastResponseSignatureRef.current = "";
       void submitPromptSnapshot(activeAgentId!, `[goal 续接] 之前暂停的目标已恢复，请继续完成:
 <goal_objective>
 ${goalTextRef.current}
@@ -2586,6 +2667,7 @@ ${goalTextRef.current}
     goalStartedAtRef.current = Date.now();
     goalIterationRef.current = 0;
     goalContinuationPendingRef.current = false;
+    goalLastResponseSignatureRef.current = "";
     setGoalText(objective);
     setGoalStatus("active");
     setGoalStartedAt(Date.now());
@@ -4361,9 +4443,14 @@ ${goalTextRef.current}
         <UpdateModal
           info={updateInfo}
           checking={updateChecking}
+          downloading={updateDownloading}
+          progress={updateProgress}
+          downloadedPath={downloadedUpdatePath}
           onClose={() => setUpdateInfo(null)}
           onOpenRelease={() => api.app.openExternal(updateInfo.releaseUrl)}
-          onDownload={() =>
+          onDownload={() => void downloadAppUpdate()}
+          onInstall={() => void installDownloadedAppUpdate()}
+          onBrowserDownload={() =>
             api.app.openExternal(
               updateInfo.recommendedAsset?.url ?? updateInfo.releaseUrl,
             )
@@ -4730,13 +4817,31 @@ function maskHomePath(value: string) {
     .replace(/(\/Users\/)[^/]+/g, "$1<user>");
 }
 
+function formatUpdateBytes(bytes?: number) {
+  if (!bytes || bytes <= 0) return "-";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value >= 10 ? value.toFixed(1) : value.toFixed(2)} ${units[unitIndex]}`;
+}
+
 function UpdateModal(props: {
   info: AppUpdateInfo;
   checking: boolean;
+  downloading: boolean;
+  progress: AppUpdateDownloadProgress | null;
+  downloadedPath: string | null;
   onClose: () => void;
   onDownload: () => void;
+  onInstall: () => void;
+  onBrowserDownload: () => void;
   onOpenRelease: () => void;
 }) {
+  const progressPercent = props.progress?.percent ?? 0;
   return (
     <div className="modal-backdrop update-backdrop">
       <section className="update-modal">
@@ -4760,6 +4865,33 @@ function UpdateModal(props: {
               })}
             </p>
           )}
+          {props.progress && (
+            <div className="update-download-progress">
+              <div className="update-progress-header">
+                <span>{props.progress.assetName}</span>
+                <span>{progressPercent ? `${progressPercent.toFixed(1)}%` : t("update.downloading")}</span>
+              </div>
+              <div className="update-progress-track">
+                <div
+                  className="update-progress-bar"
+                  style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }}
+                />
+              </div>
+              <div className="update-progress-meta">
+                <span>
+                  {formatUpdateBytes(props.progress.receivedBytes)} / {formatUpdateBytes(props.progress.totalBytes)}
+                </span>
+                <span>
+                  {props.progress.bytesPerSecond
+                    ? `${formatUpdateBytes(props.progress.bytesPerSecond)}/s`
+                    : ""}
+                </span>
+              </div>
+              {props.downloadedPath && (
+                <div className="update-downloaded-path">{props.downloadedPath}</div>
+              )}
+            </div>
+          )}
           <div className="update-notes markdown-body">
             {/* GitHub Release notes 通常是 Markdown;这里复用聊天渲染链路支持标题、列表、链接和代码块。 */}
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -4771,13 +4903,22 @@ function UpdateModal(props: {
           <button onClick={props.onOpenRelease}>
             {t("update.openRelease")}
           </button>
-          <button
-            className="primary"
-            disabled={props.checking}
-            onClick={props.onDownload}
-          >
+          <button onClick={props.onBrowserDownload}>
             {t("update.browserDownload")}
           </button>
+          {props.downloadedPath ? (
+            <button className="primary" onClick={props.onInstall}>
+              {t("update.installDownloaded")}
+            </button>
+          ) : (
+            <button
+              className="primary"
+              disabled={props.checking || props.downloading || !props.info.recommendedAsset}
+              onClick={props.onDownload}
+            >
+              {props.downloading ? t("update.downloading") : t("update.downloadInApp")}
+            </button>
+          )}
         </div>
       </section>
     </div>

@@ -7,6 +7,7 @@ import { SettingsTab } from "./config/SettingsTab";
 import { SkillsTab } from "./config/SkillsTab";
 import { ExtensionsTab } from "./config/ExtensionsTab";
 import { ImTab } from "./config/ImTab";
+import { LogsTab } from "./config/LogsTab";
 import { CloseIconButton } from "./components/ui/IconButton";
 import { t } from "./i18n";
 import type {
@@ -166,7 +167,7 @@ export function ConfigModal(props: ConfigModalProps) {
 
 function ConfigModalContent(props: ConfigModalProps) {
 	const { open, onClose, onSaved } = props;
-	const [section, setSection] = useState<"config" | "skills" | "extensions" | "im">("config");
+	const [section, setSection] = useState<"config" | "skills" | "extensions" | "im" | "logs">("config");
 	const [tab, setTab] = useState<ConfigTab>("models");
 	const [loading, setLoading] = useState(false);
 	const [saving, setSaving] = useState(false);
@@ -327,6 +328,7 @@ function ConfigModalContent(props: ConfigModalProps) {
 			void refreshExtensions();
 			return;
 		}
+		if (section === "logs") return;
 		void loadConfig(tab);
 	}, [open, section, tab, loadConfig]);
 
@@ -927,6 +929,15 @@ function ConfigModalContent(props: ConfigModalProps) {
 								{t("config.nav.im")}
 							</button>
 						</div>
+						<div className="config-sidebar-group">
+							<span>{t("config.group.diagnostics")}</span>
+							<button
+								className={section === "logs" ? "active" : ""}
+								onClick={() => setSection("logs")}
+							>
+								{t("config.nav.logs")}
+							</button>
+						</div>
 					</aside>
 
 					<main className="config-main">
@@ -1036,6 +1047,10 @@ function ConfigModalContent(props: ConfigModalProps) {
 
 					{section === "im" && !loading && (
 						<ImTab />
+					)}
+
+					{section === "logs" && !loading && (
+						<LogsTab />
 					)}
 
 					{section === "skills" && !loading && (

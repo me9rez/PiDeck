@@ -4,7 +4,11 @@ import type {
 	AgentRuntimeState,
 	AgentTab,
 	AppInfo,
+	AppLogEntry,
+	AppLogQuery,
 	AppSettings,
+	AppUpdateDownloadProgress,
+	AppUpdateDownloadResult,
 	AppUpdateInfo,
 	AvailableModel,
 	ChatMessage,
@@ -166,10 +170,25 @@ const api = {
 				customPath,
 			) as Promise<PiInstallStatus>,
 	},
+	logs: {
+		list: (query?: AppLogQuery) =>
+			ipcRenderer.invoke(ipcChannels.logsList, query ?? {}) as Promise<AppLogEntry[]>,
+		clear: () => ipcRenderer.invoke(ipcChannels.logsClear) as Promise<void>,
+		openFolder: () => ipcRenderer.invoke(ipcChannels.logsOpenFolder) as Promise<void>,
+	},
 	app: {
 		info: () => ipcRenderer.invoke(ipcChannels.appInfo) as Promise<AppInfo>,
 		checkUpdate: () =>
 			ipcRenderer.invoke(ipcChannels.appCheckUpdate) as Promise<AppUpdateInfo>,
+		downloadUpdate: (asset: { name: string; url: string }) =>
+			ipcRenderer.invoke(
+				ipcChannels.appDownloadUpdate,
+				asset,
+			) as Promise<AppUpdateDownloadResult>,
+		installUpdate: (filePath: string) =>
+			ipcRenderer.invoke(ipcChannels.appInstallUpdate, filePath) as Promise<void>,
+		onUpdateProgress: (callback: (progress: AppUpdateDownloadProgress) => void) =>
+			subscribe(ipcChannels.appUpdateProgress, callback),
 		feedbackEnvironment: () =>
 			ipcRenderer.invoke(
 				ipcChannels.appFeedbackEnvironment,

@@ -2887,6 +2887,8 @@ const HIDDEN_DESKTOP_BUILTIN_COMMAND_NAMES = new Set([
 	"hotkeys",
 	"login",
 	"logout",
+	// goal 模式暂不作为桌面端推荐命令展示,避免当前版本引导用户使用未稳定能力。
+	"goal",
 ]);
 
 function isBuiltinDesktopCommand(command: PiCommand) {

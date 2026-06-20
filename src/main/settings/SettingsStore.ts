@@ -41,7 +41,8 @@ export class SettingsStore {
     } catch {
       this.settings = { ...defaultSettings };
     }
-    // 检测并保存安装类型（首次启动或未记录时）
+    // 每次启动都校准安装类型：Windows 便携版由 electron-builder 注入运行时环境变量,
+    // 该信号比旧 settings 更可信,可修正用户从安装版/旧版本迁移后残留的 installed 记录。
     await this.detectAndSaveInstallationType();
     this.applyMenu();
     return this.get();
@@ -104,27 +105,22 @@ export class SettingsStore {
    *     且解压后的应用无法判断原始分发格式，统一标记为 installed。
    *   - 用户从 ZIP 手动解压的情况无法区分，视为已安装。
    * 
-   * 只在首次启动（未记录）时检测，后续保持首次记录，
-   * 避免覆盖用户从便携版迁移到安装版后的记录。
+   * Windows 便携版的环境变量是运行时事实,必须允许覆盖旧的持久化值；
+   * 否则用户曾经被记录为 installed 后,便携版会一直推荐安装版更新包。
    */
   private async detectAndSaveInstallationType() {
-    if (this.settings.installationType) {
-      // 已有记录，不重复检测
-      return;
-    }
-
     let installationType: "portable" | "installed";
 
-    // Windows: 通过 PORTABLE_EXECUTABLE_DIR 判断
+    // Windows: electron-builder portable 目标会在运行时注入 PORTABLE_EXECUTABLE_DIR。
     if (process.platform === "win32") {
       const isPortable = process.env.PORTABLE_EXECUTABLE_DIR !== undefined;
       installationType = isPortable ? "portable" : "installed";
     } else {
-      // macOS 和 Linux: electron-builder 不提供统一的环境变量来区分分发格式
-      // DMG/AppImage/DEB 解压后都是普通应用目录，无法回溯原始格式
-      // 统一标记为 installed（已安装/已部署）
+      // macOS 和 Linux: electron-builder 不提供统一环境变量区分原始分发格式。
       installationType = "installed";
     }
+
+    if (this.settings.installationType === installationType) return;
 
     this.settings.installationType = installationType;
     await this.save();

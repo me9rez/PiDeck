@@ -8,8 +8,9 @@ import {
 	shell,
 	Tray,
 } from "electron";
-import { join } from "node:path";
-import { readFile, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
+import { createWriteStream } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { is } from "@electron-toolkit/utils";
 // 使用 ?asset 后缀导入图标，electron-vite 会在构建时将其复制到输出目录并提供正确的运行时路径
 // 这解决了打包后 build/ 目录不在 asar 中导致托盘图标丢失的问题
@@ -24,10 +25,22 @@ process.stderr.on("error", (err: NodeJS.ErrnoException) => {
 	if (err.code === "EPIPE") return;
 	throw err;
 });
+
+process.on("uncaughtException", (error) => {
+	void appLogger?.error("process", "Uncaught exception", error);
+	console.error("Uncaught exception:", error);
+});
+process.on("unhandledRejection", (reason) => {
+	void appLogger?.error("process", "Unhandled rejection", reason);
+	console.error("Unhandled rejection:", reason);
+});
 import { ipcChannels } from "../shared/ipc";
 import type {
 	AppSettings,
 	AppUpdateAsset,
+	AppUpdateDownloadProgress,
+	AppLogQuery,
+	AppUpdateDownloadResult,
 	AppUpdateInfo,
 	CreateAgentInput,
 	FeishuBotConfig,
@@ -54,6 +67,7 @@ import { TelemetryService } from "./telemetry/TelemetryService";
 import { SkillManager } from "./skills/SkillManager";
 import { ExtensionManager } from "./extensions/ExtensionManager";
 import { WebServiceManager } from "./web/WebServiceManager";
+import { AppLogger } from "./logging/AppLogger";
 import { FeishuBridge } from "./feishu/FeishuBridge";
 import {
 	listBots,
@@ -86,6 +100,7 @@ let skillManager: SkillManager;
 let extensionManager: ExtensionManager;
 let webServiceManager: WebServiceManager;
 let terminalManager: TerminalSessionManager;
+let appLogger: AppLogger;
 let feishuBridge: FeishuBridge | null = null;
 
 const RELEASES_URL = "https://github.com/ayuayue/pi-desktop/releases";
@@ -136,10 +151,11 @@ function selectRecommendedAsset(
 ) {
 	const platform = process.platform;
 	const arch = process.arch;
-	// 优先使用持久化的安装类型，回退到运行时检测
+	// Windows 便携版以 electron-builder 注入的运行时环境变量为准；旧 settings 可能残留 installed。
 	const isPortable =
-		installationType === "portable" ||
-		(installationType === undefined && process.env.PORTABLE_EXECUTABLE_DIR !== undefined);
+		platform === "win32"
+			? process.env.PORTABLE_EXECUTABLE_DIR !== undefined || installationType === "portable"
+			: installationType === "portable";
 
 	// 映射资产以便匹配
 	const candidates = assets.map((asset) => ({
@@ -252,6 +268,7 @@ async function checkForAppUpdate(
 	installationType?: "portable" | "installed",
 ): Promise<AppUpdateInfo> {
 	const currentVersion = app.getVersion();
+	void appLogger.info("update", "Check for app update", { currentVersion, installationType });
 	const response = await fetch(LATEST_RELEASE_API, {
 		headers: {
 			Accept: "application/vnd.github+json",
@@ -268,6 +285,13 @@ async function checkForAppUpdate(
 		url: asset.browser_download_url,
 		size: asset.size,
 	}));
+	const recommendedAsset = selectRecommendedAsset(assets, installationType);
+	void appLogger.info("update", "App update check completed", {
+		currentVersion,
+		latestVersion,
+		hasUpdate: compareVersions(latestVersion, currentVersion) > 0,
+		recommendedAsset: recommendedAsset?.name,
+	});
 	return {
 		currentVersion,
 		latestVersion,
@@ -277,8 +301,88 @@ async function checkForAppUpdate(
 		releaseUrl: release.html_url || RELEASES_URL,
 		publishedAt: release.published_at,
 		assets,
-		recommendedAsset: selectRecommendedAsset(assets, installationType),
+		recommendedAsset,
 	};
+}
+
+function emitUpdateProgress(progress: AppUpdateDownloadProgress) {
+	if (!mainWindow || mainWindow.isDestroyed()) return;
+	mainWindow.webContents.send(ipcChannels.appUpdateProgress, progress);
+}
+
+async function downloadUpdateAsset(asset: AppUpdateAsset): Promise<AppUpdateDownloadResult> {
+	if (!asset.url || !/^https:\/\//i.test(asset.url)) {
+		throw new Error("无效的更新下载地址");
+	}
+
+	const safeName = basename(asset.name).replace(/[<>:"/\\|?*]+/g, "-");
+	const downloadDir = join(app.getPath("userData"), "updates");
+	await mkdir(downloadDir, { recursive: true });
+	const filePath = join(downloadDir, safeName);
+	const startedAt = Date.now();
+	let receivedBytes = 0;
+	let totalBytes = asset.size > 0 ? asset.size : undefined;
+
+	// 使用 Electron net 下载可继承 Chromium 的 TLS/代理能力；进度通过 IPC 推送给 renderer。
+	return new Promise((resolve, reject) => {
+			void appLogger.info("update", "Download update asset started", { assetName: asset.name, url: asset.url });
+		const request = net.request({ method: "GET", url: asset.url });
+		request.setHeader("User-Agent", `pi-desktop/${app.getVersion()}`);
+		request.on("redirect", (_statusCode, _method, redirectUrl) => {
+			// GitHub browser_download_url 通常会 302 到对象存储,必须显式跟随重定向。
+			request.followRedirect();
+			void appLogger.debug("update", "Follow update download redirect", { redirectUrl });
+		});
+		request.on("response", (response) => {
+			if (response.statusCode < 200 || response.statusCode >= 300) {
+				const error = new Error(`下载失败：HTTP ${response.statusCode}`);
+				emitUpdateProgress({ assetName: asset.name, receivedBytes, totalBytes, state: "failed", error: error.message });
+				reject(error);
+				return;
+			}
+
+			const contentLength = Number(response.headers["content-length"]);
+			if (Number.isFinite(contentLength) && contentLength > 0) totalBytes = contentLength;
+			const output = createWriteStream(filePath);
+			response.on("data", (chunk: Buffer) => {
+				receivedBytes += chunk.length;
+				output.write(chunk);
+				const elapsedSeconds = Math.max(0.001, (Date.now() - startedAt) / 1000);
+				emitUpdateProgress({
+					assetName: asset.name,
+					receivedBytes,
+					totalBytes,
+					percent: totalBytes ? Math.min(100, (receivedBytes / totalBytes) * 100) : undefined,
+					bytesPerSecond: receivedBytes / elapsedSeconds,
+					state: "downloading",
+				});
+			});
+			response.on("end", () => output.end());
+			output.on("finish", () => {
+				output.close(() => {
+					emitUpdateProgress({ assetName: asset.name, receivedBytes, totalBytes, percent: 100, state: "completed", filePath });
+					void appLogger.info("update", "Download update asset completed", { assetName: asset.name, filePath, receivedBytes });
+					resolve({ filePath, assetName: asset.name });
+				});
+			});
+			output.on("error", (error) => {
+				emitUpdateProgress({ assetName: asset.name, receivedBytes, totalBytes, state: "failed", error: error.message });
+				reject(error);
+			});
+		});
+		request.on("error", (error) => {
+			emitUpdateProgress({ assetName: asset.name, receivedBytes, totalBytes, state: "failed", error: error.message });
+			reject(error);
+		});
+		request.end();
+	});
+}
+
+async function installDownloadedUpdate(filePath: string) {
+	// Windows/Linux 不同包类型的真正静默自更新风险较高；这里交给系统打开安装包或文件位置。
+	// 便携版用户通常下载 zip/AppImage/tar.gz 后需要替换当前目录,避免在运行中覆盖自身可执行文件。
+	await appLogger.info("update", "Open downloaded update package", { filePath });
+	await shell.openPath(filePath);
 }
 
 function setupTray() {
@@ -369,8 +473,11 @@ function printStartupInfo() {
 	const nodeVersion = process.versions.node;
 	const platform = process.platform;
 	const arch = process.arch;
-	const installationType = settings.installationType || "unknown";
+	const persistentInstallationType = settings.installationType || "unknown";
 	const isPortableEnv = process.env.PORTABLE_EXECUTABLE_DIR !== undefined;
+	// Debug 中展示实际生效类型,便于发现持久化值和运行时便携信号不一致的问题。
+	const effectiveInstallationType =
+		process.platform === "win32" && isPortableEnv ? "portable" : persistentInstallationType;
 
 	// 执行 console.log 输出到开发者工具
 	mainWindow.webContents.executeJavaScript(`
@@ -389,7 +496,7 @@ function printStartupInfo() {
 		console.log("");
 		console.log("%c📦 Application Info", "color: #3b82f6; font-weight: bold; font-size: 14px;");
 		console.log("%c  Version:         %c${appVersion}", "color: #6b7280;", "color: #10b981; font-weight: bold;");
-		console.log("%c  Installation:    %c${installationType}", "color: #6b7280;", "color: #f59e0b; font-weight: bold;");
+		console.log("%c  Installation:    %c${effectiveInstallationType}", "color: #6b7280;", "color: #f59e0b; font-weight: bold;");
 		console.log("%c  Platform:        %c${platform} (${arch})", "color: #6b7280;", "color: #8b5cf6;");
 		console.log("");
 		console.log("%c⚡ Runtime Info", "color: #3b82f6; font-weight: bold; font-size: 14px;");
@@ -399,7 +506,7 @@ function printStartupInfo() {
 		console.log("");
 		console.log("%c🔧 Debug Info", "color: #3b82f6; font-weight: bold; font-size: 14px;");
 		console.log("%c  PORTABLE_EXECUTABLE_DIR: %c${isPortableEnv ? '✅ Set' : '❌ Not set'}", "color: #6b7280;", "color: ${isPortableEnv ? '#10b981' : '#ef4444'};");
-		console.log("%c  Persistent installationType: %c${installationType}", "color: #6b7280;", "color: #8b5cf6; font-weight: bold;");
+		console.log("%c  Persistent installationType: %c${persistentInstallationType}", "color: #6b7280;", "color: #8b5cf6; font-weight: bold;");
 		console.log("");
 		console.log("%c🐛 Found a bug? Report at:", "color: #6b7280;");
 		console.log("%c  https://github.com/ayuayue/PiDeck/issues", "color: #3b82f6; text-decoration: underline;");
@@ -547,10 +654,12 @@ function registerFeishuIpc() {
 			feishuBridge = new FeishuBridge(botConfig, agentManager, () => mainWindow, () => projectStore.list());
 			await feishuBridge.start();
 			console.log("[Feishu] 连接成功，状态:", JSON.stringify(feishuBridge.getStatus()));
+			void appLogger.info("feishu", "Feishu connected", { botId: botConfig.id, name: botConfig.name });
 			return { success: true, message: "连接成功" };
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			console.error("[Feishu] 连接失败:", message);
+			void appLogger.error("feishu", "Feishu connect failed", error);
 			return { success: false, message };
 		}
 	});
@@ -564,6 +673,7 @@ function registerFeishuIpc() {
 			feishuBridge = null;
 			console.log("[Feishu] bridge 已置 null");
 		}
+		void appLogger.info("feishu", "Feishu disconnected");
 		return { success: true };
 	});
 
@@ -593,6 +703,7 @@ function registerFeishuIpc() {
 				appSecret: input.appSecret,
 				defaultUserOpenId: input.defaultUserOpenId,
 			});
+			void appLogger.info("feishu", "Feishu bot added", { botId: botConfig.id, name: botConfig.name });
 			return { success: true, bot: botConfig };
 		} catch (error) {
 			return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -605,12 +716,15 @@ function registerFeishuIpc() {
 			feishuBridge.stop();
 			feishuBridge = null;
 		}
-		return removeFeishuBot(botId);
+		const result = removeFeishuBot(botId);
+		void appLogger.info("feishu", "Feishu bot removed", { botId });
+		return result;
 	});
 
 	// 更新 Bot 配置
 	ipcMain.handle(ipcChannels.feishuBotConfig, async (_event, botId: string, patch: Partial<FeishuBotConfig>) => {
 		const updated = updateFeishuBot(botId, patch);
+		void appLogger.info("feishu", "Feishu bot config updated", { botId, keys: Object.keys(patch) });
 		// 热更新到运行中的 bridge，无需重连
 		if (feishuBridge && feishuBridge.getStatus().status === "connected") {
 			feishuBridge.updateBotConfig(patch);
@@ -678,6 +792,7 @@ function registerFeishuIpc() {
 			}
 			feishuBridge = new FeishuBridge(botConfig, agentManager, () => mainWindow, () => projectStore.list());
 			await feishuBridge.start();
+			void appLogger.info("feishu", "Feishu connected by saved bot", { botId, name: botConfig.name });
 			return { success: true, message: "连接成功" };
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
@@ -698,16 +813,23 @@ function registerFeishuIpc() {
 
 function registerIpc() {
 	ipcMain.handle(ipcChannels.projectsList, () => projectStore.list());
-	ipcMain.handle(ipcChannels.projectsAdd, async () =>
-		projectStore.chooseAndAdd(),
-	);
+	ipcMain.handle(ipcChannels.projectsAdd, async () => {
+		const project = await projectStore.chooseAndAdd();
+		void appLogger.info("project", "Project added", { projectId: project?.id, path: project?.path });
+		return project;
+	});
 	ipcMain.handle(ipcChannels.projectsRemove, async (_event, id: string) => {
 		await projectStore.remove(id);
+		void appLogger.info("project", "Project removed", { projectId: id });
 		return projectStore.list();
 	});
 	ipcMain.handle(
 		ipcChannels.projectsReorder,
-		(_event, projectIds: string[]) => projectStore.reorder(projectIds),
+		async (_event, projectIds: string[]) => {
+			const result = await projectStore.reorder(projectIds);
+			void appLogger.info("project", "Projects reordered", { count: projectIds.length });
+			return result;
+		},
 	);
 
 	ipcMain.handle(ipcChannels.filesList, async (_event, projectId: string) => {
@@ -735,14 +857,18 @@ function registerIpc() {
 
 	ipcMain.handle(ipcChannels.filesWriteContent, async (_event, path: string, content: string) => {
 		await writeFile(path, content, "utf8");
+		void appLogger.info("file", "File written", { path, bytes: Buffer.byteLength(content, "utf8") });
 	});
 
 	ipcMain.handle(ipcChannels.filesDelete, async (_event, path: string, recursive?: boolean) => {
 		await fileSystemService.delete(path, recursive);
+		void appLogger.info("file", "File deleted", { path, recursive: Boolean(recursive) });
 	});
 
 	ipcMain.handle(ipcChannels.filesRename, async (_event, path: string, newName: string) => {
-		return fileSystemService.rename(path, newName);
+		const result = await fileSystemService.rename(path, newName);
+		void appLogger.info("file", "File renamed", { path, newName, result });
+		return result;
 	});
 
 	ipcMain.handle(
@@ -763,6 +889,7 @@ function registerIpc() {
 		ipcChannels.sessionsRename,
 		async (_event, filePath: string, newName: string) => {
 			await sessionScanner.rename(filePath, newName);
+			void appLogger.info("session", "Session renamed", { filePath, newName });
 		},
 	);
 	ipcMain.handle(
@@ -775,9 +902,10 @@ function registerIpc() {
 		(_event, projectId: string, filePath: string) =>
 			agentManager.exportSessionHtml(projectId, filePath),
 	);
-	ipcMain.handle(ipcChannels.sessionsDelete, (_event, filePath: string) =>
-		sessionScanner.delete(filePath),
-	);
+	ipcMain.handle(ipcChannels.sessionsDelete, async (_event, filePath: string) => {
+		await sessionScanner.delete(filePath);
+		void appLogger.info("session", "Session deleted", { filePath });
+	});
 	ipcMain.handle(
 		ipcChannels.codexSessionsScan,
 		async (_event, projectId: string) => {
@@ -853,10 +981,17 @@ function registerIpc() {
 		},
 	);
 
-	ipcMain.handle(ipcChannels.piCheck, () => {
+	ipcMain.handle(ipcChannels.piCheck, async () => {
 		// 用户手动指定的路径优先于自动检测
 		const settings = settingsStore.get();
-		return piLocator.check(settings.customPiPath);
+		const status = await piLocator.check(settings.customPiPath);
+		void appLogger.info("pi", "Pi check completed", {
+			installed: status.installed,
+			version: status.version,
+			command: status.command,
+			error: status.error,
+		});
+		return status;
 	});
 	ipcMain.handle(
 		ipcChannels.piCheckCustom,
@@ -867,6 +1002,12 @@ function registerIpc() {
 			if (status.installed && status.command) {
 				await settingsStore.update({ customPiPath: status.command });
 			}
+			void appLogger.info("pi", "Custom pi path checked", {
+				installed: status.installed,
+				version: status.version,
+				command: status.command,
+				error: status.error,
+			});
 			return status;
 		},
 	);
@@ -877,6 +1018,19 @@ function registerIpc() {
 	ipcMain.handle(ipcChannels.appCheckUpdate, () =>
 		checkForAppUpdate(settingsStore.get().installationType),
 	);
+	ipcMain.handle(
+		ipcChannels.appDownloadUpdate,
+		async (_event, asset: AppUpdateAsset) => downloadUpdateAsset(asset),
+	);
+	ipcMain.handle(
+		ipcChannels.appInstallUpdate,
+		async (_event, filePath: string) => installDownloadedUpdate(filePath),
+	);
+	ipcMain.handle(ipcChannels.logsList, async (_event, query: AppLogQuery) =>
+		appLogger.list(query),
+	);
+	ipcMain.handle(ipcChannels.logsClear, async () => appLogger.clear());
+	ipcMain.handle(ipcChannels.logsOpenFolder, async () => appLogger.openFolder());
 	ipcMain.handle(ipcChannels.appFeedbackEnvironment, async () => {
 		// 反馈报告只包含诊断必需的运行时版本与 pi 检测结果，不读取配置密钥或会话内容。
 		const pi = await piLocator.check();
@@ -931,6 +1085,7 @@ function registerIpc() {
 		ipcChannels.settingsUpdate,
 		async (_event, patch: Partial<AppSettings>) => {
 			const settings = await settingsStore.update(patch);
+			void appLogger.info("settings", "Settings updated", { keys: Object.keys(patch) });
 			if (
 				"desktopProxyEnabled" in patch ||
 				"desktopProxyUrl" in patch ||
@@ -969,33 +1124,58 @@ function registerIpc() {
 	);
 	ipcMain.handle(
 		ipcChannels.settingsTestPiProxy,
-		() => testPiProxy(settingsStore.get()),
+		async () => {
+			const result = await testPiProxy(settingsStore.get());
+			void appLogger.info("settings", "Pi proxy tested", {
+				success: result.success,
+				elapsedMs: result.elapsedMs,
+				statusCode: result.statusCode,
+				error: result.error,
+			});
+			return result;
+		},
 	);
 
 	ipcMain.handle(ipcChannels.skillsList, () => skillManager.list());
-	ipcMain.handle(ipcChannels.skillsCreate, (_event, input: CreatePiSkillInput) =>
-		skillManager.create(input),
-	);
-	ipcMain.handle(ipcChannels.skillsToggle, (_event, path: string, enabled: boolean) =>
-		skillManager.toggle(path, enabled),
-	);
-	ipcMain.handle(ipcChannels.skillsDelete, (_event, path: string) =>
-		skillManager.delete(path),
-	);
+	ipcMain.handle(ipcChannels.skillsCreate, async (_event, input: CreatePiSkillInput) => {
+		const result = await skillManager.create(input);
+		void appLogger.info("skill", "Skill created", { name: input.name, locationId: input.locationId });
+		return result;
+	});
+	ipcMain.handle(ipcChannels.skillsToggle, async (_event, path: string, enabled: boolean) => {
+		const result = await skillManager.toggle(path, enabled);
+		void appLogger.info("skill", "Skill toggled", { path, enabled });
+		return result;
+	});
+	ipcMain.handle(ipcChannels.skillsDelete, async (_event, path: string) => {
+		const result = await skillManager.delete(path);
+		void appLogger.info("skill", "Skill deleted", { path });
+		return result;
+	});
 	ipcMain.handle(ipcChannels.skillsOpenFolder, (_event, path?: string) =>
 		skillManager.openFolder(path),
 	);
 	ipcMain.handle(ipcChannels.extensionsList, () => extensionManager.list());
-	ipcMain.handle(ipcChannels.extensionsUninstall, (_event, source: string, scope?: "user" | "project" | "unknown") =>
-		extensionManager.uninstall(source, scope),
-	);
-	ipcMain.handle(ipcChannels.extensionsInstall, (_event, source: string) =>
-		extensionManager.install(source),
-	);
+	ipcMain.handle(ipcChannels.extensionsUninstall, async (_event, source: string, scope?: "user" | "project" | "unknown") => {
+		const result = await extensionManager.uninstall(source, scope);
+		void appLogger.info("extension", "Extension uninstalled", { source, scope });
+		return result;
+	});
+	ipcMain.handle(ipcChannels.extensionsInstall, async (_event, source: string) => {
+		const result = await extensionManager.install(source);
+		void appLogger.info("extension", "Extension installed", { source });
+		return result;
+	});
 
 	ipcMain.handle(ipcChannels.agentsList, () => agentManager.list());
 	ipcMain.handle(ipcChannels.agentsCreate, async (_event, input: CreateAgentInput) => {
 		const tab = await agentManager.create(input);
+		void appLogger.info("agent", "Agent created", {
+			agentId: tab.id,
+			projectId: input.projectId,
+			title: tab.title,
+			sessionPath: tab.sessionPath,
+		});
 		// Session Mirror: Pi 中创建会话时，飞书自动拉群（1会话=1群）
 		if (feishuBridge && feishuBridge.getStatus().status === "connected") {
 			void feishuBridge.ensureSessionMirror(tab.id, tab.title, tab.sessionPath).catch((e) => {
@@ -1006,12 +1186,16 @@ function registerIpc() {
 	});
 	ipcMain.handle(
 		ipcChannels.agentsRename,
-		(_event, agentId: string, name: string) =>
-			agentManager.rename(agentId, name),
+		async (_event, agentId: string, name: string) => {
+			const result = await agentManager.rename(agentId, name);
+			void appLogger.info("agent", "Agent renamed", { agentId, name });
+			return result;
+		},
 	);
 	ipcMain.handle(ipcChannels.agentsStop, async (_event, agentId: string) => {
 		terminalManager.closeAgent(agentId);
 		await agentManager.stop(agentId);
+		void appLogger.info("agent", "Agent stopped", { agentId });
 	});
 	ipcMain.handle(ipcChannels.agentsPrompt, async (_event, input: SendPromptInput) => {
 		// Session Mirror: Pi 中发消息时，为飞书群开启流式卡片 + 转发用户消息
@@ -1034,14 +1218,23 @@ function registerIpc() {
 				}
 			}
 		}
-		return agentManager.sendPrompt(input);
+		const result = await agentManager.sendPrompt(input);
+		void appLogger.info("agent", "Prompt sent", {
+			agentId: input.agentId,
+			messageLength: input.message.length,
+			imageCount: input.images?.length ?? 0,
+			streamingBehavior: input.streamingBehavior,
+		});
+		return result;
 	});
 	ipcMain.handle(ipcChannels.agentsAbort, async (_event, agentId: string) => {
 		// Session Mirror: 停止飞书流式卡片
 		if (feishuBridge) {
 			feishuBridge.stopSessionMirrorRun(agentId);
 		}
-		return agentManager.abort(agentId);
+		const result = await agentManager.abort(agentId);
+		void appLogger.info("agent", "Agent aborted", { agentId });
+		return result;
 	});
 	ipcMain.handle(ipcChannels.agentsExportHtml, (_event, agentId: string) =>
 		agentManager.exportHtml(agentId),
@@ -1054,24 +1247,35 @@ function registerIpc() {
 		(_event, agentId: string, entryId: string) =>
 			agentManager.forkSession(agentId, entryId),
 	);
-	ipcMain.handle(ipcChannels.agentsCloneSession, (_event, agentId: string) =>
-		agentManager.cloneSession(agentId),
-	);
+	ipcMain.handle(ipcChannels.agentsCloneSession, async (_event, agentId: string) => {
+		const result = await agentManager.cloneSession(agentId);
+		void appLogger.info("agent", "Agent session cloned", { agentId });
+		return result;
+	});
 	ipcMain.handle(
 		ipcChannels.agentsSwitchSession,
-		(_event, agentId: string, sessionPath: string) =>
-			agentManager.switchSession(agentId, sessionPath),
+		async (_event, agentId: string, sessionPath: string) => {
+			const result = await agentManager.switchSession(agentId, sessionPath);
+			void appLogger.info("agent", "Agent switched session", { agentId, sessionPath });
+			return result;
+		},
 	);
-	ipcMain.handle(ipcChannels.agentsReload, (_event, agentId: string) =>
-		agentManager.reload(agentId),
-	);
+	ipcMain.handle(ipcChannels.agentsReload, async (_event, agentId: string) => {
+		const result = await agentManager.reload(agentId);
+		void appLogger.info("agent", "Agent reloaded", { agentId });
+		return result;
+	});
 	ipcMain.handle(ipcChannels.agentsRestart, async (_event, agentId: string) => {
 		terminalManager.closeAgent(agentId);
-		return agentManager.restart(agentId);
+		const result = await agentManager.restart(agentId);
+		void appLogger.info("agent", "Agent restarted", { agentId });
+		return result;
 	});
-	ipcMain.handle(ipcChannels.agentsCompact, (_event, agentId: string) =>
-		agentManager.compact(agentId),
-	);
+	ipcMain.handle(ipcChannels.agentsCompact, async (_event, agentId: string) => {
+		const result = await agentManager.compact(agentId);
+		void appLogger.info("agent", "Agent compact requested", { agentId });
+		return result;
+	});
 	ipcMain.handle(ipcChannels.agentsRuntimeState, (_event, agentId: string) =>
 		agentManager.getRuntimeState(agentId),
 	);
@@ -1083,16 +1287,22 @@ function registerIpc() {
 	);
 	ipcMain.handle(
 		ipcChannels.agentsSetModel,
-		(_event, agentId: string, provider: string, modelId: string) =>
-			agentManager.setModel(agentId, provider, modelId),
+		async (_event, agentId: string, provider: string, modelId: string) => {
+			const result = await agentManager.setModel(agentId, provider, modelId);
+			void appLogger.info("agent", "Agent model changed", { agentId, provider, modelId });
+			return result;
+		},
 	);
 	ipcMain.handle(ipcChannels.agentsCycleThinking, (_event, agentId: string) =>
 		agentManager.cycleThinking(agentId),
 	);
 	ipcMain.handle(
 		ipcChannels.agentsSetThinking,
-		(_event, agentId: string, level: string) =>
-			agentManager.setThinking(agentId, level),
+		async (_event, agentId: string, level: string) => {
+			const result = await agentManager.setThinking(agentId, level);
+			void appLogger.info("agent", "Agent thinking level changed", { agentId, level });
+			return result;
+		},
 	);
 	ipcMain.handle("agents:commands", async (_event, agentId: string) => {
 		try {
@@ -1109,9 +1319,11 @@ function registerIpc() {
 	ipcMain.handle(ipcChannels.terminalEnsure, (_event, agentId: string) =>
 		terminalManager.ensure(agentId),
 	);
-	ipcMain.handle(ipcChannels.terminalCreate, (_event, agentId: string) =>
-		terminalManager.create(agentId),
-	);
+	ipcMain.handle(ipcChannels.terminalCreate, async (_event, agentId: string) => {
+		const result = await terminalManager.create(agentId);
+		void appLogger.info("terminal", "Terminal created", { agentId, tabId: result.id });
+		return result;
+	});
 	ipcMain.handle(
 		ipcChannels.terminalInput,
 		(_event, tabId: string, data: string) => {
@@ -1126,6 +1338,7 @@ function registerIpc() {
 	);
 	ipcMain.handle(ipcChannels.terminalClose, (_event, tabId: string) => {
 		terminalManager.close(tabId);
+		void appLogger.info("terminal", "Terminal closed", { tabId });
 	});
 
 	// ── 配置管理 ──────────────────────────────────────
@@ -1138,41 +1351,58 @@ function registerIpc() {
 	ipcMain.handle(ipcChannels.configGetSettings, () =>
 		configManager.getSettingsConfig(),
 	);
-	ipcMain.handle(ipcChannels.configSaveModels, (_event, data) =>
-		configManager.saveModelsConfig(data),
-	);
-	ipcMain.handle(ipcChannels.configSaveAuth, (_event, data) =>
-		configManager.saveAuthConfig(data),
-	);
-	ipcMain.handle(ipcChannels.configSaveSettings, (_event, settings) =>
-		configManager.saveSettingsConfig(settings),
-	);
-	ipcMain.handle(ipcChannels.configSaveRaw, (_event, fileName, rawJson) =>
-		configManager.saveRawConfig(fileName, rawJson),
-	);
+	ipcMain.handle(ipcChannels.configSaveModels, async (_event, data) => {
+		const result = await configManager.saveModelsConfig(data);
+		void appLogger.info("config", "Models config saved", { providerCount: Object.keys(data?.providers ?? {}).length });
+		return result;
+	});
+	ipcMain.handle(ipcChannels.configSaveAuth, async (_event, data) => {
+		const result = await configManager.saveAuthConfig(data);
+		void appLogger.info("config", "Auth config saved", { authCount: Object.keys(data ?? {}).length });
+		return result;
+	});
+	ipcMain.handle(ipcChannels.configSaveSettings, async (_event, settings) => {
+		const result = await configManager.saveSettingsConfig(settings);
+		void appLogger.info("config", "Pi settings config saved", { keys: Object.keys(settings ?? {}) });
+		return result;
+	});
+	ipcMain.handle(ipcChannels.configSaveRaw, async (_event, fileName, rawJson) => {
+		const result = await configManager.saveRawConfig(fileName, rawJson);
+		void appLogger.info("config", "Raw config saved", { fileName, bytes: Buffer.byteLength(rawJson, "utf8") });
+		return result;
+	});
 	ipcMain.handle(ipcChannels.configExport, () =>
 		configManager.exportConfig(),
 	);
-	ipcMain.handle(ipcChannels.configImport, (_event, packageJson: string) =>
-		configManager.importConfig(packageJson),
-	);
+	ipcMain.handle(ipcChannels.configImport, async (_event, packageJson: string) => {
+		const result = await configManager.importConfig(packageJson);
+		void appLogger.info("config", "Config imported", { bytes: Buffer.byteLength(packageJson, "utf8"), valid: result.valid });
+		return result;
+	});
 	// 远程拉取 provider 模型列表
 	ipcMain.handle(
 		ipcChannels.configFetchModels,
-		(
+		async (
 			_event,
 			payload: { baseUrl: string; apiKey: string; apiType?: string },
-		) =>
-			configManager.fetchProviderModels(
+		) => {
+			const result = await configManager.fetchProviderModels(
 				payload.baseUrl,
 				payload.apiKey,
 				payload.apiType,
-			),
+			);
+			void appLogger.info("config", "Provider models fetched", {
+				baseUrl: payload.baseUrl,
+				apiType: payload.apiType,
+				modelCount: Array.isArray(result) ? result.length : undefined,
+			});
+			return result;
+		},
 	);
 	// 快速测试 provider 连接
 	ipcMain.handle(
 		ipcChannels.configTestProvider,
-		(
+		async (
 			_event,
 			payload: {
 				baseUrl: string;
@@ -1181,14 +1411,23 @@ function registerIpc() {
 				apiType?: string;
 				headers?: Record<string, string>;
 			},
-		) =>
-			configManager.testProviderConnection(
+		) => {
+			const result = await configManager.testProviderConnection(
 				payload.baseUrl,
 				payload.apiKey,
 				payload.modelId,
 				payload.apiType,
 				payload.headers,
-			),
+			);
+			void appLogger.info("config", "Provider connection tested", {
+				baseUrl: payload.baseUrl,
+				apiType: payload.apiType,
+				modelId: payload.modelId,
+				success: result.success,
+				error: result.error,
+			});
+			return result;
+		},
 	);
 
 	// 切换开发者控制台
@@ -1238,6 +1477,7 @@ app.whenReady().then(async () => {
 	codexSessionImporter = new CodexSessionImporter();
 	claudeSessionImporter = new ClaudeSessionImporter();
 	settingsStore = new SettingsStore();
+	appLogger = new AppLogger();
 	gitService = new GitService();
 	piLocator = new PiLocator();
 	configManager = new ConfigManager();
@@ -1272,6 +1512,12 @@ app.whenReady().then(async () => {
 	);
 
 	await settingsStore.load();
+	await appLogger.info("app", "Application started", {
+		version: app.getVersion(),
+		platform: process.platform,
+		arch: process.arch,
+		installationType: settingsStore.get().installationType,
+	});
 	await applyDesktopProxy(settingsStore.get());
 	await webServiceManager.applySettings(settingsStore.get()).catch((error) => {
 		console.error("Failed to start web service:", error);

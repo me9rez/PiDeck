@@ -308,6 +308,8 @@ export type PiPackageInfo = {
 	updated: string;
 	npmUrl: string;
 	repoUrl?: string;
+	/** pi.dev 详情页的 name 查询参数；部分包名和扩展展示名不完全一致。 */
+	piPackageName?: string;
 };
 
 export type PiExtensionListResult = {
@@ -356,6 +358,41 @@ export type AppUpdateInfo = {
 	publishedAt?: string;
 	assets: AppUpdateAsset[];
 	recommendedAsset?: AppUpdateAsset;
+};
+
+export type AppUpdateDownloadProgress = {
+	assetName: string;
+	receivedBytes: number;
+	totalBytes?: number;
+	percent?: number;
+	bytesPerSecond?: number;
+	state: "downloading" | "completed" | "failed";
+	filePath?: string;
+	error?: string;
+};
+
+export type AppUpdateDownloadResult = {
+	filePath: string;
+	assetName: string;
+};
+
+export type AppLogLevel = "debug" | "info" | "warn" | "error";
+
+export type AppLogEntry = {
+	id: string;
+	time: number;
+	level: AppLogLevel;
+	scope: string;
+	message: string;
+	detail?: unknown;
+};
+
+export type AppLogQuery = {
+	level?: AppLogLevel | "all";
+	search?: string;
+	from?: number;
+	to?: number;
+	limit?: number;
 };
 
 export type PiRuntimeEvent = {
