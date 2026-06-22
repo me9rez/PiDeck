@@ -20,9 +20,8 @@ export default defineConfig({
     siteTitle: "PiDeck",
     nav: [
       { text: "首页", link: "/" },
-      { text: "快速开始", link: "/guide/getting-started" },
+      { text: "使用指南", link: "/guide/usage-guide" },
       { text: "功能", link: "/guide/features" },
-      { text: "贡献者", link: "/guide/contributors" },
       { text: "更新日志", link: "/changelog" },
       {
         text: "下载",
@@ -34,6 +33,7 @@ export default defineConfig({
         {
           text: "使用指南",
           items: [
+            { text: "完整使用指南（新手向）", link: "/guide/usage-guide" },
             { text: "快速开始", link: "/guide/getting-started" },
             { text: "功能介绍", link: "/guide/features" },
             { text: "配置与 Skills", link: "/guide/settings" },

@@ -41,6 +41,26 @@ PiDeck 的核心目标是把多个本地 pi Agent 会话收拢到一个稳定的
 
 思考、工具调用和回答片段会聚合为活动轨迹，工具详情可展开和复制，运行中、完成、退出码等状态会在同一条流程里展示。对长任务来说，这比把所有调用明细直接堆进对话更容易扫描。
 
+## 外部编辑器集成
+
+PiDeck 支持在设置中配置外部编辑器，配置后在项目右键菜单或文件面板右键菜单中可以用指定编辑器打开项目或文件。
+
+目前支持以下编辑器：
+
+- **Visual Studio Code**（含 Insiders、VSCodium）
+- **Cursor**
+- **Zed**
+- **IntelliJ IDEA**
+- **WebStorm**
+- **PhpStorm**
+- **PyCharm**
+
+Windows 下编辑器检测会依次尝试 PATH、常见安装目录、Windows 注册表，自动发现已安装的编辑器。
+
+## 日志面板
+
+设置中的日志页现在支持按日志级别（Debug / Info / Warn / Error）和时间范围筛选，方便排查运行时问题。
+
 ## 终端 Dock
 
 当前 Agent 可以绑定独立终端 tab，支持 PowerShell、cmd、sh fallback、多 tab、主题切换、拖拽高度、右键复制选区和关闭确认。
