@@ -2,7 +2,7 @@
  * 消息分页加载 Hook
  * 实现首屏加载最新消息，向上滚动时加载更多历史消息
  */
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { ChatMessage } from "../../../shared/types";
 
 interface MessagePaginationOptions {
@@ -17,6 +17,8 @@ interface MessagePaginationResult {
   visibleMessages: ChatMessage[];
   hasMore: boolean;
   loadMore: () => void;
+  /** 一次性扩展分页窗口直到包含指定索引的消息（用于会话定位跳转）。 */
+  loadUntilIncluded: (index: number) => void;
   isLoading: boolean;
   reset: () => void;
   totalCount: number;
@@ -50,18 +52,23 @@ export function useMessagePagination({
     }
   }, [messages.length === 0, reset]);
 
-  // 当有新消息时，智能处理
+  // 跟踪上一次的完整消息数量，用于区分“新增消息（流式追加）”与“手动加载更多导致的 visibleCount 变化”。
+  // 只有 messages.length 真正增长时才自动展开窗口，避免手动 loadMore/loadUntilIncluded 后窗口被意外拉满。
+  const prevMessageCountRef = useRef(messages.length);
+
+  // 当有新消息追加时，智能处理：少量新消息（<10条，典型为流式回答）自动纳入可视窗口。
+  // 仅按新增条数递增 visibleCount，避免用户在回看历史时被新消息强行拉满窗口。
   useEffect(() => {
     if (!enabled) return;
-
-    // 新消息数量
-    const newMessageCount = messages.length - visibleCount;
-
-    // 如果有新消息且数量不多（<10条），自动显示
-    if (newMessageCount > 0 && newMessageCount < 10) {
-      setVisibleCount(messages.length);
+    const prev = prevMessageCountRef.current;
+    const delta = messages.length - prev;
+    prevMessageCountRef.current = messages.length;
+    if (delta > 0 && delta < 10) {
+      setVisibleCount((prevCount) =>
+        Math.min(prevCount + delta, messages.length, maxVisibleMessages),
+      );
     }
-  }, [messages.length, visibleCount, enabled]);
+  }, [messages.length, enabled, maxVisibleMessages]);
 
   // 加载更多历史消息
   const loadMore = useCallback(() => {
@@ -80,6 +87,21 @@ export function useMessagePagination({
     });
   }, [enabled, isLoading, pageSize, maxVisibleMessages, messages.length]);
 
+  // 一次性把分页窗口扩展到包含 `index`（在完整 messages 数组中的下标）。
+  // 可见窗口始终取末尾 visibleCount 条，起始 = length - visibleCount；
+  // 要包含 index 需要 visibleCount >= length - index，取较大值并封顶。
+  // 用于右侧“会话定位”点击未加载的旧消息时，先把该消息加载进可视范围再滚动定位。
+  const loadUntilIncluded = useCallback(
+    (index: number) => {
+      if (!enabled || index < 0 || index >= messages.length) return;
+      const needed = messages.length - index;
+      setVisibleCount((prev) =>
+        Math.min(Math.max(prev, needed), messages.length, maxVisibleMessages),
+      );
+    },
+    [enabled, messages.length, maxVisibleMessages],
+  );
+
   // 可见的消息列表（从末尾开始取）
   const visibleMessages = useMemo(() => {
     if (!enabled) return messages;
@@ -94,6 +116,7 @@ export function useMessagePagination({
     visibleMessages,
     hasMore,
     loadMore,
+    loadUntilIncluded,
     isLoading,
     reset,
     totalCount: messages.length,

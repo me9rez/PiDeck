@@ -1889,10 +1889,10 @@ function formatTime(timestamp: number) {
 }
 
 export function buildOutline(messages: ChatMessage[]) {
+	// 会话定位只展示用户提问，每条代表一轮完整对话（用户提问 + 紧随其后的 AI 回答）。
+	// AI 回答不单独列出，避免列表冗长且与用户提问重复描述同一轮对话。
 	return messages
-		.filter(
-			(message) => message.role === "user" || message.role === "assistant",
-		)
+		.filter((message) => message.role === "user")
 		.map((message) => ({
 			id: message.id,
 			role: message.role,

@@ -1,6 +1,7 @@
 import {
   Fragment,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -471,6 +472,10 @@ export function App() {
   const [autoScroll, setAutoScroll] = useState(true);
   /** 是否显示"移动到最新"按钮 */
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  /** 会话定位跳转到尚未加载的旧消息时，先扩展分页再在 effect 中滚动定位；此状态保存待跳转的消息 id。 */
+  const [pendingJumpId, setPendingJumpId] = useState<string | null>(null);
+  /** 加载更多历史消息前的滚动锚点（旧 scrollHeight + scrollTop），用于渲染后按顶部锚定恢复滚动位置。 */
+  const loadMoreAnchorRef = useRef<{ height: number; top: number } | null>(null);
 
   const [settings, setSettings] = useState<AppSettings>({
     useNativeTitleBar: true,
@@ -660,6 +665,7 @@ export function App() {
     visibleMessages: paginatedMessages,
     hasMore: hasMoreMessages,
     loadMore: loadMoreMessages,
+    loadUntilIncluded: loadMessagesUntilIncluded,
     isLoading: isLoadingMoreMessages,
   } = useMessagePagination({
     messages: activeMessages,
@@ -1177,6 +1183,45 @@ export function App() {
     setShowScrollToBottom(false);
   }
 
+  // 给定位命中的消息元素加一个短暂的高亮动画，方便用户在长会话中快速识别跳转落点。
+  function highlightMessageElement(el: HTMLElement) {
+    el.classList.remove("message-jump-highlight");
+    // 强制 reflow 以便重复跳转同一条消息时仍能重新触发动画。
+    void el.offsetWidth;
+    el.classList.add("message-jump-highlight");
+    window.setTimeout(() => el.classList.remove("message-jump-highlight"), 2000);
+  }
+
+  // 点击“加载更多历史消息”：先记录当前滚动锚点，再触发分页加载，
+  // 渲染后的 effect 会根据新增高度补偿 scrollTop，保持视图稳定。
+  function handleLoadMoreMessages() {
+    const timeline = timelineRef.current;
+    if (timeline) {
+      loadMoreAnchorRef.current = {
+        height: timeline.scrollHeight,
+        top: timeline.scrollTop,
+      };
+    }
+    loadMoreMessages();
+  }
+
+  // 会话定位跳转：若目标消息已在当前分页内则直接滚动定位；
+  // 否则先扩展分页窗口把它包含进来，交给 pendingJumpId effect 在渲染后定位。
+  function handleOutlineJump(id: string) {
+    const el = document.querySelector(
+      `[data-message-id="${CSS.escape(id)}"]`,
+    ) as HTMLElement | null;
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      highlightMessageElement(el);
+      return;
+    }
+    const index = activeMessages.findIndex((m) => m.id === id);
+    if (index < 0) return;
+    loadMessagesUntilIncluded(index);
+    setPendingJumpId(id);
+  }
+
   useEffect(() => {
     let frame = 0;
     const scheduleSync = () => {
@@ -1306,6 +1351,33 @@ export function App() {
 
     return () => resizeObserver.disconnect();
   }, [activeAgentId, autoScroll]);
+
+  // 加载更多历史消息后，按顶部锁定的方式恢复滚动位置。
+  // 历史消息会插入到 .message-list 顶部，若不补偿新增高度，浏览器保持原 scrollTop 会导致视图跳动，
+  // 用户会感觉输入框/内容错位。这里把新增高度增量加回 scrollTop，让当前看到的消息留在原位。
+  // 使用 useLayoutEffect 在浏览器绘制前同步补偿，避免用户看到中间跳动的一帧。
+  useLayoutEffect(() => {
+    const anchor = loadMoreAnchorRef.current;
+    if (!anchor) return;
+    const el = timelineRef.current;
+    if (!el) return;
+    const delta = el.scrollHeight - anchor.height;
+    if (delta !== 0) el.scrollTop = anchor.top + delta;
+    loadMoreAnchorRef.current = null;
+  }, [paginatedMessages.length]);
+
+  // 会话定位跳转到尚未加载的消息时，先通过 loadMessagesUntilIncluded 扩展分页窗口；
+  // 该消息被渲染进 DOM 后，在此 effect 中真正滚动定位并短暂高亮，提示用户落点。
+  useEffect(() => {
+    if (!pendingJumpId) return;
+    const el = document.querySelector(
+      `[data-message-id="${CSS.escape(pendingJumpId)}"]`,
+    ) as HTMLElement | null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    highlightMessageElement(el);
+    setPendingJumpId(null);
+  }, [pendingJumpId, paginatedMessages.length, renderedMessages]);
 
   // 追踪 agent 会话开始/结束时间,计算会话时长
   // 点击外部区域自动关闭会话组合下拉
@@ -3989,7 +4061,7 @@ ${goalTextRef.current}
               borderBottom: "1px solid var(--border-color)"
             }}>
               <button
-                onClick={loadMoreMessages}
+                onClick={handleLoadMoreMessages}
                 disabled={isLoadingMoreMessages}
                 style={{
                   padding: "6px 16px",
@@ -4093,11 +4165,7 @@ ${goalTextRef.current}
         {outlineItems.length > 1 && (
           <ConversationOutline
             items={outlineItems}
-            onJump={(id) =>
-              document
-                .querySelector(`[data-message-id="${CSS.escape(id)}"]`)
-                ?.scrollIntoView({ behavior: "smooth", block: "start" })
-            }
+            onJump={handleOutlineJump}
           />
         )}
 
