@@ -111,6 +111,7 @@ import type {
   AppUpdateDownloadProgress,
   AppUpdateInfo,
   AvailableModel,
+  PiCliUpdateResult,
   ExternalEditor,
   FeedbackEnvironment,
   ChatMessage,
@@ -125,6 +126,7 @@ import type {
   ImageContent,
   PiCommand,
   PiInstallStatus,
+  PiUpdateCheckResult,
   Project,
   SessionSummary,
   ThinkingUpdate,
@@ -455,6 +457,10 @@ export function App() {
   const [updateProgress, setUpdateProgress] = useState<AppUpdateDownloadProgress | null>(null);
   const [downloadedUpdatePath, setDownloadedUpdatePath] = useState<string | null>(null);
   const [upToDateVersion, setUpToDateVersion] = useState<string | null>(null);
+  const [piUpdating, setPiUpdating] = useState(false);
+  const [piUpdateChecking, setPiUpdateChecking] = useState(false);
+  const [piUpdateCheck, setPiUpdateCheck] = useState<PiUpdateCheckResult | null>(null);
+  const [piUpdateResult, setPiUpdateResult] = useState<PiCliUpdateResult | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [windowAlwaysOnTop, setWindowAlwaysOnTop] = useState(false);
@@ -1619,6 +1625,34 @@ export function App() {
     if (!downloadedUpdatePath) return;
     await api.app.installUpdate(downloadedUpdatePath);
   }
+
+  async function checkPiCliUpdate() {
+    setPiUpdateChecking(true);
+    try {
+      const result = await api.pi.checkUpdate();
+      setPiUpdateCheck(result);
+      setSettingsNotice(result.error ? t("settings.piUpdateFailed", { error: result.error }) : result.hasUpdate ? t("settings.piUpdateAvailable") : t("settings.piUpdateChecked"));
+    } finally {
+      setPiUpdateChecking(false);
+    }
+  }
+
+  async function updatePiCli() {
+    setPiUpdating(true);
+    setPiUpdateResult(null);
+    try {
+      const result = await api.pi.update();
+      setPiUpdateResult(result);
+      await checkPiInstallInline();
+      setPiUpdateCheck(await api.pi.checkUpdate());
+      setSettingsNotice(result.updated ? t("settings.piUpdateDone") : t("settings.piUpdateChecked"));
+    } catch (error) {
+      setSettingsNotice(t("settings.piUpdateFailed", { error: error instanceof Error ? error.message : String(error) }));
+    } finally {
+      setPiUpdating(false);
+    }
+  }
+
 
   async function checkAppUpdate(source: "auto" | "manual" = "manual") {
     if (updateChecking) return;
@@ -4622,6 +4656,10 @@ ${goalTextRef.current}
           customPathValidating={customPathValidating}
           customPathResult={customPathResult}
           updateChecking={updateChecking}
+          piUpdating={piUpdating}
+          piUpdateChecking={piUpdateChecking}
+          piUpdateCheck={piUpdateCheck}
+          piUpdateResult={piUpdateResult}
           onCustomPathChange={(path) => {
             setCustomPiPath(path);
             setCustomPathResult(null);
@@ -4631,6 +4669,8 @@ ${goalTextRef.current}
           onCheckPi={checkPiInstallInline}
           onTestPiProxy={() => testPiProxy()}
           onCheckUpdate={() => checkAppUpdate("manual")}
+          onCheckPiUpdate={checkPiCliUpdate}
+          onUpdatePi={updatePiCli}
           onToggleDevTools={async () => {
             const opened = await api.app.toggleDevTools();
             setSettingsNotice(

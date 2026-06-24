@@ -34,10 +34,12 @@ import type {
 	FileTreeNode,
 	ForkMessage,
 	GitBranchInfo,
+	PiCliUpdateResult,
 	PiCommand,
 	PiExtensionListResult,
 	PiInstallStatus,
 	PiProxyTestResult,
+	PiUpdateCheckResult,
 	PiSkillListResult,
 	PiSkillSummary,
 	Project,
@@ -205,6 +207,10 @@ const api = {
 				ipcChannels.piCheckCustom,
 				customPath,
 			) as Promise<PiInstallStatus>,
+		checkUpdate: () =>
+			ipcRenderer.invoke(ipcChannels.piUpdateCheck) as Promise<PiUpdateCheckResult>,
+		update: () =>
+			ipcRenderer.invoke(ipcChannels.piUpdate) as Promise<PiCliUpdateResult>,
 	},
 	logs: {
 		list: (query?: AppLogQuery) =>
@@ -268,6 +274,8 @@ const api = {
 			ipcRenderer.invoke(ipcChannels.extensionsUninstall, source, scope) as Promise<void>,
 		install: (source: string) =>
 			ipcRenderer.invoke(ipcChannels.extensionsInstall, source) as Promise<string>,
+		update: () =>
+			ipcRenderer.invoke(ipcChannels.extensionsUpdate) as Promise<PiCliUpdateResult>,
 	},
 	settings: {
 		get: () =>
@@ -299,6 +307,12 @@ const api = {
 			}>,
 		getSettings: () =>
 			ipcRenderer.invoke(ipcChannels.configGetSettings) as Promise<{
+				raw: string;
+				parsed: Record<string, unknown>;
+				diagnostic?: ConfigFileDiagnostic;
+			}>,
+		getTrust: () =>
+			ipcRenderer.invoke(ipcChannels.configGetTrust) as Promise<{
 				raw: string;
 				parsed: Record<string, unknown>;
 				diagnostic?: ConfigFileDiagnostic;

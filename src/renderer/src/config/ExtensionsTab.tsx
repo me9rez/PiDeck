@@ -1,11 +1,12 @@
 import { useState } from "react";
-import type { PiExtensionListResult, PiExtensionSummary, PiPackageInfo } from "../../../shared/types";
+import type { PiCliUpdateResult, PiExtensionListResult, PiExtensionSummary, PiPackageInfo } from "../../../shared/types";
 import { t } from "../i18n";
 
 type ExtensionsApi = {
 	list: () => Promise<PiExtensionListResult>;
 	uninstall: (source: string, scope?: "user" | "project" | "unknown") => Promise<void>;
 	install: (source: string) => Promise<string>;
+	update: () => Promise<PiCliUpdateResult>;
 };
 
 const api: ExtensionsApi = (window as unknown as { piDesktop?: { extensions: ExtensionsApi } }).piDesktop!.extensions;
@@ -71,6 +72,9 @@ export function ExtensionsTab(props: {
 	onUninstall: (extension: PiExtensionSummary) => void;
 }) {
 	const [installing, setInstalling] = useState<string | null>(null);
+	const [updating, setUpdating] = useState<string | null>(null);
+	const [updateResult, setUpdateResult] = useState<PiCliUpdateResult | null>(null);
+	const [showUpdateDialog, setShowUpdateDialog] = useState(false);
 
 	const handleInstall = async (pkg: PiPackageInfo) => {
 		setInstalling(pkg.name);
@@ -84,8 +88,59 @@ export function ExtensionsTab(props: {
 		}
 	};
 
+	const handleUpdateExtensions = async () => {
+		setUpdating("all");
+		setUpdateResult(null);
+		setShowUpdateDialog(true);
+		try {
+			const result = await api.update();
+			setUpdateResult(result);
+		} catch (e) {
+			alert(t("settings.extensionsUpdateFailed", { error: e instanceof Error ? e.message : String(e) }));
+		} finally {
+			setUpdating(null);
+		}
+	};
+
 	return (
 		<div className="extensions-tab">
+			{showUpdateDialog && (
+				<div className="config-update-dialog-backdrop" role="dialog" aria-modal="true">
+					<div className="config-update-dialog">
+						<div className="config-update-dialog-header">
+							<strong>{t("settings.updateExtensionsAll")}</strong>
+							<button
+								className="config-icon-btn"
+								onClick={() => {
+									setShowUpdateDialog(false);
+									props.onRefresh();
+								}}
+								disabled={Boolean(updating)}
+							>
+								×
+							</button>
+						</div>
+						<p className="config-im-form-hint">
+							{updating ? t("settings.extensionsUpdatingDesc") : t("settings.extensionsUpdateResultHint")}
+						</p>
+						<pre className="setting-update-output">
+							{updateResult ? `${updateResult.command}\n${updateResult.output}` : t("settings.extensionsUpdating")}
+						</pre>
+						<div className="config-update-dialog-actions">
+							<button
+								className="config-btn primary"
+								onClick={() => {
+									setShowUpdateDialog(false);
+									props.onRefresh();
+								}}
+								disabled={Boolean(updating)}
+							>
+								{t("common.close")}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 			{/* 预设推荐扩展 — 大列表简洁显示 */}
 			<div className="config-section" style={{ marginBottom: 20 }}>
 				<div className="config-toolbar">
@@ -151,6 +206,9 @@ export function ExtensionsTab(props: {
 						</small>
 					</div>
 					<div className="skills-toolbar-actions">
+						<button className="config-btn" onClick={handleUpdateExtensions} disabled={props.loading || Boolean(updating)}>
+							{updating ? t("settings.updating") : t("settings.updateExtensionsAll")}
+						</button>
 						<button className="config-btn" onClick={props.onRefresh} disabled={props.loading}>
 							{t("common.refresh")}
 						</button>
@@ -197,6 +255,14 @@ function ExtensionCard(props: {
 						</div>
 					</div>
 					<small>{extension.source}</small>
+					<small>
+						{t("config.extensionVersions", {
+							current: extension.currentVersion ?? "-",
+							latest: extension.latestVersion ?? "-",
+						})}
+						{extension.hasUpdate ? ` · ${t("config.extensionUpdateAvailable")}` : ""}
+					</small>
+					{extension.updateError && <small className="setting-status error">{extension.updateError}</small>}
 					{extension.path && <small>{extension.path}</small>}
 				</div>
 				<div className="session-card-actions skill-card-actions">

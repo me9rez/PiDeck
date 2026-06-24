@@ -262,6 +262,16 @@ export function createPreviewApi(): PiDesktopApi {
 				version: "preview",
 				searchedDirs: [],
 			}),
+			checkUpdate: async () => ({
+				currentVersion: "preview",
+				latestVersion: "preview",
+				hasUpdate: false,
+			}),
+			update: async () => ({
+				command: "pi update pi --no-approve",
+				output: "Preview mode: pi update output",
+				updated: false,
+			}),
 		},
 		app: {
 			info: async () => ({
@@ -360,6 +370,11 @@ export function createPreviewApi(): PiDesktopApi {
 			}),
 			uninstall: async () => undefined,
 			install: async (_source: string) => "",
+			update: async () => ({
+				command: "pi update --extensions --no-approve",
+				output: "Preview mode: extensions update output",
+				updated: false,
+			}),
 		},
 		settings: {
 			get: async (): Promise<AppSettings> => ({ ...previewSettings }),
@@ -383,6 +398,7 @@ export function createPreviewApi(): PiDesktopApi {
 			}),
 			getAuth: async () => ({ raw: "{}", parsed: {} }),
 			getSettings: async () => ({ raw: "{}", parsed: {} }),
+			getTrust: async () => ({ raw: "{}", parsed: {} }),
 			saveModels: async () => ({ valid: true }),
 			saveAuth: async () => ({ valid: true }),
 			saveSettings: async () => ({ valid: true }),

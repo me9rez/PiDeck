@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { PiRpcClient } from "./PiRpcClient";
 import { PiLocator } from "./PiLocator";
@@ -12,6 +12,8 @@ type PiProcessSettings = Pick<
 export class PiProcess extends EventEmitter {
   private proc?: ChildProcessWithoutNullStreams;
   private rpc?: PiRpcClient;
+  /** 从 --version 解析出的主版本号，用于判断是否支持 --approve。pi 0.79.0+ 引入，低版本硬传会报 Unknown option 错误。 */
+  private piMajorVersion: number | null = null;
 
   constructor(
     private readonly cwd: string,
@@ -23,7 +25,11 @@ export class PiProcess extends EventEmitter {
   start(sessionPath?: string) {
     if (this.proc) return this.rpc!;
 
-    const args = ["--mode", "rpc", ...(sessionPath ? ["--session", sessionPath] : [])];
+    const args = ["--mode", "rpc"];
+    // pi 0.79.0+ 支持 --approve，低于该版本传参会导致启动失败。
+    if (this.supportsApprove()) args.push("--approve");
+    if (sessionPath) args.push("--session", sessionPath);
+
     const locator = new PiLocator();
     // 用户手动指定的 pi 路径优先于自动检测，解决 npm global、nvm 等路径未在 PATH 中的问题
     const command = locator.resolveCommand(this.settings?.customPiPath);
@@ -75,5 +81,44 @@ export class PiProcess extends EventEmitter {
   stop() {
     if (!this.proc) return;
     this.proc.kill();
+  }
+
+  /**
+   * 执行一次轻量 --version 检测 pi 主版本号，判断是否支持 --approve 参数。
+   * 结果缓存在 piMajorVersion 字段中，避免每次 start 都执行一次子进程。
+   * 若版本检测失败（未安装/低版本未知输出）则保守返回 false，不传 --approve。
+   */
+  private supportsApprove(): boolean {
+    if (this.piMajorVersion !== null) return this.piMajorVersion >= 79;
+
+    try {
+      const locator = new PiLocator();
+      const command = locator.resolveCommand(this.settings?.customPiPath);
+      const invocation = locator.createInvocation(command, ["--version"]);
+      const result = execFileSync(invocation.command, invocation.args, {
+        encoding: "utf8" as const,
+        timeout: 5_000,
+        shell: false,
+        env: locator.createProcessEnv(this.settings, invocation.pathPrefix),
+      });
+      const version = result.trim();
+      this.piMajorVersion = this.parseMajorVersion(version);
+    } catch {
+      this.piMajorVersion = 0;
+    }
+
+    return this.piMajorVersion >= 79;
+  }
+
+  /**
+   * 从 pi 的版本号字符串提取主版本号。
+   * 格式通常为 "0.79.4"，支持语义化版本或裸数字。
+   */
+  private parseMajorVersion(version: string): number {
+    const match = version.match(/^(\d+)\.(\d+)/);
+    if (match) return parseInt(match[2], 10);
+    // fallback：如果只有主版本号
+    const major = parseInt(version, 10);
+    return Number.isFinite(major) ? major : 0;
   }
 }

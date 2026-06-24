@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
-import type { AppSettings, PiExtensionListResult, PiExtensionSummary } from "../../shared/types";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { AppSettings, PiCliUpdateResult, PiExtensionListResult, PiExtensionSummary, PiUpdateCheckResult } from "../../shared/types";
 import type { PiLocator } from "../pi/PiLocator";
 
 type SettingsProvider = () => AppSettings;
@@ -16,7 +18,10 @@ export class ExtensionManager {
 
 	async list(): Promise<PiExtensionListResult> {
 		const raw = await this.runPi(["list", "--no-approve"], 20_000);
-		return { extensions: this.parseListOutput(raw), raw };
+		const extensions = await Promise.all(
+			this.parseListOutput(raw).map((extension) => this.enrichExtensionVersion(extension)),
+		);
+		return { extensions, raw };
 	}
 
 	async uninstall(source: string, scope: PiExtensionSummary["scope"] = "user"): Promise<void> {
@@ -36,18 +41,119 @@ export class ExtensionManager {
 		return this.runPi(["install", normalized, "--no-approve"], 60_000);
 	}
 
-	private async runPi(args: string[], timeout: number) {
-		const command = this.locator.resolveCommand(this.getSettings().customPiPath);
-		const invocation = this.locator.createInvocation(command, args);
+	async checkPiUpdate(): Promise<PiUpdateCheckResult> {
+		try {
+			const status = await this.locator.check(this.getSettings().customPiPath);
+			if (!status.installed) return { hasUpdate: false, error: status.error ?? "pi 未安装" };
+			const latestVersion = await this.npmViewVersion("@earendil-works/pi-coding-agent");
+			return {
+				currentVersion: status.version,
+				latestVersion,
+				hasUpdate: this.compareVersions(latestVersion, status.version ?? "0.0.0") > 0,
+			};
+		} catch (error) {
+			return { hasUpdate: false, error: error instanceof Error ? error.message : String(error) };
+		}
+	}
+
+	async updatePi(): Promise<PiCliUpdateResult> {
+		const check = await this.checkPiUpdate();
+		if (!check.hasUpdate) {
+			return {
+				command: "pi update pi --no-approve",
+				output: check.error ?? `当前版本 ${check.currentVersion ?? "unknown"}，最新版本 ${check.latestVersion ?? "unknown"}，无需更新。`,
+				updated: false,
+			};
+		}
+		const output = await this.runPi(["update", "pi", "--no-approve"], 120_000, { offline: false });
+		return this.toUpdateResult("pi update pi --no-approve", output, true);
+	}
+
+	async updateExtensions(): Promise<PiCliUpdateResult> {
+		const output = await this.runPi(["update", "--extensions", "--no-approve"], 120_000, { offline: false });
+		return this.toUpdateResult("pi update --extensions --no-approve", output, true);
+	}
+
+	private async enrichExtensionVersion(extension: PiExtensionSummary): Promise<PiExtensionSummary> {
+		if (!extension.source.toLowerCase().startsWith("npm:")) return extension;
+		const packageName = extension.source.replace(/^npm:/i, "");
+		try {
+			const [currentVersion, latestVersion] = await Promise.all([
+				this.readInstalledVersion(extension.path),
+				this.npmViewVersion(packageName),
+			]);
+			return {
+				...extension,
+				currentVersion,
+				latestVersion,
+				hasUpdate: Boolean(currentVersion && latestVersion && this.compareVersions(latestVersion, currentVersion) > 0),
+			};
+		} catch (error) {
+			return { ...extension, updateError: error instanceof Error ? error.message : String(error) };
+		}
+	}
+
+	private async readInstalledVersion(path?: string) {
+		if (!path) return undefined;
+		const raw = await readFile(join(path, "package.json"), "utf8");
+		const parsed = JSON.parse(raw) as { version?: string };
+		return parsed.version;
+	}
+
+	private npmViewVersion(packageName: string) {
+		const invocation = this.locator.createInvocation("npm", ["view", packageName, "version"]);
 		return new Promise<string>((resolve, reject) => {
 			execFile(
 				invocation.command,
 				invocation.args,
 				{
-					env: {
-						...this.locator.createProcessEnv(this.getSettings(), invocation.pathPrefix),
-						PI_OFFLINE: "1",
-					},
+					env: this.locator.createProcessEnv(this.getSettings(), invocation.pathPrefix),
+					shell: invocation.shell,
+					windowsHide: true,
+					timeout: 30_000,
+					encoding: "utf8",
+					windowsVerbatimArguments: invocation.windowsVerbatimArguments,
+				},
+				(error, stdout, stderr) => {
+					if (error) {
+						// Electron 启动环境经常缺少用户 shell PATH；通过 PiLocator 补齐 PATH 后仍失败时，把 stderr 透出给设置页。
+						reject(new Error((stderr || error.message).trim()));
+						return;
+					}
+					resolve(stdout.trim());
+				},
+			);
+		});
+	}
+
+	private toUpdateResult(command: string, output: string, updated: boolean): PiCliUpdateResult {
+		return { command, output: output.trim(), updated };
+	}
+
+	private compareVersions(a: string, b: string) {
+		const left = a.replace(/^v/i, "").split(/[.-]/).map((part) => Number.parseInt(part, 10) || 0);
+		const right = b.replace(/^v/i, "").split(/[.-]/).map((part) => Number.parseInt(part, 10) || 0);
+		const len = Math.max(left.length, right.length);
+		for (let index = 0; index < len; index += 1) {
+			const diff = (left[index] ?? 0) - (right[index] ?? 0);
+			if (diff !== 0) return diff;
+		}
+		return 0;
+	}
+
+	private async runPi(args: string[], timeout: number, options: { offline?: boolean } = {}) {
+		const command = this.locator.resolveCommand(this.getSettings().customPiPath);
+		const invocation = this.locator.createInvocation(command, args);
+		const env = this.locator.createProcessEnv(this.getSettings(), invocation.pathPrefix);
+		// list/remove/install 使用离线模式避免配置页被网络和包管理器输出拖慢；update 必须允许联网，
+		// 否则 pi 只会返回简化的 Updated packages，无法真正走 npm 更新流程。
+		if (options.offline !== false) env.PI_OFFLINE = "1";
+		return new Promise<string>((resolve, reject) => {
+			execFile(
+				invocation.command,
+				invocation.args,
+				{
+					env,
 					shell: invocation.shell,
 					windowsHide: true,
 					timeout,

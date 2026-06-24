@@ -3,6 +3,7 @@ import type { PiDesktopApi } from "../../preload";
 import { AuthTab } from "./config/AuthTab";
 import { ModelsTab } from "./config/ModelsTab";
 import { RawTab } from "./config/RawTab";
+import { TrustTab } from "./config/TrustTab";
 import { SettingsTab } from "./config/SettingsTab";
 import { SkillsTab } from "./config/SkillsTab";
 import { ExtensionsTab } from "./config/ExtensionsTab";
@@ -180,6 +181,7 @@ function ConfigModalContent(props: ConfigModalProps) {
 	const [modelsData, setModelsData] = useState<ModelsFile>({ providers: {} });
 	const [authData, setAuthData] = useState<AuthFile>({});
 	const [settingsData, setSettingsData] = useState<SettingsFile>({});
+	const [trustData, setTrustData] = useState<Record<string, boolean>>({});
 	const [skillsData, setSkillsData] = useState<PiSkillListResult>({
 		locations: [],
 		skills: [],
@@ -188,6 +190,7 @@ function ConfigModalContent(props: ConfigModalProps) {
 		extensions: [],
 		raw: "",
 	});
+	const [extensionsLoading, setExtensionsLoading] = useState(false);
 	const [creatingSkill, setCreatingSkill] = useState(false);
 	const [uninstallingExtensionSource, setUninstallingExtensionSource] = useState<string | null>(null);
 	const [newSkillName, setNewSkillName] = useState("");
@@ -292,6 +295,12 @@ function ConfigModalContent(props: ConfigModalProps) {
 					setRawContent(res.raw);
 					setRawFileName("settings.json");
 					setConfigDiagnostic(res.diagnostic ?? null);
+				} else if (target === "trust") {
+					const res = await api.config.getTrust();
+					setTrustData(res.parsed as Record<string, boolean>);
+					setRawContent(res.raw);
+					setRawFileName("trust.json");
+					setConfigDiagnostic(res.diagnostic ?? null);
 				} else if (target === "raw") {
 					// 源文件 tab 复用当前 tab 对应的文件
 					const fileName =
@@ -299,14 +308,18 @@ function ConfigModalContent(props: ConfigModalProps) {
 							? "models.json"
 							: tab === "auth"
 								? "auth.json"
-								: "settings.json";
+								: tab === "trust"
+									? "trust.json"
+									: "settings.json";
 					setRawFileName(fileName);
 					const res =
 						fileName === "models.json"
 							? await api.config.getModels()
 							: fileName === "auth.json"
 								? await api.config.getAuth()
-								: await api.config.getSettings();
+								: fileName === "trust.json"
+									? await api.config.getTrust()
+									: await api.config.getSettings();
 					setRawContent(res.raw);
 					setConfigDiagnostic(res.diagnostic ?? null);
 				}
@@ -699,6 +712,13 @@ function ConfigModalContent(props: ConfigModalProps) {
 		await loadConfig("settings");
 	};
 
+	// ── Trust 操作 ────────────────────────────────────────
+
+	const handleSaveTrust = async () => {
+		await saveAndReload(() => api.config.saveRaw("trust.json", JSON.stringify(trustData, null, 2)));
+		await loadConfig("trust");
+	};
+
 	// ── Raw 操作 ─────────────────────────────────────────
 
 	const handleSaveRaw = async () => {
@@ -709,6 +729,7 @@ function ConfigModalContent(props: ConfigModalProps) {
 		);
 		if (isModelsFile) await loadConfig("models");
 		else if (rawFileName === "auth.json") await loadConfig("auth");
+		else if (rawFileName === "trust.json") await loadConfig("trust");
 		else await loadConfig("settings");
 	};
 
@@ -722,7 +743,9 @@ function ConfigModalContent(props: ConfigModalProps) {
 					? await api.config.getModels()
 					: fileName === "auth.json"
 						? await api.config.getAuth()
-						: await api.config.getSettings();
+						: fileName === "trust.json"
+							? await api.config.getTrust()
+							: await api.config.getSettings();
 			setRawContent(res.raw);
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));
@@ -806,7 +829,7 @@ function ConfigModalContent(props: ConfigModalProps) {
 	};
 
 	const refreshExtensions = async () => {
-		setLoading(true);
+		setExtensionsLoading(true);
 		setError(null);
 		try {
 			const res = await api.extensions.list();
@@ -814,7 +837,7 @@ function ConfigModalContent(props: ConfigModalProps) {
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));
 		} finally {
-			setLoading(false);
+			setExtensionsLoading(false);
 		}
 	};
 
@@ -863,6 +886,7 @@ function ConfigModalContent(props: ConfigModalProps) {
 		{ id: "models", label: t("config.nav.models") },
 		{ id: "auth", label: t("config.nav.auth") },
 		{ id: "settings", label: t("config.nav.settings") },
+		{ id: "trust", label: t("config.nav.trust") },
 		{ id: "raw", label: t("config.nav.raw") },
 	];
 
@@ -1084,10 +1108,10 @@ function ConfigModalContent(props: ConfigModalProps) {
 						/>
 					)}
 
-					{section === "extensions" && !loading && (
+					{section === "extensions" && (
 						<ExtensionsTab
 							data={extensionsData}
-							loading={loading}
+							loading={extensionsLoading}
 							uninstallingSource={uninstallingExtensionSource}
 							onRefresh={refreshExtensions}
 							onUninstall={setUninstallExtensionConfirm}
@@ -1096,6 +1120,15 @@ function ConfigModalContent(props: ConfigModalProps) {
 
 					{section === "editors" && !loading && (
 						<EditorsTab />
+					)}
+
+					{section === "config" && !loading && tab === "trust" && (
+						<TrustTab
+							data={trustData}
+							saving={saving}
+							onChange={setTrustData}
+							onSave={handleSaveTrust}
+						/>
 					)}
 
 					{section === "config" && !loading && tab === "raw" && (

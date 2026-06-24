@@ -95,6 +95,10 @@ export class ConfigManager {
 		return this.readJsonFile<PiSettings>("settings.json", {});
 	}
 
+	async getTrustConfig(): Promise<ConfigFileReadResult<Record<string, boolean>>> {
+		return this.readJsonFile<Record<string, boolean>>("trust.json", {});
+	}
+
 	// ── 保存（可视化表单） ────────────────────────────────
 
 	async saveModelsConfig(data: PiModelsFile): Promise<ConfigValidationResult> {
@@ -132,7 +136,7 @@ export class ConfigManager {
 			};
 		}
 
-		const allowed = ["models.json", "auth.json", "settings.json"];
+		const allowed = ["models.json", "auth.json", "settings.json", "trust.json"];
 		if (!allowed.includes(fileName)) {
 			return { valid: false, error: `不允许编辑的文件：${fileName}` };
 		}

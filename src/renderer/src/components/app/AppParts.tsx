@@ -50,8 +50,10 @@ import type {
 	FileTreeNode,
 	GitBranchInfo,
 	ImageContent,
+	PiCliUpdateResult,
 	PiCommand,
 	PiInstallStatus,
+	PiUpdateCheckResult,
 	Project,
 	SessionSummary,
 } from "../../../../shared/types";
@@ -3303,12 +3305,18 @@ export function SettingsModal(props: {
 	customPathValidating: boolean;
 	customPathResult: PiInstallStatus | null;
 	updateChecking: boolean;
+	piUpdating: boolean;
+	piUpdateChecking: boolean;
+	piUpdateCheck: PiUpdateCheckResult | null;
+	piUpdateResult: PiCliUpdateResult | null;
 	onCustomPathChange: (path: string) => void;
 	onValidateCustomPath: () => void;
 	onClearCustomPath: () => void;
 	onCheckPi: () => void;
 	onTestPiProxy: () => void;
 	onCheckUpdate: () => void;
+	onCheckPiUpdate: () => void;
+	onUpdatePi: () => void;
 	onToggleDevTools: () => void;
 	onRestartApp: () => void;
 	onOpenWebService: (port: string) => void;
@@ -3777,6 +3785,25 @@ export function SettingsModal(props: {
 										</div>
 										<Button onClick={props.onCheckUpdate} loading={props.updateChecking}>{t("settings.checkUpdate")}</Button>
 									</div>
+									<div className="setting-row">
+										<div>
+											<strong>{t("settings.piUpdate")}</strong>
+											<small>{t("settings.piUpdateDesc")}</small>
+											<small className="setting-status info">
+												{t("settings.piUpdateVersions", {
+													current: props.piUpdateCheck?.currentVersion ?? props.piStatus?.version ?? "-",
+													latest: props.piUpdateCheck?.latestVersion ?? "-",
+												})}
+											</small>
+										</div>
+										<div className="setting-inline-actions">
+											<Button onClick={props.onCheckPiUpdate} loading={props.piUpdateChecking}>{t("settings.checkPiUpdate")}</Button>
+											<Button onClick={props.onUpdatePi} loading={props.piUpdating} disabled={!props.piUpdateCheck?.hasUpdate}>{t("settings.updatePi")}</Button>
+										</div>
+									</div>
+									{props.piUpdateResult && (
+										<pre className="setting-update-output">{props.piUpdateResult.command}\n{props.piUpdateResult.output}</pre>
+									)}
 								</SettingsSection>
 								<SettingsSection title={t("settings.debug")}>
 									<div className="setting-row">

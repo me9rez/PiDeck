@@ -373,6 +373,10 @@ export type PiExtensionSummary = {
 	source: string;
 	path?: string;
 	scope: "user" | "project" | "unknown";
+	currentVersion?: string;
+	latestVersion?: string;
+	hasUpdate?: boolean;
+	updateError?: string;
 };
 
 export type PiPackageInfo = {
@@ -391,6 +395,19 @@ export type PiPackageInfo = {
 export type PiExtensionListResult = {
 	extensions: PiExtensionSummary[];
 	raw: string;
+};
+
+export type PiCliUpdateResult = {
+	command: string;
+	output: string;
+	updated: boolean;
+};
+
+export type PiUpdateCheckResult = {
+	currentVersion?: string;
+	latestVersion?: string;
+	hasUpdate: boolean;
+	error?: string;
 };
 
 export type PiProxyTestResult = {

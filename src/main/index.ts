@@ -194,43 +194,50 @@ function selectRecommendedAsset(
 		}
 	};
 
+	const isWindowsAsset = (name: string) =>
+		/\.(exe|msi)$/i.test(name) || (name.endsWith(".zip") && !/(mac|darwin|osx|linux|appimage|deb|tar\.gz)/i.test(name));
+	const isMacAsset = (name: string) => /\.(dmg)$/i.test(name) || /(mac|darwin|osx)/i.test(name);
+	const isLinuxAsset = (name: string) => /(appimage|\.deb$|\.tar\.gz$|linux)/i.test(name);
+
 	if (platform === "win32") {
+		// Windows 只能在 Windows 资产里挑选；Release 同时包含 macOS zip，不能用全局 zip 回退。
+		const platformCandidates = candidates.filter((asset) => isWindowsAsset(asset.lowerName));
 		// Windows: 优先匹配当前安装形态（便携版 vs 安装版）和架构
 		if (isPortable) {
 			// 便携版 exe 是单文件绿色版，无需安装；优先推荐非 Setup 的便携 exe，其次 .zip
 			return (
-				candidates.find(
+				platformCandidates.find(
 					(asset) => !asset.lowerName.includes("setup") && asset.lowerName.endsWith(".exe") && matchesArch(asset.lowerName),
 				) ??
-				candidates.find(
+				platformCandidates.find(
 					(asset) => !asset.lowerName.includes("setup") && asset.lowerName.endsWith(".exe") && !isWrongArch(asset.lowerName),
 				) ??
-				candidates.find(
+				platformCandidates.find(
 					(asset) => asset.lowerName.endsWith(".zip") && matchesArch(asset.lowerName),
 				) ??
-				candidates.find(
+				platformCandidates.find(
 					(asset) => asset.lowerName.endsWith(".zip") && !isWrongArch(asset.lowerName),
 				)
 			);
 		} else {
 			// 安装版：优先推荐带 Setup 的安装 exe，其次普通 exe，最后 zip
 			return (
-				candidates.find(
+				platformCandidates.find(
 					(asset) => asset.lowerName.includes("setup") && asset.lowerName.endsWith(".exe") && matchesArch(asset.lowerName),
 				) ??
-				candidates.find(
+				platformCandidates.find(
 					(asset) => asset.lowerName.includes("setup") && asset.lowerName.endsWith(".exe") && !isWrongArch(asset.lowerName),
 				) ??
-				candidates.find(
+				platformCandidates.find(
 					(asset) => asset.lowerName.endsWith(".exe") && matchesArch(asset.lowerName),
 				) ??
-				candidates.find(
+				platformCandidates.find(
 					(asset) => asset.lowerName.endsWith(".exe") && !isWrongArch(asset.lowerName),
 				) ??
-				candidates.find(
+				platformCandidates.find(
 					(asset) => asset.lowerName.endsWith(".zip") && matchesArch(asset.lowerName),
 				) ??
-				candidates.find(
+				platformCandidates.find(
 					(asset) => asset.lowerName.endsWith(".zip") && !isWrongArch(asset.lowerName),
 				)
 			);
@@ -238,43 +245,45 @@ function selectRecommendedAsset(
 	}
 
 	if (platform === "darwin") {
-		// macOS: 优先 dmg，严格匹配架构
+		// macOS 只在 macOS 资产中选择，避免 x64 zip 回退到 Windows/Linux 包。
+		const platformCandidates = candidates.filter((asset) => isMacAsset(asset.lowerName));
 		return (
-			candidates.find(
+			platformCandidates.find(
 				(asset) => asset.lowerName.endsWith(".dmg") && matchesArch(asset.lowerName),
 			) ??
-			candidates.find(
+			platformCandidates.find(
 				(asset) => asset.lowerName.endsWith(".dmg") && !isWrongArch(asset.lowerName),
 			) ??
-			candidates.find(
+			platformCandidates.find(
 				(asset) => asset.lowerName.endsWith(".zip") && matchesArch(asset.lowerName),
 			) ??
-			candidates.find(
+			platformCandidates.find(
 				(asset) => asset.lowerName.endsWith(".zip") && !isWrongArch(asset.lowerName),
 			)
 		);
 	}
 
 	if (platform === "linux") {
-		// Linux: 优先 AppImage，严格匹配架构
+		// Linux 只在 Linux 资产中选择，避免跨平台 zip/exe 被误推荐。
+		const platformCandidates = candidates.filter((asset) => isLinuxAsset(asset.lowerName));
 		return (
-			candidates.find(
+			platformCandidates.find(
 				(asset) => asset.lowerName.includes("appimage") && matchesArch(asset.lowerName),
 			) ??
-			candidates.find(
+			platformCandidates.find(
 				(asset) =>
 					asset.lowerName.includes("appimage") && !isWrongArch(asset.lowerName),
 			) ??
-			candidates.find(
+			platformCandidates.find(
 				(asset) => asset.lowerName.endsWith(".deb") && matchesArch(asset.lowerName),
 			) ??
-			candidates.find(
+			platformCandidates.find(
 				(asset) => asset.lowerName.endsWith(".deb") && !isWrongArch(asset.lowerName),
 			) ??
-			candidates.find(
+			platformCandidates.find(
 				(asset) => asset.lowerName.endsWith(".tar.gz") && matchesArch(asset.lowerName),
 			) ??
-			candidates.find(
+			platformCandidates.find(
 				(asset) => asset.lowerName.endsWith(".tar.gz") && !isWrongArch(asset.lowerName),
 			)
 		);
@@ -1150,6 +1159,16 @@ function registerIpc() {
 		});
 		return status;
 	});
+	ipcMain.handle(ipcChannels.piUpdateCheck, async () => {
+		const result = await extensionManager.checkPiUpdate();
+		void appLogger.info("pi", "Pi update check completed", { currentVersion: result.currentVersion, latestVersion: result.latestVersion, hasUpdate: result.hasUpdate, error: result.error });
+		return result;
+	});
+	ipcMain.handle(ipcChannels.piUpdate, async () => {
+		const result = await extensionManager.updatePi();
+		void appLogger.info("pi", "Pi update command completed", { updated: result.updated, bytes: result.output.length });
+		return result;
+	});
 	ipcMain.handle(
 		ipcChannels.piCheckCustom,
 		async (_event, customPath: string) => {
@@ -1312,6 +1331,11 @@ function registerIpc() {
 	ipcMain.handle(ipcChannels.extensionsInstall, async (_event, source: string) => {
 		const result = await extensionManager.install(source);
 		void appLogger.info("extension", "Extension installed", { source });
+		return result;
+	});
+	ipcMain.handle(ipcChannels.extensionsUpdate, async () => {
+		const result = await extensionManager.updateExtensions();
+		void appLogger.info("extension", "Extensions update command completed", { updated: result.updated, bytes: result.output.length });
 		return result;
 	});
 
@@ -1487,6 +1511,9 @@ function registerIpc() {
 	);
 	ipcMain.handle(ipcChannels.configGetSettings, () =>
 		configManager.getSettingsConfig(),
+	);
+	ipcMain.handle(ipcChannels.configGetTrust, () =>
+		configManager.getTrustConfig(),
 	);
 	ipcMain.handle(ipcChannels.configSaveModels, async (_event, data) => {
 		const result = await configManager.saveModelsConfig(data);
