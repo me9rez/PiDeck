@@ -1953,7 +1953,7 @@ body.is-terminal-resizing {
 }
 .scroll-to-bottom-btn {
 	position: absolute;
-	bottom: 24px;
+	bottom: 76px;
 	right: 32px;
 	z-index: 10;
 	width: 40px;

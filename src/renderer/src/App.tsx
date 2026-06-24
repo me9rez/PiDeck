@@ -524,6 +524,7 @@ export function App() {
   const [listWidth, setListWidth] = useState(DEFAULT_LIST_WIDTH);
   const [drawerWidth, setDrawerWidth] = useState(270);
   const [composerHeight, setComposerHeight] = useState(COMPOSER_MIN_HEIGHT);
+  const [composerOffsetHeight, setComposerOffsetHeight] = useState(0);
   const [composerAutoHeight, setComposerAutoHeight] =
     useState(COMPOSER_MIN_HEIGHT);
   const [terminalDockStateByAgent, setTerminalDockStateByAgent] =
@@ -1183,18 +1184,21 @@ export function App() {
       frame = requestAnimationFrame(() => {
         setComposerHeight((current) => clampComposerHeight(current));
         syncComposerAutoHeight();
+        setComposerOffsetHeight(composerRef.current?.offsetHeight ?? 0);
       });
     };
 
     const box = composerBoxRef.current;
+    const footer = composerRef.current;
     const observer =
-      box &&
+      (box || footer) &&
       new ResizeObserver((entries) => {
         const entry = entries[0];
         if (!entry) return;
         scheduleSync();
       });
     if (box) observer?.observe(box);
+    if (footer) observer?.observe(footer);
 
     window.addEventListener("resize", scheduleSync);
     scheduleSync();
@@ -1209,6 +1213,7 @@ export function App() {
     const frame = requestAnimationFrame(() => {
       setComposerHeight((current) => clampComposerHeight(current));
       syncComposerAutoHeight();
+      setComposerOffsetHeight(composerRef.current?.offsetHeight ?? 0);
     });
     return () => cancelAnimationFrame(frame);
   }, [
@@ -4050,16 +4055,19 @@ ${goalTextRef.current}
             </div>
           )}
 
+        </section>
+
           {showScrollToBottom && (
             <button
               className="scroll-to-bottom-btn"
+              // 按钮脱离滚动容器后，由 composer 实际高度决定 bottom，避免输入框增高或图片预览时遮挡。
+              style={{ bottom: Math.max(24, composerOffsetHeight + 18) }}
               onClick={scrollToBottom}
               title={t("app.scrollToBottom")}
             >
               <ChevronDown size={18} />
             </button>
           )}
-        </section>
 
         {outlineItems.length > 1 && (
           <ConversationOutline
