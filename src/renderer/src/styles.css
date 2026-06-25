@@ -1790,6 +1790,8 @@ body.is-terminal-resizing {
 	border-radius: var(--radius-sm);
 	padding: 0 6px;
 	font-size: var(--font-size-control);
+	font-weight: 600;
+	line-height: var(--line-height-control);
 	max-width: 120px;
 	cursor: pointer;
 	transition:
@@ -1815,11 +1817,11 @@ body.is-terminal-resizing {
 .branch-badge {
 	font-family: var(--font-family-business);
 	font-size: var(--font-size-micro);
-	color: var(--color-text-tertiary);
+	color: var(--color-text-primary);
 	background: var(--color-bg-hover);
 	padding: 1px 6px;
 	border-radius: 999px;
-	font-weight: 500;
+	font-weight: 600;
 	line-height: var(--line-height-micro);
 	font-variant-numeric: tabular-nums;
 }
@@ -1833,11 +1835,13 @@ body.is-terminal-resizing {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	font-weight: 500;
+	color: inherit;
+	font-weight: inherit;
+	line-height: inherit;
 }
 .branch-chevron {
 	font-size: var(--font-size-micro);
-	color: var(--color-text-tertiary);
+	color: var(--color-text-secondary);
 	transition: transform 0.2s ease;
 	flex-shrink: 0;
 	margin-left: 2px;

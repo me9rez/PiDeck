@@ -2655,11 +2655,11 @@ export function App() {
     }
   }
 
-  async function compactAgent() {
+  async function compactAgent(compactPrompt?: string) {
     if (!activeAgentId || isPendingAgentId(activeAgentId)) return;
     setCompacting(true);
     try {
-      const state = await api.agents.compact(activeAgentId);
+      const state = await api.agents.compact(activeAgentId, compactPrompt);
       setRuntimeStateByAgent((current) => ({
         ...current,
         [activeAgentId]: state,
@@ -2928,10 +2928,22 @@ ${text}
     const message = prompt;
     const images = attachedImages.length > 0 ? attachedImages : undefined;
 
+    const trimmedMessage = message.trim();
+
     // ── /goal 命令处理 ──
-    if (message.trim().startsWith("/goal")) {
-      handleGoalCommand(message.trim());
+    if (trimmedMessage.startsWith("/goal")) {
+      handleGoalCommand(trimmedMessage);
       setPrompt("");
+      return;
+    }
+
+    // ── /compact 命令处理 ──
+    if (/^\/compact(?:\s|$)/.test(trimmedMessage)) {
+      const compactPrompt = trimmedMessage.replace(/^\/compact\s*/, "").trim();
+      // /compact 是桌面端内置控制命令，必须走 RPC compact 通道；否则会被当作普通消息发送给 agent。
+      setPrompt("");
+      setSuggestionsOpen(false);
+      await compactAgent(compactPrompt || undefined);
       return;
     }
 

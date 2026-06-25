@@ -429,10 +429,11 @@ const api = {
 				ipcChannels.agentsRestart,
 				agentId,
 			) as Promise<AgentTab>,
-		compact: (agentId: string) =>
+		compact: (agentId: string, prompt?: string) =>
 			ipcRenderer.invoke(
 				ipcChannels.agentsCompact,
 				agentId,
+				prompt,
 			) as Promise<AgentRuntimeState>,
 		runtimeState: (agentId: string) =>
 			ipcRenderer.invoke(

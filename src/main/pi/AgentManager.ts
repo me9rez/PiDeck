@@ -528,9 +528,14 @@ export class AgentManager {
 	 * 手动触发上下文压缩。pi 会将历史消息摘要化以释放 context 空间，
 	 * 适用于长时间对话后 context 占比过高、但不想丢失关键信息的场景。
 	 */
-	async compact(agentId: string) {
+	async compact(agentId: string, prompt?: string) {
 		const runtime = this.requireRuntime(agentId);
-		await runtime.process.client.request({ type: "compact" }, 120_000);
+		const trimmedPrompt = prompt?.trim();
+		// /compact 可带自定义摘要提示词；空字符串保持按钮触发时的默认 pi compact 行为。
+		await runtime.process.client.request(
+			trimmedPrompt ? { type: "compact", prompt: trimmedPrompt } : { type: "compact" },
+			120_000,
+		);
 		await this.loadMessages(agentId).catch(() => undefined);
 		return this.getRuntimeState(agentId);
 	}

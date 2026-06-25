@@ -1438,8 +1438,8 @@ function registerIpc() {
 		void appLogger.info("agent", "Agent restarted", { agentId });
 		return result;
 	});
-	ipcMain.handle(ipcChannels.agentsCompact, async (_event, agentId: string) => {
-		const result = await agentManager.compact(agentId);
+	ipcMain.handle(ipcChannels.agentsCompact, async (_event, agentId: string, prompt?: string) => {
+		const result = await agentManager.compact(agentId, prompt);
 		void appLogger.info("agent", "Agent compact requested", { agentId });
 		return result;
 	});
