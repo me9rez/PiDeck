@@ -21,6 +21,10 @@ import type {
 	ConfigFileDiagnostic,
 	CreateAgentInput,
 	CreatePiSkillInput,
+	PetAggregateState,
+	PetManifest,
+	PetNotification,
+	PetWindowCaps,
 	ExternalEditor,
 	ExternalEditorId,
 	ExternalEditorSetting,
@@ -466,6 +470,9 @@ const api = {
 			ipcRenderer.invoke("agents:commands", agentId) as Promise<PiCommand[]>,
 		onState: (callback: (tabs: AgentTab[]) => void) =>
 			subscribe(ipcChannels.agentsState, callback),
+		/** 桌面宠物点击跳转：主进程通知主窗切换到活跃 Agent tab */
+		onFocusTarget: (callback: (target: { agentId: string }) => void) =>
+			subscribe(ipcChannels.petFocusAgentTarget, callback),
 		onMessages: (
 			callback: (payload: { agentId: string; messages: ChatMessage[] }) => void,
 		) => subscribe(ipcChannels.agentsMessage, callback),
@@ -483,6 +490,47 @@ const api = {
 				state: AgentRuntimeState;
 			}) => void,
 		) => subscribe(ipcChannels.agentsRuntimeState, callback),
+	},
+	pet: {
+		/** 宠物窗监听主进程推送的聚合状态 */
+		onState: (callback: (state: PetAggregateState) => void) =>
+			subscribe(ipcChannels.petState, callback),
+		/** 列出可用宠物包（内置 + petdex） */
+		list: () =>
+			ipcRenderer.invoke(ipcChannels.petList) as Promise<PetManifest[]>,
+		/** 开关宠物 */
+		setEnabled: (value: boolean) =>
+			ipcRenderer.invoke(ipcChannels.petSetEnabled, value) as Promise<void>,
+		/** 切换当前宠物 */
+		setId: (id: string) =>
+			ipcRenderer.invoke(ipcChannels.petSetId, id) as Promise<void>,
+		/** 拖拽移动宠物窗 */
+		moveWindow: (pos: { x: number; y: number }) =>
+			ipcRenderer.invoke(ipcChannels.petMoveWindow, pos) as Promise<void>,
+		/** 点击宠物跳转活跃 Agent */
+		focusAgent: () =>
+			ipcRenderer.invoke(ipcChannels.petFocusAgent) as Promise<void>,
+		/** 主进程推送当前选中宠物的 manifest，据此加载 spritesheet */
+		onSprite: (callback: (manifest: PetManifest) => void) =>
+			subscribe(ipcChannels.petCurrentSprite, callback),
+		/** 挂载时主动拉取当前选中宠物 manifest（避免推送竞态） */
+		getCurrent: () =>
+			ipcRenderer.invoke(ipcChannels.petGetCurrent) as Promise<PetManifest | null>,
+		/** 主进程推送通知气泡（出错/完成） */
+		onNotify: (callback: (n: PetNotification) => void) =>
+			subscribe(ipcChannels.petNotify, callback),
+		setPreviewMode: (mode: string) =>
+			ipcRenderer.invoke(ipcChannels.petPreviewMode, mode) as Promise<void>,
+		onPreviewMode: (callback: (mode: string) => void) =>
+			subscribe(ipcChannels.petPreviewMode, callback),
+		onCaps: (callback: (caps: PetWindowCaps) => void) =>
+			subscribe(ipcChannels.petCaps, callback),
+		/** 调试：发送测试通知弹窗 */
+		testNotify: (type: "error" | "done") =>
+			ipcRenderer.invoke(ipcChannels.petTestNotify, type) as Promise<void>,
+		/** 双击宠物触发逗弄：主进程注入一次 jumping 后恢复真实聚合态 */
+		tease: () =>
+			ipcRenderer.invoke(ipcChannels.petTease) as Promise<void>,
 	},
 	terminal: {
 		list: (agentId: string) =>

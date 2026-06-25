@@ -35,6 +35,8 @@ export class AgentManager {
 	private readonly creatingSessionAgents = new Map<string, Promise<AgentTab>>();
 	/** 本地事件监听器（用于 FeishuBridge 等主进程内部订阅） */
 	private readonly localEventListeners = new Set<(agentId: string, event: unknown) => void>();
+	/** 状态变更监听器（用于 PetStateBridge 等主进程内部模块订阅 AgentTab[] 聚合状态） */
+	private readonly stateListeners = new Set<(tabs: AgentTab[]) => void>();
 
 	constructor(
 		private readonly getProject: (id: string) => Project | undefined,
@@ -776,6 +778,18 @@ export class AgentManager {
 		return () => { this.localEventListeners.delete(listener); };
 	}
 
+	/** 注册状态变更监听器（供 PetStateBridge 等主进程内部模块使用）；每次 emitState 后同步回调最新 AgentTab[] */
+	addStateListener(listener: (tabs: AgentTab[]) => void): () => void {
+		this.stateListeners.add(listener);
+		return () => { this.stateListeners.delete(listener); };
+	}
+
+	private notifyStateListeners(tabs: AgentTab[]) {
+		for (const listener of this.stateListeners) {
+			try { listener(tabs); } catch {}
+		}
+	}
+
 	stopAll() {
 		// 应用退出时统一清理所有 pi 子进程，避免后台 agent 残留占用模型或文件句柄。
 		for (const runtime of this.agents.values()) {
@@ -881,13 +895,19 @@ export class AgentManager {
 						"running",
 					);
 				}
+				// 重试中保持 running，不能误置为 idle/error，否则宠物聚合状态会提前转 done/failed
+				if (runtime) runtime.tab.status = "running";
 			} else if (errorMsg) {
 				this.addDetailedErrorMessage(agentId, String(errorMsg));
+				// 有错误且不会重试 → Agent 进入 error 态，宠物聚合为 failed（行5），
+				// 否则会被误置为 idle 触发"所有任务完成"通知
+				if (runtime) runtime.tab.status = "error";
 			} else if (
 				typed.stopReason === "error" ||
 				errorMessages.length > 0
 			) {
 				this.addDetailedErrorMessage(agentId, "Agent 返回未知错误，请重试");
+				if (runtime) runtime.tab.status = "error";
 			}
 			if (runtime) this.emitState();
 			// 同步刷新 runtimeState，将 isStreaming 重置为 false；
@@ -1518,7 +1538,12 @@ export class AgentManager {
 	}
 
 	private emitState() {
-		this.emit(ipcChannels.agentsState, this.list());
+		const tabs = this.list();
+		this.emit(ipcChannels.agentsState, tabs);
+		// 同步通知主进程内部状态订阅者（PetStateBridge），使宠物窗能拿到聚合状态。
+		// 设计文档原拟用 ipcMain.on("agents:state") 桥接是错的：webContents.send 是
+		// 主进程→渲染层单向通道，ipcMain 收不到主进程自己发出的消息，故改用本钩子。
+		this.notifyStateListeners(tabs);
 	}
 
 	private emit(channel: string, payload: unknown) {

@@ -151,4 +151,36 @@ export const ipcChannels = {
 	feishuSessionBotSet: "feishu:session-bot-set",
 	/** 飞书 /whoami 结果推回前端 */
 	feishuWhoamiResult: "feishu:whoami-result",
+
+	// ===== 桌面宠物（全局聚合单宠） =====
+	/** 主进程 → 宠物窗：推送聚合状态 */
+	petState: "pet:state",
+	/** 宠物窗/设置页 → 主进程：列出可用宠物包 */
+	petList: "pet:list",
+	/** 设置页 → 主进程：开关宠物 */
+	petSetEnabled: "pet:set-enabled",
+	/** 设置页 → 主进程：切换当前宠物 */
+	petSetId: "pet:set-id",
+	/** 宠物窗 → 主进程：拖拽移动窗口位置 */
+	petMoveWindow: "pet:move-window",
+	/** 宠物窗 → 主进程：点击宠物跳转活跃 Agent */
+	petFocusAgent: "pet:focus-agent",
+	/** 主进程 → 主窗口：点击宠物后通知主窗切换到活跃 Agent tab */
+	petFocusAgentTarget: "pet:focus-agent-target",
+	/** 主进程 → 宠物窗：推送当前选中宠物的 manifest（含 spritesheetUrl），切换宠物时热加载 */
+	petCurrentSprite: "pet:current-sprite",
+	/** 宠物窗 → 主进程：拉取当前选中宠物的 manifest（挂载时主动拉取，避免推送竞态丢失） */
+	petGetCurrent: "pet:get-current",
+	/** 主进程 → 宠物窗：推送通知气泡（出错/完成时宠物头顶弹窗） */
+	petNotify: "pet:notify",
+	/** 设置页 → 主进程 → 宠物窗：预览动画行（测试用） */
+	petPreviewMode: "pet:preview-mode",
+	/** 主进程 → 宠物窗：推送窗口能力探测结果（透明/穿透/自由定位） ★ 降级形态渲染 */
+	petCaps: "pet:caps",
+	/** 宠物窗 → 主进程：双击宠物触发逗弄（注入一次 jumping 后恢复真实态） */
+	petTease: "pet:tease",
+
+	// ── 调试工具 ──
+	/** 设置面板 → 主进程：发送测试通知（调试弹窗样式） */
+	petTestNotify: "pet:test-notify",
 } as const;

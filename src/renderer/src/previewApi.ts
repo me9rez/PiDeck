@@ -145,6 +145,14 @@ let previewSettings: AppSettings = {
 	linkOpenMode: "external",
 	maxEditorFileSizeMB: 5,
 	externalEditors: createDefaultExternalEditorSettings(),
+
+	// 桌面宠物默认关闭
+	petEnabled: false,
+	petId: "clawd",
+	petAlwaysOnTop: true,
+	petScale: 0.8,
+	petPatrolEnabled: true,
+	petPatrolPauseMin: 5,
 };
 
 export function createPreviewApi(): PiDesktopApi {
@@ -500,6 +508,7 @@ export function createPreviewApi(): PiDesktopApi {
 				{ name: "reload", description: "Reload runtime", source: "builtin" },
 			],
 			onState: noop,
+			onFocusTarget: noop,
 			onMessages: ((
 				callback: (payload: {
 					agentId: string;
@@ -513,6 +522,24 @@ export function createPreviewApi(): PiDesktopApi {
 			onThinking: noop,
 			onRpcLog: noop,
 			onRuntimeState: noop,
+		},
+		pet: {
+			onState: noop,
+			list: async () => [
+			{ id: "clawd", displayName: "Clawd", source: "builtin", spritesheetUrl: "" },
+		],
+			setEnabled: async () => undefined,
+			setId: async () => undefined,
+			moveWindow: async () => undefined,
+			focusAgent: async () => undefined,
+			onSprite: noop,
+			onNotify: noop,
+			setPreviewMode: async () => undefined,
+			onPreviewMode: noop,
+			onCaps: noop,
+			testNotify: async () => undefined,
+			tease: async () => undefined,
+			getCurrent: async () => ({ id: "clawd", displayName: "Clawd", source: "builtin", spritesheetUrl: "" }),
 		},
 		terminal: {
 			list: async (agentId) =>

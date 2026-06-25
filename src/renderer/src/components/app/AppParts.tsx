@@ -28,6 +28,7 @@ import {
 	MessageCircle,
 	Network,
 	Pencil,
+	PawPrint,
 	Pin,
 	Plus,
 	RefreshCw,
@@ -59,6 +60,7 @@ import type {
 	FileTreeNode,
 	GitBranchInfo,
 	ImageContent,
+	PetManifest,
 	PiCliUpdateResult,
 	PiCommand,
 	PiInstallStatus,
@@ -3457,6 +3459,17 @@ export function SettingsModal(props: {
 	useEffect(() => {
 		setWebPortDraft(String(props.settings.webServicePort));
 	}, [props.settings.webServicePort]);
+
+	// 宠物包列表：异步加载内置 + petdex 社区包，供选择下拉使用
+	const [petOptions, setPetOptions] = useState<{ value: string; label: string }[]>([]);
+	useEffect(() => {
+		window.piDesktop.pet
+			.list()
+			.then((pets) => setPetOptions(pets.map((p) => ({ value: p.id, label: p.displayName }))))
+			.catch(() => undefined);
+	}, []);
+	// 宠物动画预览模式：下拉选中值需受控，避免选完弹回"自动"
+	const [petPreviewMode, setPetPreviewMode] = useState("__auto");
 	const applyWebPortDraft = () => {
 		const port = Number(webPortDraft);
 		if (Number.isInteger(port) && port >= 1 && port <= 65535 && port !== props.settings.webServicePort) {
@@ -3494,6 +3507,12 @@ export function SettingsModal(props: {
 			label: t("settings.tabs.dev"),
 			description: t("settings.tabs.devDesc"),
 			icon: <Wrench size={16} />,
+		},
+		{
+			id: "pet",
+			label: t("settings.tabs.pet"),
+			description: t("settings.tabs.petDesc"),
+			icon: <PawPrint size={16} />,
 		},
 	];
 	const themeOptions = [
@@ -3981,6 +4000,118 @@ export function SettingsModal(props: {
 								</SettingsSection>
 							</>
 						)}
+						{activeTab === "pet" && (
+							<>
+								<SettingsSection title={t("settings.pet.title")} description={t("settings.pet.sectionDesc")}>
+									<SettingSwitch
+										title={t("settings.pet.enable")}
+										description={t("settings.pet.enableDesc")}
+										checked={props.settings.petEnabled}
+										onChange={(v) => props.onChange({ petEnabled: v })}
+									/>
+									<SettingSwitch
+										title={t("settings.pet.alwaysOnTop")}
+										description={t("settings.pet.alwaysOnTopDesc")}
+										checked={props.settings.petAlwaysOnTop}
+										onChange={(v) => props.onChange({ petAlwaysOnTop: v })}
+									/>
+									<SettingSwitch
+										title={t("settings.pet.patrol")}
+										description={t("settings.pet.patrolDesc")}
+										checked={props.settings.petPatrolEnabled ?? true}
+										onChange={(v) => props.onChange({ petPatrolEnabled: v })}
+									/>
+								</SettingsSection>
+								<SettingsSection title={t("settings.pet.patrolPause")} description={t("settings.pet.patrolPauseDesc")}>
+									<div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", maxWidth: 320 }}>
+										<input
+											type="range"
+											min="1"
+											max="30"
+											step="1"
+											value={props.settings.petPatrolPauseMin ?? 5}
+											onChange={(e) => props.onChange({ petPatrolPauseMin: parseInt(e.target.value) })}
+											style={{ flex: 1, accentColor: "var(--color-accent)" }}
+										/>
+										<span style={{
+											fontFamily: "var(--font-family-business)",
+											fontSize: "var(--font-size-sm)",
+											color: "var(--color-text-muted)",
+											minWidth: 60,
+											textAlign: "right",
+										}}>
+											{props.settings.petPatrolPauseMin ?? 5} min
+										</span>
+									</div>
+								</SettingsSection>
+								<SettingsSection title={t("settings.pet.choose")}>
+									<SelectField
+										className="setting-field"
+										label={t("settings.pet.choose")}
+										value={props.settings.petId}
+										options={petOptions}
+										onChange={(value) => props.onChange({ petId: value })}
+									/>
+									<small className="setting-status">{t("settings.pet.petdexHint")}</small>
+								</SettingsSection>
+								<SettingsSection title={t("settings.pet.scale")} description={t("settings.pet.scaleDesc")}>
+									<div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", maxWidth: 320 }}>
+										<input
+											type="range"
+											min="0.3"
+											max="2.0"
+											step="0.05"
+											value={props.settings.petScale ?? 1}
+											onChange={(e) => props.onChange({ petScale: parseFloat(e.target.value) })}
+											style={{ flex: 1, accentColor: "var(--color-accent)" }}
+										/>
+										<span style={{
+											fontFamily: "var(--font-family-business)",
+											fontSize: "var(--font-size-sm)",
+											color: "var(--color-text-muted)",
+											minWidth: 36,
+											textAlign: "right",
+										}}>
+											{((props.settings.petScale ?? 1) * 100).toFixed(0)}%
+										</span>
+									</div>
+								</SettingsSection>
+								<SettingsSection title={t("settings.pet.preview")} description={t("settings.pet.previewDesc")}>
+									<SelectField
+										className="setting-field"
+										label={t("settings.pet.previewMode")}
+										value={petPreviewMode}
+										options={[
+											{ value: "__auto", label: t("settings.pet.previewAuto") },
+											{ value: "idle", label: "😌 idle (行0)" },
+											{ value: "running", label: "⚙️ running (行7)" },
+											{ value: "failed", label: "😥 failed (行5)" },
+											{ value: "waiting", label: "🥺 waiting (行6)" },
+											{ value: "waving", label: "👋 waving (行3)" },
+											{ value: "running-right", label: "→ running-right (行1)" },
+											{ value: "running-left", label: "← running-left (行2)" },
+											{ value: "jumping", label: "🤸 jumping (行4)" },
+											{ value: "review", label: "🔍 review (行8)" },
+										]}
+										onChange={(value) => { setPetPreviewMode(value); void window.piDesktop.pet.setPreviewMode(value === "__auto" ? "" : value); }}
+									/>
+									<div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+										<button
+											className="setting-btn-sm"
+											onClick={() => void window.piDesktop.pet.testNotify("error")}
+										>
+											{t("settings.pet.testError")}
+										</button>
+										<button
+											className="setting-btn-sm"
+											onClick={() => void window.piDesktop.pet.testNotify("done")}
+										>
+											{t("settings.pet.testDone")}
+										</button>
+									</div>
+								</SettingsSection>
+							</>
+						)}
 						<p>{props.notice || t("settings.restartNotice")}</p>
 					</div>
 				</div>
@@ -4388,7 +4519,7 @@ function formatBytes(value: number) {
 	return `${value} B`;
 }
 
-type SettingsTabId = "base" | "proxy" | "web" | "dev";
+type SettingsTabId = "base" | "proxy" | "web" | "dev" | "pet";
 
 function SettingsSection(props: {
 	title: string;

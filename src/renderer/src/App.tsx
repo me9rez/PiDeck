@@ -529,6 +529,14 @@ export function App() {
     linkOpenMode: "external",
     maxEditorFileSizeMB: 5,
     externalEditors: createDefaultExternalEditorSettings(),
+
+    // 桌面宠物默认关闭：关闭后应用与现状完全一致，零回归
+    petEnabled: false,
+    petId: "clawd",
+    petAlwaysOnTop: true,
+    petScale: 0.8,
+    petPatrolEnabled: true,
+    petPatrolPauseMin: 5,
   });
   const [settingsNotice, setSettingsNotice] = useState("");
   const [piProxyNotice, setPiProxyNotice] = useState("");
@@ -626,6 +634,9 @@ export function App() {
       ),
     ];
   }, [agents, pendingAgents]);
+  // displayAgents 的 ref，供只挂载一次的 IPC 监听器读取最新 Agent 列表，避免闭包陈旧
+  const displayAgentsRef = useRef(displayAgents);
+  displayAgentsRef.current = displayAgents;
   const activeAgent = displayAgents.find((agent) => agent.id === activeAgentId);
   const prompt = activeAgentId ? (promptByAgent[activeAgentId] ?? "") : "";
   const attachedImages = activeAgentId
@@ -1070,6 +1081,17 @@ export function App() {
       offThinking();
       offRpcLog();
     };
+  }, []);
+
+  // 桌面宠物点击跳转：主进程通知激活某 Agent，切到对应 project + agent tab
+  useEffect(() => {
+    const off = api.agents.onFocusTarget((target) => {
+      const agent = displayAgentsRef.current.find((a) => a.id === target.agentId);
+      if (!agent) return;
+      setActiveProjectId(agent.projectId);
+      setActiveAgentId(agent.id);
+    });
+    return off;
   }, []);
 
   useEffect(() => {
