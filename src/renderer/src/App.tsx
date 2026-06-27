@@ -228,6 +228,39 @@ function isAbsoluteFilePath(path: string) {
   return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("/");
 }
 
+/** 从 localStorage 恢复会话来源过滤配置 */
+function loadSessionSourceFilter(): Record<string, Set<"pi" | "codex" | "claude" | "opencode"> | null> {
+	try {
+		const raw = localStorage.getItem("pideck-session-source-filter");
+		if (!raw) return {};
+		const parsed = JSON.parse(raw);
+		const result: Record<string, Set<"pi" | "codex" | "claude" | "opencode"> | null> = {};
+		for (const [key, val] of Object.entries(parsed)) {
+			if (val === null) {
+				result[key] = null;
+			} else if (Array.isArray(val)) {
+				result[key] = new Set(val);
+			}
+		}
+		return result;
+	} catch {
+		return {};
+	}
+}
+
+/** 将会话来源过滤持久化到 localStorage */
+function saveSessionSourceFilter(filter: Record<string, Set<"pi" | "codex" | "claude" | "opencode"> | null>) {
+	try {
+		const obj: Record<string, string[] | null> = {};
+		for (const [key, val] of Object.entries(filter)) {
+			obj[key] = val === null ? null : [...val];
+		}
+		localStorage.setItem("pideck-session-source-filter", JSON.stringify(obj));
+	} catch {
+		// 静默失败
+	}
+}
+
 function resolveFileLinkPath(path: string, basePath?: string) {
   if (!path || isAbsoluteFilePath(path) || !basePath) return path;
   // 浏览器端不引入 Node path;按项目根路径分隔符拼接,满足点击 AI 输出的项目相对路径。
@@ -449,7 +482,7 @@ export function App() {
   /** 历史会话来源过滤（按项目）：undefined=显示全部，Record 含项目ID对应 Set */
   const [sessionSourceFilter, setSessionSourceFilter] = useState<
   	Record<string, Set<"pi" | "codex" | "claude" | "opencode"> | null>
-  >({});
+  >(() => loadSessionSourceFilter());
   /** 来源过滤弹窗（关联项目ID和位置） */
   const [sessionFilterOpen, setSessionFilterOpen] = useState<{
   	x: number;
@@ -1367,6 +1400,26 @@ export function App() {
   useEffect(() => {
     setSelectedSuggestionIndex(0);
   }, [suggestionItems.length]);
+
+  // 持久化历史命令
+  useEffect(() => {
+    if (commandHistory.length > 0) {
+      try {
+        localStorage.setItem("pideck-command-history", JSON.stringify(commandHistory));
+      } catch (error) {
+        // 容量超限时静默失败
+      }
+    }
+  }, [commandHistory]);
+
+  // 持久化会话来源过滤配置
+  useEffect(() => {
+    try {
+      saveSessionSourceFilter(sessionSourceFilter);
+    } catch (error) {
+      // 静默失败
+    }
+  }, [sessionSourceFilter]);
 
   // 持久化历史命令
   useEffect(() => {
@@ -5304,6 +5357,9 @@ function FeedbackModal({
             <small>
               {t("feedback.intro")}{" "}
               <strong className="feedback-email">chat@caoayu.eu.org</strong>
+            </small>
+            <small className="feedback-qq">
+              QQ 群：<strong>1026218644</strong>
             </small>
           </div>
           <CloseIconButton label={t("common.close")} onClick={onClose} />

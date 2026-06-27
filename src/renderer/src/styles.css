@@ -4484,6 +4484,13 @@ body.is-composer-resizing .composer-resize-handle::after {
 	box-shadow: none;
 	overflow: hidden;
 }
+.modal-header.feedback-header {
+	height: auto;
+	min-height: 68px;
+	align-items: flex-start;
+	padding-top: 16px;
+	padding-bottom: 16px;
+}
 .feedback-header small {
 	display: block;
 	margin-top: 3px;
@@ -4494,6 +4501,17 @@ body.is-composer-resizing .composer-resize-handle::after {
 .feedback-email {
 	color: var(--color-text-primary);
 	font-weight: 800;
+}
+.feedback-qq {
+	margin-top: 6px;
+	color: var(--color-text-secondary);
+	font-size: var(--font-size-caption);
+}
+.feedback-qq strong {
+	color: var(--color-accent);
+	font-weight: 600;
+	cursor: pointer;
+	user-select: all;
 }
 .feedback-body {
 	display: grid;
@@ -5187,6 +5205,23 @@ body.is-composer-resizing .composer-resize-handle::after {
 	flex: 0 0 auto;
 	color: var(--color-purple);
 	background: color-mix(in srgb, var(--color-purple) 8%, var(--color-bg-panel));
+}
+.session-status .token-chip {
+	font-family: var(--font-family-business);
+	font-size: var(--font-size-micro);
+	font-weight: 600;
+	letter-spacing: 0.02em;
+}
+.session-status .token-chip.token-input {
+	color: var(--color-accent);
+	background: color-mix(in srgb, var(--color-accent) 10%, var(--color-bg-panel));
+}
+.session-status .token-chip.token-output {
+	color: var(--color-warning);
+	background: color-mix(in srgb, var(--color-warning) 8%, var(--color-bg-panel));
+}
+.session-status .cache-chip.cache-total {
+	margin-left: 0;
 }
 
 /* Agent 状态徽章 */
