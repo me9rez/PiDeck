@@ -61,6 +61,7 @@ import {
   BranchSelector,
   ComposerToolbar,
   ConversationOutline,
+  DiagnosticMessageCard,
   DrawerContent,
   EmptyState,
   EnvironmentDialog,
@@ -4419,6 +4420,8 @@ ${goalTextRef.current}
                     validCommandNames={validCommandNames}
                   validFilePaths={validFilePaths}
                   />
+                ) : item.message.role === "error" || item.message.role === "system" ? (
+                  <DiagnosticMessageCard key={item.message.id} message={item.message} />
                 ) : (
                   <Fragment key={item.message.id}>
                     <AssistantText

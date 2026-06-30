@@ -24,6 +24,7 @@ function loadMermaid() {
 	return mermaidModulePromise;
 }
 import {
+	AlertTriangle,
 	Check,
 	ChevronDown,
 	ChevronRight,
@@ -1439,6 +1440,39 @@ export const ToolGroupCard = memo(function ToolGroupCard(props: {
 				))}
 			</div>
 		</section>
+	);
+});
+
+function getDiagnosticTone(message: ChatMessage): "error" | "warning" | "success" | "info" {
+	if (message.role === "error") return "error";
+	const status = String(message.meta?.status ?? "");
+	if (status === "error") return "error";
+	if (status === "running") return "warning";
+	if (status === "success") return "success";
+	return "info";
+}
+
+/** 错误/RPC/系统诊断消息使用独立卡片，避免和普通 AI 正文混在一起难以扫读。 */
+export const DiagnosticMessageCard = memo(function DiagnosticMessageCard(props: {
+	message: ChatMessage;
+}) {
+	const tone = getDiagnosticTone(props.message);
+	const title = props.message.role === "error"
+		? t("diagnostic.errorTitle")
+		: t("diagnostic.systemTitle");
+	return (
+		<article
+			className={`diagnostic-card tone-${tone}`}
+			data-message-id={props.message.id}
+			data-role={props.message.role}
+		>
+			<div className="diagnostic-card-header">
+				<AlertTriangle size={14} aria-hidden="true" />
+				<span>{title}</span>
+				<time>{formatTime(props.message.timestamp)}</time>
+			</div>
+			<pre className="diagnostic-card-body">{stripAnsi(props.message.text)}</pre>
+		</article>
 	);
 });
 
