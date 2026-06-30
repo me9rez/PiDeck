@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, type ReactNode } from "react";
+import { memo, useCallback, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkBreaks from "remark-breaks";
@@ -100,10 +100,6 @@ function handleListNewline(value: string, selectionStart: number): { next: strin
  * 自写 rehype 插件：把文本节点里的 ==text== 模式转成 <mark>text</mark>。
  * 这是 unified v11 / remark v14+ 环境下的稳定方案。
  */
-function isTaskLine(line: string) {
-	return /^\s*(?:[-*+]|\d+[.)])\s+\[[ xX]\]/.test(line);
-}
-
 const rehypeHighlightMark: Plugin<[], Root> = () => {
 	return (tree) => {
 		const walker = (nodes: Root["children"]) => {
@@ -146,6 +142,7 @@ const rehypeHighlightMark: Plugin<[], Root> = () => {
 	};
 };
 
+
 export const ScratchPadPanel = memo(function ScratchPadPanel(props: ScratchPadPanelProps) {
 	const {
 		content,
@@ -160,13 +157,7 @@ export const ScratchPadPanel = memo(function ScratchPadPanel(props: ScratchPadPa
 	} = props;
 
 	const empty = !content.trim();
-	const taskLineIndexes = useMemo(
-		() => content
-			.split("\n")
-			.map((line, index) => (isTaskLine(line) ? index : -1))
-			.filter((index) => index >= 0),
-		[content],
-	);
+	const lines = content.split("\n");
 
 	const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
@@ -236,56 +227,51 @@ export const ScratchPadPanel = memo(function ScratchPadPanel(props: ScratchPadPa
 							</div>
 						) : (
 							<div className="scratch-pad-md">
-								{(() => {
-									let taskItemIndex = 0;
-									return (
-										<ReactMarkdown
-											remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
-											rehypePlugins={[rehypeKatex, rehypeHighlightMark]}
-											components={{
-												li: ({ node, className, children, ...liProps }) => {
-													const classes = String(className ?? "");
-													const sourceLine = typeof node?.position?.start?.line === "number" ? node.position.start.line - 1 : undefined;
-													const isTask = classes.includes("task-list-item") || (sourceLine !== undefined && isTaskLine(content.split("\n")[sourceLine] ?? ""));
-													const lineIndex = isTask ? (sourceLine ?? taskLineIndexes[taskItemIndex]) : undefined;
-													if (isTask) taskItemIndex++;
-													return (
-														<li
-															{...liProps}
-															className={classes}
-															role={isTask ? "button" : undefined}
-															tabIndex={isTask ? 0 : undefined}
-															onClick={(event) => {
-																if (!isTask || typeof lineIndex !== "number") return;
-																const target = event.target as HTMLElement;
-																if (target.closest("a,button")) return;
-																onToggleCheckbox(lineIndex);
-															}}
-															onKeyDown={(event) => {
-																if (!isTask || typeof lineIndex !== "number") return;
-																if (event.key !== "Enter" && event.key !== " ") return;
-																event.preventDefault();
-																onToggleCheckbox(lineIndex);
-															}}
-														>
-															{children}
-														</li>
-													);
-												},
-												input: ({ ...inputProps }) => (
-													<input
-														{...inputProps}
-														disabled={inputProps.type === "checkbox" ? false : inputProps.disabled}
-														readOnly={inputProps.type === "checkbox" ? true : inputProps.readOnly}
-														tabIndex={inputProps.type === "checkbox" ? -1 : inputProps.tabIndex}
-													/>
-												),
-											}}
-										>
-											{content}
-										</ReactMarkdown>
-									);
-								})()}
+								<ReactMarkdown
+									remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
+									rehypePlugins={[rehypeKatex, rehypeHighlightMark]}
+									components={{
+										/* GFM task list：用 AST 节点行号直接定位源码行，避免 render-order 计数器漂移 */
+										li: ({ node, className, children, ...liProps }) => {
+											const classes = String(className ?? "");
+											const lineIndex = typeof node?.position?.start?.line === "number" ? node.position.start.line - 1 : undefined;
+											const isTaskItem = typeof lineIndex === "number" && /^\s*(?:[-*+]|\d+[.)])\s+\[[ xX]\]/.test(lines[lineIndex] ?? "");
+											if (!isTaskItem) {
+												return <li {...liProps} className={classes}>{children}</li>;
+											}
+											return (
+												<li
+													{...liProps}
+													className={classes}
+													role="button"
+													tabIndex={0}
+													onClick={(event) => {
+														const target = event.target as HTMLElement;
+														if (target.closest("a,button")) return;
+														onToggleCheckbox(lineIndex);
+													}}
+													onKeyDown={(event) => {
+														if (event.key !== "Enter" && event.key !== " ") return;
+														event.preventDefault();
+														onToggleCheckbox(lineIndex);
+													}}
+												>
+													{children}
+												</li>
+											);
+										},
+										input: ({ ...inputProps }) => (
+											<input
+												{...inputProps}
+												disabled={inputProps.type === "checkbox" ? false : inputProps.disabled}
+												readOnly={inputProps.type === "checkbox" ? true : inputProps.readOnly}
+												tabIndex={inputProps.type === "checkbox" ? -1 : inputProps.tabIndex}
+											/>
+										),
+									}}
+								>
+									{content}
+								</ReactMarkdown>
 							</div>
 						)}
 					</div>
