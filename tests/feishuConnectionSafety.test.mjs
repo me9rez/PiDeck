@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const mainSource = () => readFileSync("src/main/index.ts", "utf8");
@@ -68,6 +68,17 @@ test("FeishuBridge registers and handles Feishu model picker card actions", () =
 	assert.match(method, /parseModelActionValue/);
 	assert.match(method, /this\.agentManager\.getAvailableModels\(binding\.sessionId\)/);
 	assert.match(method, /this\.agentManager\.setModel\(binding\.sessionId, action\.provider, action\.modelId\)/);
+});
+
+test("FeishuBridge does not keep unreachable workspace/resume command code", () => {
+	const source = bridgeSource();
+	assert.doesNotMatch(source, /handleWorkspaceCommand/);
+	assert.doesNotMatch(source, /handleResumeCommand/);
+	assert.doesNotMatch(source, /doSwitchWorkspace/);
+	assert.doesNotMatch(source, /doResumeSession/);
+	assert.doesNotMatch(source, /`\/workspace /);
+	assert.doesNotMatch(source, /`\/resume /);
+	assert.equal(existsSync("src/main/feishu/TaskStatusCard.ts"), false);
 });
 
 test("FeishuBridge prefers the current sessionToChat mapping over stale mirror bindings", () => {

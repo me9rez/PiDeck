@@ -1204,7 +1204,7 @@ export class FeishuBridge {
 		await this.sendCardMessage(ctx.chatId, { config: { wide_screen_mode: true, update_multi: true }, header: { title: { tag: "plain_text", content: "当前状态" }, template: "blue" }, elements: [{ tag: "markdown", content: lines.join("\n") }] });
 	}
 
-	// ===== 模型/工作区/会话管理命令（纯文本模式） =====
+	// ===== 模型命令 =====
 
 	private async handleModelCommand(ctx: FeishuMessageContext, text: string): Promise<void> {
 		const args = text.split(/\s+/).slice(1).join(" ");
@@ -1221,53 +1221,6 @@ export class FeishuBridge {
 		await this.sendCardMessage(ctx.chatId, buildModelPickerCard({ current, models }));
 	}
 
-	private async handleWorkspaceCommand(ctx: FeishuMessageContext, text: string): Promise<void> {
-		const projects = this.getProjects();
-		if (!projects.length) { await this.sendSmartMessage(ctx.chatId, "没有可用项目，请先在 PiDeck 中添加项目。"); return; }
-		const args = text.split(/\s+/).slice(1).join(" ");
-		const binding = this.chatBindings.get(ctx.chatId);
-		if (args) {
-			const target = projects.find((p) => p.id === args || p.name === args);
-			if (!target) { await this.sendSmartMessage(ctx.chatId, `未找到项目: ${args}`); return; }
-			if (binding) binding.workspaceId = target.id;
-			this.persistBindings();
-			await this.sendSmartMessage(ctx.chatId, `✅ 工作区已切换至: ${target.name}（${target.path}）。`);
-			return;
-		}
-		const currentId = binding?.workspaceId;
-		const lines: string[] = ["**可用工作区：**", ""];
-		for (const p of projects) {
-			const mark = p.id === currentId ? " ✓" : "";
-			lines.push(`${p.name}${mark}`);
-			lines.push("```");
-			lines.push(`/workspace ${p.name}`);
-			lines.push("```");
-		}
-		await this.sendSmartMessage(ctx.chatId, lines.join("\n"));
-	}
-
-	private async handleResumeCommand(ctx: FeishuMessageContext, text: string): Promise<void> {
-		const args = text.split(/\s+/).slice(1);
-		const binding = this.chatBindings.get(ctx.chatId);
-		const agents = this.agentManager.list().filter((t) => t.id !== binding?.sessionId).slice(0, 10);
-		if (args.length > 0) {
-			const idx = parseInt(args[0], 10) - 1;
-			if (isNaN(idx) || idx < 0 || idx >= agents.length) { await this.sendSmartMessage(ctx.chatId, `无效编号，请输入 1-${agents.length}。`); return; }
-			await this.doResumeSession(ctx.chatId, agents[idx]);
-			return;
-		}
-		if (!agents.length) { await this.sendSmartMessage(ctx.chatId, "没有可恢复的历史会话。"); return; }
-		const lines: string[] = ["**最近会话：**", ""];
-		for (let i = 0; i < agents.length; i++) {
-			const a = agents[i];
-			const date = new Date(a.createdAt).toLocaleDateString("zh-CN");
-			lines.push(`${i + 1}. ${a.title || a.id.slice(0, 8)} (${date})`);
-			lines.push("```");
-			lines.push(`/resume ${i + 1}`);
-			lines.push("```");
-		}
-		await this.sendSmartMessage(ctx.chatId, lines.join("\n"));
-	}
 
 	// ===== 卡片交互回调 =====
 
@@ -1306,38 +1259,6 @@ export class FeishuBridge {
 		}
 	}
 
-	private async doSwitchWorkspace(chatId: string, projectId: string): Promise<void> {
-		const binding = this.chatBindings.get(chatId);
-		if (!binding) { await this.sendSmartMessage(chatId, "当前没有绑定的会话。"); return; }
-		binding.workspaceId = projectId;
-		this.persistBindings();
-		const project = this.getProjects().find((p) => p.id === projectId);
-		await this.sendSmartMessage(chatId, `✅ 工作区已切换至: ${project?.name || projectId}。下一条消息将使用新工作区。`);
-	}
-
-	private async doResumeSession(chatId: string, target: { id: string; sessionPath?: string; title?: string }): Promise<void> {
-		if (!target.sessionPath) { await this.sendSmartMessage(chatId, "⚠️ 该会话没有持久化路径，无法恢复。"); return; }
-		const binding = this.chatBindings.get(chatId);
-		if (!binding) { await this.sendSmartMessage(chatId, "当前没有绑定的会话。"); return; }
-		try {
-			const tab = await this.agentManager.create({
-				projectId: binding.workspaceId || this.getProjects()[0]?.id || "",
-				sessionPath: target.sessionPath,
-				title: target.title,
-			});
-			binding.sessionId = tab.id;
-			binding.sessionPath = tab.sessionPath;
-			this.sessionToChat.set(tab.id, chatId);
-			this.feishuSessions.add(tab.id);
-			this.persistBindings();
-			this.pushBindings();
-			if (tab.sessionPath) setPersistentChatId(tab.sessionPath, chatId);
-			setPersistentChatId(`agent:${tab.id}`, chatId);
-			await this.sendSmartMessage(chatId, `✅ 已恢复会话: ${target.title || tab.id.slice(0, 8)} (${tab.id.slice(0, 8)})`);
-		} catch (e) {
-			await this.sendSmartMessage(chatId, `❌ 恢复失败: ${e instanceof Error ? e.message : String(e)}`);
-		}
-	}
 
 	// ===== 飞书消息发送（智能模式） =====
 
