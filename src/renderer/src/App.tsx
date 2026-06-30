@@ -4439,28 +4439,6 @@ ${goalTextRef.current}
           />
         )}
 
-        {!isLanWeb && terminalOpen && activeAgentId
-          && !settingsOpen
-          && !configOpen
-          && !environmentDialog && (
-          <TerminalDock
-            agentId={activeAgentId}
-            collapsed={terminalCollapsed}
-            height={terminalHeightByAgent[activeAgentId] ?? 220}
-            terminal={api.terminal}
-            onCollapsedChange={(collapsed) =>
-              setTerminalCollapsedForAgent(activeAgentId, collapsed)
-            }
-            onHeightChange={(height) =>
-              setTerminalHeightByAgent((current) => ({
-                ...current,
-                [activeAgentId]: height,
-              }))
-            }
-            onClose={() => setTerminalOpenForAgent(activeAgentId, false)}
-          />
-        )}
-
         {activeAgent && (
         <footer ref={composerRef} className="composer">
           {/* 图片预览作为输入框上方的附件栏,避免占用 textarea 的可输入区域。 */}
@@ -4684,6 +4662,26 @@ ${goalTextRef.current}
             </div>
           </div>
         </footer>
+        )}
+
+        {!isLanWeb && activeAgentId && !settingsOpen && !configOpen && !environmentDialog && (
+          <TerminalDock
+            agentId={activeAgentId}
+            open={terminalOpen}
+            collapsed={terminalCollapsed}
+            height={terminalHeightByAgent[activeAgentId] ?? 220}
+            terminal={api.terminal}
+            onCollapsedChange={(collapsed) =>
+              setTerminalCollapsedForAgent(activeAgentId, collapsed)
+            }
+            onHeightChange={(height) =>
+              setTerminalHeightByAgent((current) => ({
+                ...current,
+                [activeAgentId]: height,
+              }))
+            }
+            onClose={() => setTerminalOpenForAgent(activeAgentId, false)}
+          />
         )}
       </main>
 

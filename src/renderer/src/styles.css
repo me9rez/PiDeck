@@ -1480,13 +1480,15 @@ body.is-terminal-resizing {
 	position: relative;
 	grid-column: 3;
 	display: grid;
-	grid-template-rows: auto minmax(0, 1fr) auto auto;
+	--terminal-row-h: 0px;
+	grid-template-rows: auto minmax(0, 1fr) auto var(--terminal-row-h);
 	min-width: 0;
 	min-height: 0;
 	background: var(--color-bg-muted);
 	border-top-left-radius: var(--radius-lg);
 	border-bottom-left-radius: var(--radius-lg);
 	overflow: hidden;
+	transition: grid-template-rows 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* ── 内容行宽限制：仅在 --content-max-width 由 JS 注入时生效 ── */
@@ -2129,13 +2131,11 @@ body.is-terminal-resizing {
 	position: relative;
 	z-index: 0;
 	min-height: 120px;
-	max-height: 45vh;
 	border-top: 1px solid var(--terminal-border);
 	background: var(--terminal-panel);
 	color: var(--terminal-fg);
 	display: grid;
 	grid-template-rows: 34px minmax(0, 1fr);
-	overflow: visible;
 	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
 	z-index: 60;
 }
