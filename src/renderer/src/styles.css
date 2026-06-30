@@ -1402,6 +1402,9 @@ body:not(.is-list-resizing) .list-collapsed:not(.list-hover-suppressed) .chat-li
 	color: #fff;
 	background: #6366f1;
 }
+.session-source-badge.subagent {
+	background: color-mix(in srgb, #6366f1 78%, var(--color-bg-panel));
+}
 .session-source-badge.claude {
 	color: #fff;
 	background: #d97706;
@@ -1413,6 +1416,45 @@ body:not(.is-list-resizing) .list-collapsed:not(.list-hover-suppressed) .chat-li
 .session-row.active .conversation-title strong {
 	color: var(--color-text-primary);
 	font-weight: 600;
+}
+.codex-subagent-sidebar-group {
+	display: grid;
+	gap: 1px;
+	margin: 0 0 2px 28px;
+}
+.codex-subagent-sidebar-toggle,
+.codex-subagent-sidebar-row {
+	margin: 0;
+	padding-left: 18px;
+	min-height: 24px;
+}
+.codex-subagent-sidebar-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	border: 0;
+	border-radius: var(--radius-md);
+	background: transparent;
+	color: var(--color-text-tertiary);
+	font-size: var(--font-size-caption);
+	line-height: var(--line-height-caption);
+	cursor: pointer;
+	text-align: left;
+}
+.codex-subagent-sidebar-toggle:hover,
+.codex-subagent-sidebar-row:hover {
+	background: var(--color-bg-hover);
+	color: var(--color-text-secondary);
+}
+.codex-subagent-sidebar-toggle svg {
+	transform: rotate(-90deg);
+	transition: transform 0.12s ease;
+}
+.codex-subagent-sidebar-toggle svg.expanded {
+	transform: rotate(0deg);
+}
+.codex-subagent-sidebar-row .conversation-title strong {
+	color: var(--color-text-tertiary);
 }
 .project-session-loading {
 	margin: 4px 8px 2px 40px;
@@ -5011,6 +5053,10 @@ body.is-composer-resizing .composer-resize-handle::after {
 	display: grid;
 	gap: 8px;
 }
+.codex-session-group {
+	display: grid;
+	gap: 6px;
+}
 .codex-session-row {
 	display: grid;
 	grid-template-columns: 22px minmax(0, 1fr);
@@ -5082,6 +5128,40 @@ body.is-composer-resizing .composer-resize-handle::after {
 .codex-status.current {
 	background: color-mix(in srgb, var(--color-info) 14%, var(--color-bg-panel));
 	color: var(--color-info);
+}
+.codex-status.subagent {
+	background: color-mix(in srgb, #6366f1 14%, var(--color-bg-panel));
+	color: #6366f1;
+}
+.codex-subagent-toggle {
+	justify-self: start;
+	margin-left: 40px;
+	border: 0;
+	border-radius: var(--radius-md);
+	background: transparent;
+	color: var(--color-text-tertiary);
+	padding: 2px 6px;
+	font-size: var(--font-size-caption);
+	cursor: pointer;
+}
+.codex-subagent-toggle:hover {
+	background: var(--color-bg-hover);
+	color: var(--color-text-secondary);
+}
+.codex-subagent-list {
+	display: grid;
+	gap: 6px;
+	margin-left: 28px;
+	padding-left: 12px;
+	border-left: 1px solid var(--color-border-subtle);
+}
+.codex-subagent-row {
+	background: var(--color-bg-muted);
+}
+.codex-orphan-subagents-title {
+	margin-left: 4px;
+	color: var(--color-text-tertiary);
+	font-size: var(--font-size-caption);
 }
 .codex-import-report {
 	display: grid;

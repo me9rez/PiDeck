@@ -117,6 +117,11 @@ export type SessionSummary = {
 	messageCount: number;
 	/** 会话来源：pi 原生、Codex 导入、Claude 导入、OpenCode 导入 */
 	source?: "pi" | "codex" | "claude" | "opencode";
+	codexSessionId?: string;
+	codexThreadSource?: "user" | "subagent";
+	codexParentThreadId?: string;
+	codexAgentRole?: string;
+	codexAgentNickname?: string;
 };
 
 export type CodexImportStatus = "new" | "current" | "outdated";
@@ -134,6 +139,10 @@ export type CodexSessionSummary = {
 	status: CodexImportStatus;
 	sourceSize: number;
 	importedSourceMtime?: number;
+	threadSource?: "user" | "subagent";
+	parentThreadId?: string;
+	agentRole?: string;
+	agentNickname?: string;
 };
 
 export type CodexImportResult = {
@@ -706,4 +715,3 @@ export type FeishuTestResult = {
 	message: string;
 	botName?: string;
 };
-

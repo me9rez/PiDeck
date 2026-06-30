@@ -1,4 +1,5 @@
 // @ts-nocheck - extracted from AppParts, pre-existing type issues
+import { useState } from "react";
 import { Check, RefreshCw, UploadCloud } from "lucide-react";
 import { t } from "../../i18n";
 import { CloseIconButton } from "../ui/IconButton";
@@ -32,6 +33,32 @@ function formatCodexStatus(status: CodexSessionSummary["status"]) {
 	return t("codex.status.new");
 }
 
+function groupCodexSessions(sessions: CodexSessionSummary[]) {
+	const parentById = new Map(sessions.map((session) => [session.id, session]));
+	const childrenByParent = new Map<string, CodexSessionSummary[]>();
+	const orphanSubagents: CodexSessionSummary[] = [];
+	const parents = sessions.filter((session) => session.threadSource !== "subagent");
+
+	for (const session of sessions) {
+		if (session.threadSource !== "subagent") continue;
+		const parentId = session.parentThreadId;
+		if (parentId && parentById.has(parentId)) {
+			const children = childrenByParent.get(parentId) ?? [];
+			children.push(session);
+			childrenByParent.set(parentId, children);
+		} else {
+			orphanSubagents.push(session);
+		}
+	}
+
+	return { parents, childrenByParent, orphanSubagents };
+}
+
+function codexSubagentLabel(session: CodexSessionSummary) {
+	const parts = [session.agentNickname, session.agentRole].filter(Boolean);
+	return parts.length ? parts.join(" · ") : t("codex.subagent");
+}
+
 function formatClaudeStatus(status: ClaudeSessionSummary["status"]) {
 	if (status === "current") return t("claude.status.current");
 	if (status === "outdated") return t("claude.status.outdated");
@@ -57,10 +84,50 @@ export function CodexImportModal(props: {
 	onToggleAll: () => void;
 	onImport: () => void;
 }) {
+	const [expandedSubagents, setExpandedSubagents] = useState<Set<string>>(() => new Set());
+	const [showOrphanSubagents, setShowOrphanSubagents] = useState(false);
 	const selected = new Set(props.selectedPaths);
+	const grouped = groupCodexSessions(props.sessions);
+	const selectableParents = grouped.parents;
 	const allSelected =
-		props.sessions.length > 0 &&
-		props.sessions.every((session) => selected.has(session.sourcePath));
+		selectableParents.length > 0 &&
+		selectableParents.every((session) => selected.has(session.sourcePath));
+	const toggleSubagents = (parentId: string) => {
+		setExpandedSubagents((current) => {
+			const next = new Set(current);
+			if (next.has(parentId)) next.delete(parentId);
+			else next.add(parentId);
+			return next;
+		});
+	};
+	const renderRow = (session: CodexSessionSummary, className = "codex-session-row") => (
+		<label key={session.sourcePath} className={className}>
+			<input
+				type="checkbox"
+				checked={selected.has(session.sourcePath)}
+				onChange={() => props.onToggle(session.sourcePath)}
+			/>
+			<div className="codex-session-main">
+				<div className="codex-session-title">
+					<strong>{session.title}</strong>
+					{session.threadSource === "subagent" && (
+						<span className="codex-status subagent">{codexSubagentLabel(session)}</span>
+					)}
+					<span className={`codex-status ${session.status}`}>
+						{formatCodexStatus(session.status)}
+					</span>
+				</div>
+				<p>{session.preview}</p>
+				<small>
+					{new Date(session.updatedAt).toLocaleString()} ·{" "}
+					{t("drawer.sessionMessages", {
+						count: session.messageCount,
+					})} ·{" "}
+					{formatBytes(session.sourceSize)}
+				</small>
+			</div>
+		</label>
+	);
 	return (
 		<div className="modal-backdrop">
 			<section className="codex-import-modal">
@@ -115,31 +182,49 @@ export function CodexImportModal(props: {
 						</div>
 					) : (
 						<div className="codex-session-list">
-							{props.sessions.map((session) => (
-								<label key={session.sourcePath} className="codex-session-row">
-									<input
-										type="checkbox"
-										checked={selected.has(session.sourcePath)}
-										onChange={() => props.onToggle(session.sourcePath)}
-									/>
-									<div className="codex-session-main">
-										<div className="codex-session-title">
-											<strong>{session.title}</strong>
-											<span className={`codex-status ${session.status}`}>
-												{formatCodexStatus(session.status)}
-											</span>
-										</div>
-										<p>{session.preview}</p>
-										<small>
-											{new Date(session.updatedAt).toLocaleString()} ·{" "}
-											{t("drawer.sessionMessages", {
-												count: session.messageCount,
-											})} ·{" "}
-											{formatBytes(session.sourceSize)}
-										</small>
+							{grouped.parents.map((session) => {
+								const children = grouped.childrenByParent.get(session.id) ?? [];
+								const expanded = expandedSubagents.has(session.id);
+								return (
+									<div key={session.sourcePath} className="codex-session-group">
+										{renderRow(session)}
+										{children.length > 0 && (
+											<button
+												type="button"
+												className="codex-subagent-toggle"
+												onClick={() => toggleSubagents(session.id)}
+											>
+												{expanded
+													? t("codex.hideSubagents", { count: children.length })
+													: t("codex.showSubagents", { count: children.length })}
+											</button>
+										)}
+										{expanded && children.length > 0 && (
+											<div className="codex-subagent-list">
+												{children.map((child) => renderRow(child, "codex-session-row codex-subagent-row"))}
+											</div>
+										)}
 									</div>
-								</label>
-							))}
+								);
+							})}
+							{grouped.orphanSubagents.length > 0 && (
+								<div className="codex-session-group">
+									<button
+										type="button"
+										className="codex-subagent-toggle codex-orphan-subagents-title"
+										onClick={() => setShowOrphanSubagents((current) => !current)}
+									>
+										{t("codex.orphanSubagents", { count: grouped.orphanSubagents.length })}
+									</button>
+									{showOrphanSubagents && (
+										<div className="codex-subagent-list">
+											{grouped.orphanSubagents.map((session) =>
+												renderRow(session, "codex-session-row codex-subagent-row"),
+											)}
+										</div>
+									)}
+								</div>
+							)}
 						</div>
 					)}
 				</div>

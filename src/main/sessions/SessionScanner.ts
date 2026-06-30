@@ -3,9 +3,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import type { SessionSummary } from "../../shared/types";
+import { getCodexSessionThreadInfo } from "../../shared/codexSessionMeta";
 
 export class SessionScanner {
   private readonly root = join(app.getPath("home"), ".pi", "agent", "sessions");
+  private readonly codexRoot = join(app.getPath("home"), ".codex", "sessions");
 
   async list(projectPath?: string): Promise<SessionSummary[]> {
     const files = await this.collectJsonl(this.root).catch(() => [] as string[]);
@@ -114,12 +116,26 @@ export class SessionScanner {
     let messageCount = 0;
     /** 会话来源：扫描前几行检测导入标记 */
     let source: SessionSummary["source"] = "pi";
+    let codexSessionId: string | undefined;
+    let codexThreadSource: SessionSummary["codexThreadSource"];
+    let codexParentThreadId: string | undefined;
+    let codexAgentRole: string | undefined;
+    let codexAgentNickname: string | undefined;
+    let codexSourcePath: string | undefined;
 
     for (const line of lines) {
       const entry = JSON.parse(line) as any;
       // 扫描前几行的非消息条目，检测导入来源标记
       if (source === "pi") {
-        if (entry.type === "codex_import") source = "codex";
+        if (entry.type === "codex_import") {
+          source = "codex";
+          codexSessionId = this.optionalString(entry.codexSessionId);
+          codexSourcePath = this.optionalString(entry.sourcePath);
+          codexThreadSource = entry.threadSource === "subagent" ? "subagent" : "user";
+          codexParentThreadId = this.optionalString(entry.parentThreadId);
+          codexAgentRole = this.optionalString(entry.agentRole);
+          codexAgentNickname = this.optionalString(entry.agentNickname);
+        }
         else if (entry.type === "claude_import") source = "claude";
         else if (entry.type === "opencode_import") source = "opencode";
       }
@@ -137,6 +153,16 @@ export class SessionScanner {
       }
     }
 
+    if (source === "codex" && codexSourcePath && !codexParentThreadId) {
+      const fallbackInfo = this.readCodexThreadInfo(codexSourcePath);
+      if (fallbackInfo) {
+        codexThreadSource = fallbackInfo.threadSource;
+        codexParentThreadId = fallbackInfo.parentThreadId;
+        codexAgentRole = fallbackInfo.agentRole;
+        codexAgentNickname = fallbackInfo.agentNickname;
+      }
+    }
+
     const inferredName = this.cleanTitle(name) || this.cleanTitle(firstUserText) || this.cleanTitle(firstAssistantText) || "Untitled";
 
     return {
@@ -148,7 +174,33 @@ export class SessionScanner {
       updatedAt: info.mtimeMs,
       messageCount,
       source,
+      codexSessionId,
+      codexThreadSource,
+      codexParentThreadId,
+      codexAgentRole,
+      codexAgentNickname,
     };
+  }
+
+  private optionalString(value: unknown) {
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  }
+
+  private readCodexThreadInfo(sourcePath: string) {
+    try {
+      const root = this.normalize(this.codexRoot);
+      const target = this.normalize(sourcePath);
+      if (target !== root && !target.startsWith(`${root}/`)) return undefined;
+      for (const line of readFileSync(sourcePath, "utf8").split(/\r?\n/).filter(Boolean).slice(0, 16)) {
+        const entry = JSON.parse(line) as any;
+        if (entry.type === "session_meta" && entry.payload) {
+          return getCodexSessionThreadInfo(entry.payload);
+        }
+      }
+    } catch {
+      return undefined;
+    }
+    return undefined;
   }
 
   private extractText(content: unknown): string {

@@ -10,12 +10,14 @@ export type ProjectChildItem =
 			sortAt: number;
 			/** 该 Agent 对应的会话来源（历史会话激活时从 SessionSummary 传递） */
 			source?: "pi" | "codex" | "claude" | "opencode";
+			codexSubagents: SessionSummary[];
 	  }
 	| {
 			type: "session";
 			key: string;
 			session: SessionSummary;
 			sortAt: number;
+			codexSubagents: SessionSummary[];
 	  };
 
 export type ProjectAgentSessionDisplay = {
@@ -39,6 +41,10 @@ export function isSameSessionPath(left?: string, right?: string) {
 
 function getSessionKey(sessionPath?: string) {
 	return normalizeSessionPathForCompare(sessionPath);
+}
+
+function getCodexParentKey(session: SessionSummary) {
+	return session.codexSessionId ?? session.id;
 }
 
 function getAgentSortAt(agent: AgentTab, sessionByKey: Map<string, SessionSummary>) {
@@ -66,7 +72,24 @@ export function getProjectAgentSessionDisplay({
 }): ProjectAgentSessionDisplay {
 	const sessionByKey = new Map<string, SessionSummary>();
 	const unkeyedSessions: SessionSummary[] = [];
+	const codexSubagentsByParent = new Map<string, SessionSummary[]>();
+	const parentCandidateSessions = sessions.filter(
+		(session) => session.codexThreadSource !== "subagent",
+	);
+	const parentCodexIds = new Set(
+		parentCandidateSessions.map(getCodexParentKey).filter(Boolean),
+	);
 	for (const session of sessions) {
+		if (
+			session.codexThreadSource === "subagent" &&
+			session.codexParentThreadId &&
+			parentCodexIds.has(session.codexParentThreadId)
+		) {
+			const children = codexSubagentsByParent.get(session.codexParentThreadId) ?? [];
+			children.push(session);
+			codexSubagentsByParent.set(session.codexParentThreadId, children);
+			continue;
+		}
 		const sessionKey = getSessionKey(session.filePath);
 		if (sessionKey) sessionByKey.set(sessionKey, session);
 		else unkeyedSessions.push(session);
@@ -93,16 +116,23 @@ export function getProjectAgentSessionDisplay({
 			key: `agent:${agent.id}`,
 			agent,
 			sortAt: agent.createdAt,
+			codexSubagents: [],
 		})),
 		...[...agentBySessionKey.entries()].map<ProjectChildItem>(
-			([sessionKey, agent]) => ({
-				type: "agent",
-				key: `session-agent:${sessionKey}`,
-				agent,
-				sortAt: getAgentSortAt(agent, sessionByKey),
-				// 历史会话激活为 Agent 后仍携带来源标记，供侧边栏区分导入会话
-				source: sessionByKey.get(sessionKey)?.source,
-			}),
+			([sessionKey, agent]) => {
+				const linkedSession = sessionByKey.get(sessionKey);
+				return {
+					type: "agent",
+					key: `session-agent:${sessionKey}`,
+					agent,
+					sortAt: getAgentSortAt(agent, sessionByKey),
+					// 历史会话激活为 Agent 后仍携带来源标记，供侧边栏区分导入会话
+					source: linkedSession?.source,
+					codexSubagents: linkedSession
+						? (codexSubagentsByParent.get(getCodexParentKey(linkedSession)) ?? [])
+						: [],
+				};
+			},
 		),
 		...[...sessionByKey.entries()]
 			.filter(([sessionKey]) => !agentBySessionKey.has(sessionKey))
@@ -111,12 +141,14 @@ export function getProjectAgentSessionDisplay({
 				key: `session:${sessionKey}`,
 				session,
 				sortAt: session.updatedAt,
+				codexSubagents: codexSubagentsByParent.get(getCodexParentKey(session)) ?? [],
 			})),
 		...unkeyedSessions.map<ProjectChildItem>((session) => ({
 			type: "session",
 			key: `session-file:${session.filePath}`,
 			session,
 			sortAt: session.updatedAt,
+			codexSubagents: codexSubagentsByParent.get(getCodexParentKey(session)) ?? [],
 		})),
 	].sort((left, right) => right.sortAt - left.sortAt);
 

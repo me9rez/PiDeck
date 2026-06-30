@@ -8,6 +8,7 @@ import type {
 	CodexImportStatus,
 	CodexSessionSummary,
 } from "../../shared/types";
+import { getCodexSessionThreadInfo } from "../../shared/codexSessionMeta";
 
 type ParsedCodexSession = {
 	meta: Record<string, any>;
@@ -102,6 +103,7 @@ export class CodexSessionImporter {
 				: "outdated";
 
 		const originalTimestamp = Date.parse(String(session.meta.timestamp ?? "")) || session.sourceMtime;
+		const threadInfo = getCodexSessionThreadInfo(session.meta);
 		return {
 			id: String(session.meta.id ?? session.sourcePath),
 			sourcePath: session.sourcePath,
@@ -115,11 +117,16 @@ export class CodexSessionImporter {
 			status,
 			sourceSize: session.sourceSize,
 			importedSourceMtime: importMeta?.sourceMtime,
+			threadSource: threadInfo.threadSource,
+			parentThreadId: threadInfo.parentThreadId,
+			agentRole: threadInfo.agentRole,
+			agentNickname: threadInfo.agentNickname,
 		};
 	}
 
 	private convertToPiSession(projectPath: string, session: ParsedCodexSession) {
 		const sessionId = String(session.meta.id ?? this.hash(session.sourcePath));
+		const threadInfo = getCodexSessionThreadInfo(session.meta);
 		const timestamp = new Date(
 			Date.parse(String(session.meta.timestamp ?? "")) || session.sourceMtime,
 		).toISOString();
@@ -185,6 +192,10 @@ export class CodexSessionImporter {
 			sourceMtime: session.sourceMtime,
 			sourceSize: session.sourceSize,
 			importedAt: new Date().toISOString(),
+			threadSource: threadInfo.threadSource,
+			parentThreadId: threadInfo.parentThreadId,
+			agentRole: threadInfo.agentRole,
+			agentNickname: threadInfo.agentNickname,
 		});
 		const modelChangeId = this.makeId(sessionId, sequence++);
 		pushEntry({
