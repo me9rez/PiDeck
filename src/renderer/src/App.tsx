@@ -4135,13 +4135,6 @@ ${goalTextRef.current}
             className={`chat-header-actions${activeAgent?.status === "starting" ? " loading" : ""}`}
           >
             <>
-              <button
-                className={scratchPad.isOpen ? "active scratch-pad-btn" : "scratch-pad-btn"}
-                onClick={() => scratchPad.toggle()}
-                title={t("scratchPad.openTooltip")}
-              >
-                <Pencil size={15} />
-              </button>
               <div className="header-action-group branch-group">
                 {!isLanWeb && (
                   <BranchSelector
@@ -4430,6 +4423,12 @@ ${goalTextRef.current}
           <ConversationOutline
             items={outlineItems}
             onJump={handleOutlineJump}
+            extraAction={{
+              active: scratchPad.isOpen,
+              label: t("scratchPad.openTooltip"),
+              onClick: scratchPad.toggle,
+              icon: <Pencil size={17} />,
+            }}
           />
         )}
 
@@ -5313,7 +5312,7 @@ ${goalTextRef.current}
 
       {/* Scratch Pad（草稿本）：根级渲染，避免受 chat-pane grid 影响定位 */}
       {scratchPad.isOpen || scratchPad.isClosing ? (
-        <div className="scratch-pad-overlay" onClick={() => scratchPad.close()}>
+        <div className={`scratch-pad-overlay${scratchPad.isClosing ? " closing" : ""}`} onClick={() => scratchPad.close()}>
           <ScratchPadPanel
             content={scratchPad.content}
             mode={scratchPad.mode}
@@ -5322,8 +5321,8 @@ ${goalTextRef.current}
             hasError={scratchPad.hasError}
             onChangeContent={scratchPad.setContent}
             onSetMode={scratchPad.setMode}
+            onToggleCheckbox={scratchPad.toggleTaskCheckbox}
             onExport={() => void scratchPad.exportFile()}
-            onClose={() => scratchPad.close()}
           />
         </div>
       ) : null}

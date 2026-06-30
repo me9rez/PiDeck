@@ -4923,6 +4923,15 @@ body.is-composer-resizing .composer-resize-handle::after {
 	position: absolute;
 	right: 18px;
 	z-index: 8;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 5px;
+}
+.outline-zone {
+	position: relative;
+	width: 34px;
+	height: 34px;
 }
 .outline-trigger {
 	width: 34px;
@@ -4962,13 +4971,13 @@ body.is-composer-resizing .composer-resize-handle::after {
 		opacity 0.14s ease,
 		transform 0.14s ease;
 }
-.outline-hover:hover .conversation-outline,
+.outline-zone:hover .conversation-outline,
 .outline-hover.dragging .conversation-outline {
 	opacity: 1;
 	pointer-events: auto;
 	transform: translateX(0);
 }
-.outline-hover:hover .outline-trigger,
+.outline-zone:hover .outline-trigger,
 .outline-hover.dragging .outline-trigger {
 	opacity: 0;
 }
@@ -5056,6 +5065,25 @@ body.is-composer-resizing .composer-resize-handle::after {
 }
 .conversation-outline .outline-user strong {
 	color: var(--color-info);
+}
+.scratch-pad-entry {
+	position: static;
+	width: 34px;
+	height: 34px;
+	border: 1px solid var(--color-border-subtle);
+	background: var(--color-bg-panel);
+	color: var(--color-text-tertiary);
+	border-radius: var(--radius-lg);
+	padding: 0;
+	display: grid;
+	place-items: center;
+	box-shadow: var(--shadow-popover);
+	cursor: pointer;
+}
+.scratch-pad-entry:hover,
+.scratch-pad-entry.active {
+	color: var(--color-accent);
+	border-color: var(--color-accent);
 }
 @media (max-width: 1280px) {
 	.outline-hover {
@@ -10872,17 +10900,22 @@ a.config-btn {
 	right: 0;
 	bottom: 0;
 	z-index: 100;
-	background: rgba(0, 0, 0, 0.04);
-	backdrop-filter: blur(3px);
+	background: rgba(62, 52, 38, 0.05);
+	backdrop-filter: blur(2px);
+	animation: scratch-pad-backdrop-enter 180ms ease-out forwards;
+}
+
+.scratch-pad-overlay.closing {
+	animation: scratch-pad-backdrop-exit 160ms ease-in forwards;
 }
 
 .scratch-pad-panel {
 	position: fixed;
-	left: calc(var(--list-width, 300px) + 4px);
+	right: 18px;
 	top: 20vh;
 	z-index: 101;
 	width: 540px;
-	max-width: calc(100vw - var(--list-width, 300px) - 24px);
+	max-width: calc(100vw - 36px);
 	height: min(640px, 68vh);
 	display: flex;
 	flex-direction: column;
@@ -10896,22 +10929,45 @@ a.config-btn {
 		0 8px 24px rgba(90, 78, 58, 0.08),
 		0 24px 48px rgba(90, 78, 58, 0.10);
 	overflow: hidden;
-	animation: scratch-pad-enter 260ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
-	will-change: opacity;
+	transform-origin: top right;
+	animation: scratch-pad-enter 240ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+	will-change: opacity, transform;
 }
 
 .scratch-pad-panel.closing {
-	animation: scratch-pad-exit 200ms cubic-bezier(0.4, 0, 1, 1) forwards;
+	animation: scratch-pad-exit 150ms ease-in forwards;
 }
 
-@keyframes scratch-pad-enter {
+@keyframes scratch-pad-backdrop-enter {
 	from { opacity: 0; }
 	to { opacity: 1; }
 }
 
-@keyframes scratch-pad-exit {
+@keyframes scratch-pad-backdrop-exit {
 	from { opacity: 1; }
 	to { opacity: 0; }
+}
+
+@keyframes scratch-pad-enter {
+	from {
+		opacity: 0;
+		transform: translate3d(10px, -8px, 0) scale(0.985);
+	}
+	to {
+		opacity: 1;
+		transform: translate3d(0, 0, 0) scale(1);
+	}
+}
+
+@keyframes scratch-pad-exit {
+	from {
+		opacity: 1;
+		transform: translate3d(0, 0, 0) scale(1);
+	}
+	to {
+		opacity: 0;
+		transform: translate3d(6px, -4px, 0) scale(0.99);
+	}
 }
 
 .scratch-pad-header {
@@ -10937,8 +10993,14 @@ a.config-btn {
 .scratch-pad-toolbar {
 	display: flex;
 	align-items: center;
-	gap: 4px;
+	gap: 3px;
 	margin-left: auto;
+	padding: 3px;
+	border: 1px solid rgba(139, 120, 92, 0.18);
+	border-radius: var(--radius-md);
+	background: rgba(255, 252, 244, 0.48);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+	flex-wrap: nowrap;
 }
 
 .scratch-pad-content {
@@ -11010,12 +11072,37 @@ a.config-btn {
 
 /* ---------- Scratch Pad in-panel button ---------- */
 button.scratch-pad-tool-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	width: auto;
+	min-width: 0;
+	height: 30px;
+	padding: 0 8px;
+	border: 1px solid transparent;
+	border-radius: var(--radius-sm);
+	background: transparent;
 	color: var(--color-scratch-pad-ink-faint, #9b9080);
+	box-shadow: none;
 }
 
 button.scratch-pad-tool-btn:hover {
 	color: var(--color-scratch-pad-ink, #5c5347);
-	background: rgba(0, 0, 0, 0.04);
+	border-color: rgba(139, 120, 92, 0.2);
+	background: rgba(255, 248, 232, 0.72);
+}
+
+button.scratch-pad-tool-btn.active {
+	color: var(--color-scratch-pad-ink, #3d3629);
+	border-color: rgba(139, 120, 92, 0.26);
+	background: rgba(245, 232, 202, 0.7);
+	box-shadow: inset 0 1px 2px rgba(90, 78, 58, 0.08);
+}
+
+.scratch-pad-tool-text {
+	font-size: var(--font-size-caption, 12px);
+	white-space: nowrap;
 }
 
 .scratch-pad-kbd {
@@ -11023,4 +11110,194 @@ button.scratch-pad-tool-btn:hover {
 	font-size: 11px;
 	color: var(--color-scratch-pad-ink-faint, #9b9080);
 	margin-left: 6px;
+}
+
+/* ---------- Obsidian 风格 markdown 渲染 ---------- */
+.scratch-pad-md {
+	color: var(--color-scratch-pad-ink, #3d3629);
+	font-family: var(--font-family-base, system-ui, -apple-system, sans-serif);
+	font-size: var(--font-size-sm, 14px);
+	line-height: var(--color-scratch-pad-line, 1.7);
+	letter-spacing: 0.01em;
+	word-break: break-word;
+}
+
+/* 标题：整体偏小、字重调低，呈现 Obsidian 的克制感 */
+.scratch-pad-md h1,
+.scratch-pad-md h2,
+.scratch-pad-md h3,
+.scratch-pad-md h4,
+.scratch-pad-md h5,
+.scratch-pad-md h6 {
+	margin: 1.6em 0 0.5em;
+	line-height: 1.35;
+	font-weight: 600;
+	color: var(--color-scratch-pad-ink, #3d3629);
+	letter-spacing: -0.01em;
+}
+
+.scratch-pad-md h1 { font-size: 2em; border-bottom: 1px solid var(--color-scratch-pad-border, #e8e2d4); padding-bottom: 0.25em; }
+.scratch-pad-md h2 { font-size: 1.6em; }
+.scratch-pad-md h3 { font-size: 1.4em; font-weight: 600; }
+.scratch-pad-md h4 { font-size: 1.2em; font-weight: 600; }
+.scratch-pad-md h5 { font-size: 1.08em; font-weight: 600; }
+.scratch-pad-md h6 { font-size: 1em; font-weight: 500; }
+
+.scratch-pad-md p {
+	margin: 0.6em 0;
+}
+
+.scratch-pad-md a {
+	color: var(--color-accent, #5c7a99);
+	text-decoration: none;
+}
+
+.scratch-pad-md a:hover {
+	text-decoration: underline;
+}
+
+/* 引用块：左侧竖线 + 浅底色 */
+.scratch-pad-md blockquote {
+	margin: 0.8em 0;
+	padding: 0.5em 1em;
+	border-left: 3px solid var(--color-accent, #a3b5c7);
+	background: rgba(90, 78, 58, 0.035);
+	color: var(--color-scratch-pad-ink-faint, #6c6358);
+	border-radius: 0 6px 6px 0;
+}
+
+.scratch-pad-md blockquote p {
+	margin: 0.4em 0;
+}
+
+/* 列表：缩进 + 标记颜色 */
+.scratch-pad-md ul,
+.scratch-pad-md ol {
+	margin: 0.5em 0;
+	padding-left: 1.6em;
+}
+
+.scratch-pad-md li {
+	margin: 0.25em 0;
+}
+
+.scratch-pad-md li::marker {
+	color: var(--color-scratch-pad-ink-faint, #9b9080);
+}
+
+/* 分割线 */
+.scratch-pad-md hr {
+	margin: 1.5em 0;
+	border: none;
+	border-top: 1px solid var(--color-scratch-pad-border, #e8e2d4);
+}
+
+/* 行内代码 */
+.scratch-pad-md code {
+	padding: 0.15em 0.4em;
+	background: rgba(90, 78, 58, 0.06);
+	border-radius: 4px;
+	font-family: var(--font-family-mono);
+	font-size: 0.92em;
+	color: oklch(0.5 0.08 30);
+}
+
+/* 代码块 */
+.scratch-pad-md pre {
+	margin: 0.8em 0;
+	padding: 1em 1.2em;
+	background: oklch(0.97 0.005 75);
+	border: 1px solid var(--color-scratch-pad-border, #e8e2d4);
+	border-radius: 8px;
+	overflow-x: auto;
+}
+
+.scratch-pad-md pre code {
+	padding: 0;
+	background: transparent;
+	border-radius: 0;
+	font-size: 0.9em;
+	line-height: 1.55;
+}
+
+/* 表格 */
+.scratch-pad-md table {
+	margin: 0.8em 0;
+	border-collapse: collapse;
+	font-size: 0.92em;
+}
+
+.scratch-pad-md th,
+.scratch-pad-md td {
+	padding: 0.5em 0.9em;
+	border: 1px solid var(--color-scratch-pad-border, #e8e2d4);
+}
+
+.scratch-pad-md th {
+	background: rgba(90, 78, 58, 0.05);
+	font-weight: 600;
+}
+
+/* Checkbox (GFM task list) */
+.scratch-pad-md input[type="checkbox"] {
+	margin-right: 0.5em;
+	vertical-align: middle;
+	opacity: 0.75;
+	accent-color: var(--color-accent, #5c7a99);
+	cursor: pointer;
+}
+
+/* 隐藏 task list 项的列表标记（·） */
+.scratch-pad-md li:has(> input[type="checkbox"]) {
+	list-style: none;
+	margin-left: -1.4em;
+	padding-left: 0;
+}
+
+.scratch-pad-md li[role="button"] {
+	cursor: pointer;
+	border-radius: var(--radius-sm);
+}
+
+.scratch-pad-md li[role="button"]:hover {
+	background: rgba(90, 78, 58, 0.04);
+}
+
+.scratch-pad-md li[role="button"]:focus-visible {
+	outline: var(--focus-ring);
+	outline-offset: 2px;
+}
+
+/* ==高亮== 语法 (remark-highlight-mark) */
+.scratch-pad-md mark {
+	padding: 0.1em 0.25em;
+	border-radius: 3px;
+	background: oklch(0.93 0.12 95 / 0.65);
+	color: inherit;
+}
+
+html[data-theme="dark"] .scratch-pad-md mark {
+	background: oklch(0.5 0.12 95 / 0.35);
+	color: oklch(0.9 0.03 95);
+}
+
+/* 图片 */
+.scratch-pad-md img {
+	max-width: 100%;
+	border-radius: 6px;
+	margin: 0.5em 0;
+}
+
+/* 滚动条优化 */
+.scratch-pad-preview-scroll::-webkit-scrollbar {
+	width: 6px;
+}
+
+.scratch-pad-preview-scroll::-webkit-scrollbar-thumb {
+	background: rgba(90, 78, 58, 0.18);
+	border-radius: 3px;
+}
+
+.scratch-pad-preview-scroll::-webkit-scrollbar-track {
+	background: transparent;
 }

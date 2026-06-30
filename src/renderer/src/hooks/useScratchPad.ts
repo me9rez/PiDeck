@@ -3,18 +3,21 @@ import type { ScratchPadData } from "../../../shared/types";
 
 const AUTOSAVE_DELAY = 1500;
 
+type UseScratchPadMode = "edit" | "preview";
+
 type UseScratchPadResult = {
 	isOpen: boolean;
 	isClosing: boolean;
 	content: string;
-	mode: "edit" | "preview";
+	mode: UseScratchPadMode;
 	isSaving: boolean;
 	hasError: boolean;
 	open: () => void;
 	close: () => void;
 	toggle: () => void;
 	setContent: (value: string) => void;
-	setMode: (mode: "edit" | "preview") => void;
+	setMode: (mode: UseScratchPadMode) => void;
+	toggleTaskCheckbox: (lineIndex: number) => void;
 	saveNow: () => Promise<void>;
 	exportFile: () => Promise<void>;
 };
@@ -23,7 +26,7 @@ export function useScratchPad(): UseScratchPadResult {
 	const [isOpen, setIsOpen] = useState(false);
 	const [isClosing, setIsClosing] = useState(false);
 	const [content, setContentState] = useState("");
-	const [mode, setMode] = useState<"edit" | "preview">("edit");
+	const [mode, setMode] = useState<UseScratchPadMode>("edit");
 	const [isSaving, setIsSaving] = useState(false);
 	const [hasError, setHasError] = useState(false);
 	const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -108,6 +111,16 @@ export function useScratchPad(): UseScratchPadResult {
 		return () => window.removeEventListener("beforeunload", handler);
 	}, [content]);
 
+	const setModeValue = useCallback((m: UseScratchPadMode) => setMode(m), []);
+
+	/* 切换指定行（task list 项）的选中状态：直接根据源 markdown 行号反转 */
+	const toggleTaskCheckbox = useCallback((lineIndex: number) => {
+		const lines = content.split('\n');
+		if (lineIndex < 0 || lineIndex >= lines.length) return;
+		lines[lineIndex] = lines[lineIndex].replace(/\[([ xX])\]/, (_, mark) => (mark.trim() === '' ? '[x]' : '[ ]'));
+		setContent(lines.join('\n'));
+	}, [content, setContent]);
+
 	return {
 		isOpen,
 		isClosing,
@@ -119,7 +132,8 @@ export function useScratchPad(): UseScratchPadResult {
 		close,
 		toggle,
 		setContent,
-		setMode,
+		setMode: setModeValue,
+		toggleTaskCheckbox,
 		saveNow,
 		exportFile,
 	};
