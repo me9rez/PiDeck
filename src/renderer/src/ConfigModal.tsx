@@ -684,8 +684,25 @@ function ConfigModalContent(props: ConfigModalProps) {
 	};
 
 	const handleSaveModels = async () => {
+		// 保存前规范化所有供应商的 compat 字段，确保布尔值显式写入而不依赖后端默认值
+		const normalizedData = {
+			...modelsData,
+			providers: Object.fromEntries(
+				Object.entries(modelsData.providers).map(([name, provider]) => [
+					name,
+					{
+						...provider,
+						compat: {
+							supportsDeveloperRole: false,
+							supportsReasoningEffort: false,
+							...(provider.compat as Record<string, unknown> | undefined),
+						},
+					},
+				]),
+			),
+		};
 		await saveAndReload(
-			() => api.config.saveModels(modelsData),
+			() => api.config.saveModels(normalizedData),
 			t("config.modelsSavedRestartHint"),
 		);
 		await loadConfig("models");
