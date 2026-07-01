@@ -154,6 +154,7 @@ const api =
 const COMPOSER_MIN_HEIGHT = 215;
 const COMPOSER_DEFAULT_TERMINAL_HEIGHT = 220;
 const COMPOSER_MIN_TIMELINE_HEIGHT = 160;
+const DRAWER_ANIMATION_MS = 300;
 const SIDEBAR_PROJECT_CHILD_PAGE_SIZE = 5;
 
 function countContentLines(value: unknown) {
@@ -556,6 +557,8 @@ export function App() {
   const [savedPrompt, setSavedPrompt] = useState("");
   const [compacting, setCompacting] = useState(false);
   const [drawer, setDrawer] = useState<DrawerPanel | null>(null);
+  const [renderedDrawer, setRenderedDrawer] = useState<DrawerPanel | null>(null);
+  const drawerUnmountTimerRef = useRef<number | null>(null);
   const [sessionsProjectId, setSessionsProjectId] = useState<string>();
   const [sessionHistoryLoading, setSessionHistoryLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -845,12 +848,39 @@ export function App() {
                 name: sessionsProject?.name ?? t("common.project"),
               })
             : (activeAgent?.sessionPath ?? "");
+  const drawerContentPanel = drawer && !drawerCollapsed ? drawer : renderedDrawer;
 
   useEffect(() => {
     if (!drawerPinnedPanel) return;
     if (drawer !== drawerPinnedPanel) setDrawer(drawerPinnedPanel);
     if (drawerCollapsed) setDrawerCollapsed(false);
   }, [drawer, drawerCollapsed, drawerPinnedPanel]);
+
+  useEffect(() => {
+    if (drawerUnmountTimerRef.current) {
+      window.clearTimeout(drawerUnmountTimerRef.current);
+      drawerUnmountTimerRef.current = null;
+    }
+
+    if (drawer && !drawerCollapsed) {
+      setRenderedDrawer(drawer);
+      return;
+    }
+
+    if (!renderedDrawer) return;
+    // 抽屉收回时保留最后内容，等 grid 列宽动画结束后再卸载；否则文字会先消失，再空壳收回。
+    drawerUnmountTimerRef.current = window.setTimeout(() => {
+      setRenderedDrawer(null);
+      drawerUnmountTimerRef.current = null;
+    }, DRAWER_ANIMATION_MS);
+
+    return () => {
+      if (drawerUnmountTimerRef.current) {
+        window.clearTimeout(drawerUnmountTimerRef.current);
+        drawerUnmountTimerRef.current = null;
+      }
+    };
+  }, [drawer, drawerCollapsed, renderedDrawer]);
 
   useEffect(() => {
     document.documentElement.lang = resolvedLocale;
@@ -3663,7 +3693,12 @@ ${goalTextRef.current}
           "--list-width": `${listCollapsed ? 0 : listWidth}px`,
           "--list-expanded-width": `${listWidth}px`,
           "--list-hover-width": `${Math.max(250, listWidth)}px`,
-          "--drawer-width": `${drawerCollapsed ? 0 : drawerWidth}px`,
+          // 抽屉关闭/折叠时上限也必须归零，否则常驻第 5 列会留下右侧空白。
+          "--drawer-width": `${drawer && !drawerCollapsed ? drawerWidth : 0}px`,
+          // 抽屉列下限：展开且未折叠时 260px，否则 0；实际列宽由 CSS max(下限, min(drawer-width, 38vw)) 计算。
+          // 驱动 5 列恒定 grid 平滑开合（与终端 --terminal-row-h 同理）。
+          "--drawer-col-w": `${drawer && !drawerCollapsed ? 260 : 0}px`,
+          "--drawer-splitter-w": `${drawer && !drawerCollapsed ? 6 : 0}px`,
         } as React.CSSProperties
       }
     >
@@ -4662,14 +4697,23 @@ ${goalTextRef.current}
         )}
       </main>
 
-      {drawer && !drawerCollapsed && (
-        <div
-          className="splitter splitter-right"
-          onPointerDown={(event) => startResize("drawer", event)}
-        />
-      )}
-      {drawer && !drawerCollapsed && (
-        <aside className="detail-drawer">
+      {/* 右侧分隔条常驻 grid 列 4，宽度由 --drawer-splitter-w 驱动（0/6px）；
+          关闭/折叠时宽度 0 且 pointer-events:none，避免遮挡会话区。 */}
+      <div
+        className="splitter splitter-right"
+        data-active={drawer && !drawerCollapsed}
+        onPointerDown={(event) =>
+          drawer && !drawerCollapsed && startResize("drawer", event)
+        }
+      />
+      {/* 抽屉壳常驻 grid 列 5，宽度由 --drawer-col-w 驱动平滑开合；
+          收回时保留内容到动画结束，让文字随面板一起被 overflow 裁切。 */}
+      <aside
+        className="detail-drawer"
+        data-open={drawer && !drawerCollapsed}
+        data-rendered={Boolean(drawerContentPanel)}
+      >
+        {drawerContentPanel && (
           <LazyWrapper
             className="drawer-content-frame"
             enabled={true}
@@ -4689,8 +4733,8 @@ ${goalTextRef.current}
             }
           >
             <DrawerContent
-              panel={drawer}
-              project={drawer === "sessions" ? sessionsProject : undefined}
+              panel={drawerContentPanel}
+              project={drawerContentPanel === "sessions" ? sessionsProject : undefined}
               files={files}
               sessions={(sessionsProjectId && sessionSourceFilter[sessionsProjectId]) ? sessions.filter(
                 (s) => (sessionSourceFilter[sessionsProjectId]!)!.has(s.source ?? "pi"),
@@ -4735,8 +4779,8 @@ ${goalTextRef.current}
               onOpenFile={openFilePath}
             />
           </LazyWrapper>
-        </aside>
-      )}
+        )}
+      </aside>
       {drawer && drawerCollapsed && (
         <button
           className="drawer-restore"

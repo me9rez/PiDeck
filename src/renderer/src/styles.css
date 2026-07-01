@@ -586,14 +586,25 @@ select:focus-visible {
 	--list-expanded-width: 250px;
 	--list-hover-width: 320px;
 	--drawer-width: 270px;
+	/* 抽屉列下限 / 分隔条列宽由 JS 按 open+collapsed 状态注入：
+	   关闭或折叠时为 0，展开时抽屉下限 260px、分隔条 6px。
+	   保持 5 列轨道恒定，grid-template-columns 才能在开合间平滑插值（与终端 --terminal-row-h 同理）。 */
+	--drawer-col-w: 0px;
+	--drawer-splitter-w: 0px;
 	--window-drag-height: 0px;
 	height: 100vh;
 	min-height: 0;
 	display: grid;
-	grid-template-columns: var(--list-width) 6px minmax(0, 1fr);
+	grid-template-columns:
+		var(--list-width) 6px minmax(0, 1fr)
+		var(--drawer-splitter-w) max(var(--drawer-col-w), min(var(--drawer-width), 38vw));
 	grid-template-rows: minmax(0, 1fr);
 	background: var(--color-bg-app);
-	transition: grid-template-columns 0.18s ease;
+	transition: grid-template-columns 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* 拖拽调整列宽时禁用过渡，避免宽度变化跟手延迟。 */
+body.is-resizing .wechat-shell {
+	transition: none;
 }
 .wechat-shell.custom-titlebar-enabled {
 	--window-drag-height: 40px;
@@ -678,30 +689,12 @@ select:focus-visible {
 .custom-titlebar-enabled button {
 	-webkit-app-region: no-drag;
 }
-.wechat-shell.drawer-open {
-	grid-template-columns:
-		var(--list-width)
-		6px
-		minmax(0, 1fr)
-		6px
-		minmax(260px, min(var(--drawer-width), 38vw));
-}
-.wechat-shell.drawer-open.drawer-collapsed {
-	grid-template-columns: var(--list-width) 6px minmax(0, 1fr);
-}
+/* 抽屉开合已由 --drawer-col-w / --drawer-splitter-w 驱动 5 列恒定模板平滑过渡，
+   不再需要按 drawer-open / drawer-collapsed 切换轨道数。保留 class 仅为语义/选择器兼容。 */
 .wechat-shell.list-collapsed {
-	grid-template-columns: 0 0 minmax(0, 1fr);
-}
-.wechat-shell.list-collapsed.drawer-open {
 	grid-template-columns:
-		0
-		0
-		minmax(0, 1fr)
-		6px
-		minmax(260px, min(var(--drawer-width), 38vw));
-}
-.wechat-shell.list-collapsed.drawer-open.drawer-collapsed {
-	grid-template-columns: 0 0 minmax(0, 1fr);
+		0 0 minmax(0, 1fr)
+		var(--drawer-splitter-w) max(var(--drawer-col-w), min(var(--drawer-width), 38vw));
 }
 
 .chat-list-pane {
@@ -1444,6 +1437,14 @@ body:not(.is-list-resizing) .list-collapsed:not(.list-hover-suppressed) .chat-li
 }
 .splitter-right {
 	grid-column: 4;
+}
+/* 右侧分隔条宽度由 --drawer-splitter-w 驱动；关闭/折叠时宽度 0 且不响应交互。 */
+.splitter-right:not([data-active="true"]) {
+	pointer-events: none;
+}
+.splitter-right:not([data-active="true"])::before,
+.splitter-right:not([data-active="true"])::after {
+	opacity: 0;
 }
 .splitter::before {
 	content: "";
@@ -3933,6 +3934,14 @@ body.is-composer-resizing .composer-resize-handle::after {
 	flex-direction: column;
 	box-shadow: var(--shadow-drawer);
 	overflow: hidden;
+	/* 常驻 grid 列 5；关闭/折叠时列宽为 0，内容由 App 保留到动画结束再卸载。 */
+	transition: box-shadow 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.detail-drawer:not([data-rendered="true"]) {
+	box-shadow: none;
+}
+.detail-drawer:not([data-open="true"]) {
+	pointer-events: none;
 }
 .drawer-header {
 	height: 58px;
