@@ -734,3 +734,6 @@ export type FeishuTestResult = {
 	message: string;
 	botName?: string;
 };
+
+/** 输入框发送模式，决定消息直接执行还是以只读方式触发生成计划。 */
+export type ComposerAgentMode = "normal" | "plan";

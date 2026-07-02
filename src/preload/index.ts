@@ -558,7 +558,7 @@ const api = {
 		sendUiResponse: (agentId: string, requestId: string, response: { value?: string; cancelled?: boolean }) =>
 			ipcRenderer.invoke(ipcChannels.agentsUiResponse, agentId, requestId, response) as Promise<void>,
 		/** 监听 Agent 扩展 UI 请求（模型通过扩展调用了 ctx.ui.select/confirm/input/editor） */
-		onUiRequest: (callback: (request: { agentId: string; requestId: string; method: string; title: string; options?: string[]; placeholder?: string; prefill?: string; completed?: boolean; value?: string; cancelled?: boolean }) => void) =>
+		onUiRequest: (callback: (request: { agentId: string; requestId: string; method: string; title: string; options?: string[]; placeholder?: string; prefill?: string; completed?: boolean; value?: string; cancelled?: boolean; widgetKey?: string; widgetLines?: string[]; widgetPlacement?: "aboveEditor" | "belowEditor" }) => void) =>
 			subscribe(ipcChannels.agentsUiRequest, callback),
 	},
 	pet: {

@@ -1414,14 +1414,28 @@ export class AgentManager {
 	}
 
 	/**
-	 * 处理 pi 扩展发起的 UI 请求（ctx.ui.select/confirm/input/editor）。
-	 * 忽略 setStatus / setTitle / setWidget 等非对话方法。
+	 * 处理 pi 扩展发起的 UI 请求（ctx.ui.select/confirm/input/editor/setWidget）。
+	 * 对话类请求写入消息流等待用户回答；setWidget 是 fire-and-forget，转发给渲染进程作为轻量状态块。
 	 */
 	private handleUIRequest(agentId: string, typed: Record<string, any>) {
 		const method = String(typed.method ?? "");
 		const requestId = String(typed.id ?? "");
-		// 非对话 UI 方法（状态栏/标题/小部件）静默忽略，不插入消息流
-		if (["setStatus", "setTitle", "setWidget"].includes(method)) return;
+		if (method === "setWidget") {
+			const params = typed.params ?? {};
+			// Plan Mode 等扩展会频繁刷新 widget；只走 IPC 状态，不落入会话消息，避免 JSONL 被进度噪声污染。
+			this.emit(ipcChannels.agentsUiRequest, {
+				agentId,
+				requestId,
+				method,
+				title: "",
+				widgetKey: String(params.widgetKey ?? requestId),
+				widgetLines: Array.isArray(params.widgetLines) ? params.widgetLines : undefined,
+				widgetPlacement: params.widgetPlacement,
+			});
+			return;
+		}
+		// 其他非对话 UI 方法暂不占用桌面 UI 空间。
+		if (["setStatus", "setTitle"].includes(method)) return;
 
 		// select 无选项时自动取消，不等用户响应
 		if (method === "select" && (!Array.isArray(typed.params?.options) || typed.params.options.length === 0)) {

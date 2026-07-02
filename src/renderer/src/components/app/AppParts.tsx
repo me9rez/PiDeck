@@ -58,6 +58,7 @@ import type {
 	AgentTab,
 	AppInfo,
 	AppSettings,
+	ComposerAgentMode,
 	AvailableModel,
 	ChatMessage,
 	CodexImportReport,
@@ -444,6 +445,9 @@ export function ComposerToolbar(props: {
 	onPickModel: () => void;
 	onPickThinking: () => void;
 	onCompact: () => void;
+	/** 当前发送模式，用于按钮文字和轻高亮 */
+	composerAgentMode?: ComposerAgentMode;
+	onOpenComposerModePicker?: () => void;
 	/** 在思考按钮后插入的额外指示器（如飞书链接状态） */
 	feishuIndicator?: ReactNode;
 }) {
@@ -455,8 +459,23 @@ export function ComposerToolbar(props: {
 		? THINKING_LEVELS.find((level) => level.value === currentThinkingLevel)?.labelKey
 		: undefined;
 	const thinkingDisplay = thinkingLevelLabel ? t(thinkingLevelLabel) : "-";
+
+	// mode 选择器：和模型/思考面板保持一致，默认普通。
+	const activeMode = props.composerAgentMode ?? "normal";
+	const activeModeLabel = activeMode === "plan" ? t("app.composerModePlan") : t("app.composerModeNormal");
+
 	return (
 		<div className="composer-toolbar">
+			{props.onOpenComposerModePicker && (
+				<button
+					className={activeMode === "plan" ? "composer-mode-active" : ""}
+					disabled={props.disabled}
+					onClick={props.onOpenComposerModePicker}
+					title={t("app.composerModeTitle")}
+				>
+					{activeModeLabel}
+				</button>
+			)}
 			<button onClick={props.onPickModel} disabled={props.disabled}>
 				{t("app.model")}: {props.state?.provider ? `${props.state.provider}/` : ""}{props.state?.modelName ?? "-"}
 			</button>
@@ -680,6 +699,63 @@ const THINKING_LEVELS = [
 	// xhigh 只在部分模型上可用;选择后以前端收到的 runtime state 为准,必要时提示用户已被回退。
 	{ value: "xhigh", labelKey: "thinking.levelLabel.xhigh", descriptionKey: "thinking.level.xhigh" },
 ] satisfies Array<{ value: string; labelKey: TranslationKey; descriptionKey: TranslationKey }>;
+
+export function ComposerModePicker(props: {
+	currentMode: ComposerAgentMode;
+	onClose: () => void;
+	onPick: (mode: ComposerAgentMode) => void;
+}) {
+	const items = [
+		{
+			value: "normal" as const,
+			labelKey: "app.composerModeNormal" as const,
+			descriptionKey: "app.composerModeNormalDesc" as const,
+		},
+		{
+			value: "plan" as const,
+			labelKey: "app.composerModePlan" as const,
+			descriptionKey: "app.composerModePlanDesc" as const,
+		},
+	];
+
+	return (
+		<div className="picker-backdrop" onClick={props.onClose}>
+			<div
+				className="picker-palette composer-mode-picker"
+				onClick={(event) => event.stopPropagation()}
+			>
+				<div className="picker-palette-header">
+					<div className="thinking-picker-header-content">
+						<span>{t("app.composerModeTitle")}</span>
+					</div>
+					<IconButton
+						className="picker-palette-close"
+						label={t("common.close")}
+						onClick={props.onClose}
+					>
+						<X size={16} strokeWidth={2.2} aria-hidden="true" />
+					</IconButton>
+				</div>
+				<div className="picker-palette-list">
+					{items.map((item) => {
+						const selected = item.value === props.currentMode;
+						return (
+							<button
+								key={item.value}
+								className={`picker-palette-item${selected ? " selected" : ""}`}
+								onClick={() => props.onPick(item.value)}
+							>
+								<span className="picker-palette-label">{t(item.labelKey)}</span>
+								<span className="picker-palette-desc">{t(item.descriptionKey)}</span>
+								{selected && <span className="picker-palette-check">✓</span>}
+							</button>
+						);
+					})}
+				</div>
+			</div>
+		</div>
+	);
+}
 
 export function ThinkingPicker(props: {
 	current?: string;

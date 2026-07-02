@@ -45,7 +45,10 @@ import { TerminalDock } from "./components/terminal/TerminalDock";
 import { FeishuLinkIndicator } from "./components/feishu/FeishuLinkIndicator";
 import { useFeishuBridge } from "./hooks/useFeishuBridge";
 import { CloseIconButton } from "./components/ui/IconButton";
-import { getComposerEnterIntent } from "./composerBehavior";
+import {
+  buildComposerPromptSubmission,
+  getComposerEnterIntent,
+} from "./composerBehavior";
 import {
   getProjectAgentSessionDisplay,
   isSameSessionPath,
@@ -83,6 +86,7 @@ import {
   SessionContextMenu,
   SessionStatus,
   SessionFileSummary,
+  ComposerModePicker,
   ThinkingPicker,
   TurnRow,
   UserBubble,
@@ -148,6 +152,7 @@ import type {
   PiUpdateCheckResult,
   Project,
   SessionSummary,
+  ComposerAgentMode,
   ThinkingUpdate,
 } from "../../shared/types";
 
@@ -384,6 +389,9 @@ interface UiRequest {
 	completed?: boolean;
 	value?: string;
 	cancelled?: boolean;
+	widgetKey?: string;
+	widgetLines?: string[];
+	widgetPlacement?: "aboveEditor" | "belowEditor";
 }
 
 function migrateAgentRecord<T>(
@@ -454,6 +462,7 @@ export function App() {
   >({});
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [composerModePickerOpen, setComposerModePickerOpen] = useState(false);
   const [thinkingPickerOpen, setThinkingPickerOpen] = useState(false);
   const [sendBehaviorMenuOpen, setSendBehaviorMenuOpen] = useState(false);
   const [sessionFeishuBotId, setSessionFeishuBotId] = useState<
@@ -489,6 +498,12 @@ export function App() {
   }, [editorsOpen]);
   /** 活跃的 Extension UI 请求 map（requestId → UiRequest），用于实时显示 ask_question 卡片 */
   const [activeUiRequest, setActiveUiRequest] = useState<Record<string, UiRequest> | null>(null);
+  /** Extension 通过 RPC setWidget 推送的轻量状态块；按 agent 隔离，避免切换会话串台。 */
+  const [extensionWidgetsByAgent, setExtensionWidgetsByAgent] = useState<
+    Record<string, Record<string, string[]>>
+  >({});
+  /** 输入框发送模式：normal 直接交给 agent，plan 通过隐藏标记触发 PiDeck Plan Mode 扩展。 */
+  const [composerAgentMode, setComposerAgentMode] = useState<ComposerAgentMode>("normal");
   /** Goal 状态 */
   const [goalText, setGoalText] = useState<string>("");
   const goalTextRef = useRef("");
@@ -941,13 +956,20 @@ export function App() {
     ? "silent-shell"
     : prompt.startsWith("!")
       ? "shell"
-      : null;
+      : composerAgentMode === "plan"
+        ? "plan"
+        : null;
+  const activeExtensionWidgetLines = activeAgentId
+    ? Object.values(extensionWidgetsByAgent[activeAgentId] ?? {}).flatMap((lines) => lines)
+    : [];
   const composerStatusText =
     composerMode === "silent-shell"
       ? t("app.composerSilentStatus")
       : composerMode === "shell"
         ? t("app.composerShellStatus")
-        : drawer === "files"
+        : composerMode === "plan"
+          ? t("app.composerPlanStatus")
+          : drawer === "files"
           ? t("app.composerFilesStatus")
           : drawer === "sessions"
             ? t("app.composerSessionStatus", {
@@ -1308,8 +1330,23 @@ export function App() {
         [payload.agentId]: payload.thinking,
       })),
     );
-    // 监听 Extension UI 请求（模型通过 ask_question 扩展发起 select/confirm/input/editor）
+    // 监听 Extension UI 请求：对话类渲染为提问卡片；setWidget 类作为 composer 上方的轻量状态块展示。
     const offUiRequest = api.agents.onUiRequest((request) => {
+      if (request.method === "setWidget") {
+        const widgetRequest = request as UiRequest;
+        const widgetKey = widgetRequest.widgetKey || widgetRequest.requestId;
+        const widgetLines = Array.isArray(widgetRequest.widgetLines)
+          ? widgetRequest.widgetLines.filter((line) => typeof line === "string")
+          : [];
+        setExtensionWidgetsByAgent((current) => {
+          const agentWidgets = { ...(current[request.agentId] ?? {}) };
+          if (widgetLines.length > 0) agentWidgets[widgetKey] = widgetLines;
+          else delete agentWidgets[widgetKey];
+          return { ...current, [request.agentId]: agentWidgets };
+        });
+        return;
+      }
+
       setActiveUiRequest((current) => {
         // 如果 requestId 已存在且带了 completed 标记，清除该请求
         if (current?.[request.requestId] && request.completed) {
@@ -3322,7 +3359,7 @@ ${text}
     // 下一帧 DOM 同步后再跑一次 syncComposerAutoHeight，让最终高度以清空后的 scrollHeight 为准。
     setComposerAutoHeight(COMPOSER_MIN_HEIGHT);
     requestAnimationFrame(() => syncComposerAutoHeight());
-    await submitPromptSnapshot(activeAgentId, message, images);
+    await submitPromptSnapshot(activeAgentId, message, images, undefined, composerAgentMode);
   }
 
   async function sendPromptAsFollowUp() {
@@ -3343,7 +3380,7 @@ ${text}
     setSendBehaviorMenuOpen(false);
     setComposerAutoHeight(COMPOSER_MIN_HEIGHT);
     requestAnimationFrame(() => syncComposerAutoHeight());
-    await submitPromptSnapshot(activeAgentId, message, images, "followUp");
+    await submitPromptSnapshot(activeAgentId, message, images, "followUp", composerAgentMode);
   }
 
   /** 处理 /goal 命令 */
@@ -3451,15 +3488,18 @@ ${goalTextRef.current}
     message: string,
     images?: ImageContent[],
     streamingBehavior?: "steer" | "followUp",
+    agentMode: ComposerAgentMode = "normal",
   ) {
     // 这里接收快照参数,让 composer 发送和历史消息"重新发送"共享同一条路径。
     // Agent 忙碌时显式使用官方 streamingBehavior=steer:消息会进入 pi 的运行中队列,
     // 而不是留在 desktop 本地等整个 agent idle 后再发送。
     const behavior = streamingBehavior ?? (isAgentBusy ? "steer" : undefined);
+    const submission = buildComposerPromptSubmission(message, agentMode);
     await api.agents.prompt({
       agentId,
-      message,
+      message: submission.message,
       images,
+      ...(submission.agentMessage ? { agentMessage: submission.agentMessage } : {}),
       ...(behavior ? { streamingBehavior: behavior } : {}),
     });
   }
@@ -4843,6 +4883,15 @@ ${goalTextRef.current}
               </button>
             </div>
           )}
+          {activeExtensionWidgetLines.length > 0 && (
+            <div className="extension-widget-stack" aria-live="polite">
+              {activeExtensionWidgetLines.map((line, index) => (
+                <div key={`${index}-${line}`} className="extension-widget-line">
+                  {line}
+                </div>
+              ))}
+            </div>
+          )}
           <div
             ref={composerBoxRef}
             className={`composer-box ${
@@ -4850,7 +4899,9 @@ ${goalTextRef.current}
                 ? "shell-silent-mode"
                 : prompt.startsWith("!")
                   ? "shell-mode"
-                  : ""
+                  : composerAgentMode === "plan"
+                    ? "plan-mode"
+                    : ""
             }`}
             style={{ height: resolvedComposerHeight }}
           >
@@ -4867,6 +4918,8 @@ ${goalTextRef.current}
               onPickModel={openModelPicker}
               onPickThinking={() => setThinkingPickerOpen(true)}
               onCompact={compactAgent}
+              composerAgentMode={composerAgentMode}
+              onOpenComposerModePicker={() => setComposerModePickerOpen(true)}
               feishuIndicator={
                 <FeishuLinkIndicator
                   status={feishu.status}
@@ -4908,9 +4961,11 @@ ${goalTextRef.current}
                       ? t("app.composerSilentPlaceholder")
                       : prompt.startsWith("!")
                         ? t("app.composerShellPlaceholder")
-                        : settings.sendShortcut === "enter-send"
-                          ? t("app.composerEnterPlaceholder")
-                          : t("app.composerShortcutPlaceholder")
+                        : composerAgentMode === "plan"
+                          ? t("app.composerPlanPlaceholder")
+                          : settings.sendShortcut === "enter-send"
+                            ? t("app.composerEnterPlaceholder")
+                            : t("app.composerShortcutPlaceholder")
               }
               onFocus={() => {
                 // 仅当光标处存在 @ / 触发器时才打开建议框,避免聚焦即弹空菜单。
@@ -5466,6 +5521,16 @@ ${goalTextRef.current}
           onPick={selectModel}
           favoriteModels={settings.favoriteModels}
           onToggleFavorite={toggleFavoriteModel}
+        />
+      )}
+      {composerModePickerOpen && (
+        <ComposerModePicker
+          currentMode={composerAgentMode}
+          onClose={() => setComposerModePickerOpen(false)}
+          onPick={(mode) => {
+            setComposerAgentMode(mode);
+            setComposerModePickerOpen(false);
+          }}
         />
       )}
       {thinkingPickerOpen && (

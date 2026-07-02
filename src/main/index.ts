@@ -2093,11 +2093,17 @@ app.whenReady().then(async () => {
 
 	await settingsStore.load();
 
-	// 自动部署 pi-deck-file-capture 扩展，用于捕获 edit/write 工具的原始文件内容
-	// 该扩展注入 _piDeckOriginalContent 到工具结果 details，使 diff 展示无需异步读盘
-	await ensurePiDeckExtension("pi-deck-file-capture.ts").catch((error) => {
-		console.error("Failed to install pi-deck extension:", error);
-	});
+	// 自动部署 PiDeck 内置扩展：这些扩展提供桌面端差异预览、提问卡片和 Plan Mode。
+	// 放到 pi 自动发现目录后，新建/重启的 RPC Agent 会自动加载；只在内容变更时覆盖，避免用户目录产生无意义写入。
+	for (const extensionName of [
+		"pi-deck-file-capture.ts",
+		"pi-deck-ask-question.ts",
+		"pi-deck-plan-mode.ts",
+	]) {
+		await ensurePiDeckExtension(extensionName).catch((error) => {
+			console.error(`Failed to install ${extensionName}:`, error);
+		});
+	}
 
 	await appLogger.info("app", "Application started", {
 		version: app.getVersion(),
