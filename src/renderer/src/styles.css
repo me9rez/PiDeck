@@ -1543,7 +1543,9 @@ body.is-terminal-resizing {
 	margin-inline: auto;
 }
 .chat-pane[style*="--content-max-width"] .composer-box,
-.chat-pane[style*="--content-max-width"] .image-preview-area {
+.chat-pane[style*="--content-max-width"] .image-preview-area,
+.chat-pane[style*="--content-max-width"] .extension-widget-stack,
+.chat-pane[style*="--content-max-width"] .composer-footer {
 	width: min(100%, var(--content-max-width));
 	max-width: var(--content-max-width);
 	margin-inline: auto;
