@@ -1476,14 +1476,14 @@ export const ToolCard = memo(function ToolCard(props: {
 					{isSkillRead ? <Brain size={14} /> : isAskCard ? <MessageCircle size={14} /> : toolIcon(toolName)}
 				</span>
 				<span className="tool-card-name">
-					{isSkillRead ? `skill:${skillName}` : isAskCard ? "提问" : toolName}
+					{isSkillRead ? `skill:${skillName}` : isAskCard ? t("ask.toolName") : toolName}
 				</span>
 				{!isSkillRead && kindLabel && (
 					<span className="tool-card-kind">{kindLabel}</span>
 				)}
 				<span className="tool-card-status">
 					{status === "running" && <span className="tool-card-spinner" aria-hidden="true" />}
-					{askCard?.answered ? "已回答" : (statusLabel)}
+					{askCard?.answered ? t("ask.answered") : (statusLabel)}
 				</span>
 				{showDuration && (
 					<span className="tool-card-duration" title={t("tool.durationTitle")}>
@@ -1508,11 +1508,11 @@ export const ToolCard = memo(function ToolCard(props: {
 							{askCard.answered ? (
 								<div className="ask-question-card-answered">
 									<Check size={13} className="ask-question-card-answered-ok" />
-									{typeof askCard.answer === "string" ? askCard.answer : "已回答"}
+									{typeof askCard.answer === "string" ? askCard.answer : t("ask.answered")}
 								</div>
 							) : (
 								<div className="ask-question-card-answered" style={{ color: "var(--color-text-tertiary)" }}>
-									未回答
+									{t("ask.unanswered")}
 								</div>
 							)}
 						</div>
@@ -1622,8 +1622,6 @@ export const AskQuestionCard = memo(function AskQuestionCard(props: {
 	const cancelled = status === "cancelled" || status === "error";
 
 	const [inputValue, setInputValue] = useState("");
-	const [showCustomInput, setShowCustomInput] = useState(false);
-	const [customValue, setCustomValue] = useState("");
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 
 	// 编辑器输入 ref
@@ -1648,12 +1646,6 @@ export const AskQuestionCard = memo(function AskQuestionCard(props: {
 		}
 	};
 
-	const handleCustomSubmit = () => {
-		if (customValue.trim()) {
-			props.onRespond?.({ value: customValue });
-		}
-	};
-
 	const handleCancel = () => {
 		props.onRespond?.({ cancelled: true });
 	};
@@ -1671,7 +1663,7 @@ export const AskQuestionCard = memo(function AskQuestionCard(props: {
 						{String(meta?.uiRequest ? (uiRequest?.title ?? "") : "")}
 					</span>
 					<span className="ask-question-card-status">
-						{answered ? "网络答案" : "已取消"}
+						{answered ? t("ask.answered") : t("ask.cancelled")}
 					</span>
 				</div>
 				{answered && answerText && (
@@ -1694,8 +1686,8 @@ export const AskQuestionCard = memo(function AskQuestionCard(props: {
 		<article className="ask-question-card pending" data-message-id={props.message.id}>
 			<div className="ask-question-card-header">
 				<MessageCircle size={14} />
-				<span className="ask-question-card-title">{title || "AI 提问"}</span>
-				<span className="ask-question-card-status">等待回答</span>
+				<span className="ask-question-card-title">{title || t("ask.defaultTitle")}</span>
+				<span className="ask-question-card-status">{t("ask.waiting")}</span>
 			</div>
 			<div className="ask-question-card-body">
 				{method === "select" && options && options.length > 0 && (
@@ -1709,40 +1701,6 @@ export const AskQuestionCard = memo(function AskQuestionCard(props: {
 								{opt}
 							</button>
 						))}
-						{!showCustomInput ? (
-							<button
-								className="ask-question-card-option ask-question-card-option-custom"
-								onClick={() => {
-									setShowCustomInput(true);
-									setTimeout(() => inputRef.current?.focus(), 50);
-								}}
-							>
-								✎ 自行输入...
-							</button>
-						) : (
-							<div className="ask-question-card-input-row">
-								<textarea
-									ref={inputRef}
-									className="ask-question-card-input"
-									placeholder="输入自定义答案..."
-									value={customValue}
-									onChange={(e) => setCustomValue(e.target.value)}
-									onKeyDown={(e) => {
-										if (e.key === "Enter" && !e.shiftKey) {
-											e.preventDefault();
-											handleCustomSubmit();
-										}
-									}}
-								/>
-								<button
-									className="ask-question-card-submit"
-									onClick={handleCustomSubmit}
-									disabled={!customValue.trim()}
-								>
-									<Check size={14} />
-								</button>
-							</div>
-						)}
 					</div>
 				)}
 				{method === "confirm" && (
@@ -1751,13 +1709,13 @@ export const AskQuestionCard = memo(function AskQuestionCard(props: {
 							className="ask-question-card-option ask-question-card-option-yes"
 							onClick={() => handleConfirm(true)}
 						>
-							确定
+							{t("common.confirm")}
 						</button>
 						<button
 							className="ask-question-card-option ask-question-card-option-no"
 							onClick={() => handleConfirm(false)}
 						>
-							取消
+							{t("common.cancel")}
 						</button>
 					</div>
 				)}
@@ -1766,7 +1724,7 @@ export const AskQuestionCard = memo(function AskQuestionCard(props: {
 						<textarea
 							ref={inputRef}
 							className="ask-question-card-input"
-							placeholder={placeholder || "输入回答..."}
+							placeholder={placeholder || t("ask.inputPlaceholder")}
 							value={inputValue}
 							onChange={(e) => setInputValue(e.target.value)}
 							onKeyDown={(e) => {
@@ -1790,7 +1748,7 @@ export const AskQuestionCard = memo(function AskQuestionCard(props: {
 						<textarea
 							ref={editorRef}
 							className="ask-question-card-editor"
-							placeholder={placeholder || "编辑内容..."}
+							placeholder={placeholder || t("ask.editorPlaceholder")}
 							value={inputValue}
 							onChange={(e) => setInputValue(e.target.value)}
 						/>
@@ -1800,13 +1758,13 @@ export const AskQuestionCard = memo(function AskQuestionCard(props: {
 								onClick={handleInputSubmit}
 								disabled={!inputValue.trim()}
 							>
-								提交
+								{t("ask.submit")}
 							</button>
 							<button
 								className="ask-question-card-cancel"
 								onClick={handleCancel}
 							>
-								取消
+								{t("common.cancel")}
 							</button>
 						</div>
 					</div>
