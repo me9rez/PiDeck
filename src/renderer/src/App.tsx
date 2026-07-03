@@ -966,9 +966,6 @@ export function App() {
       : composerAgentMode === "plan"
         ? "plan"
         : null;
-  const activeExtensionWidgetLines = activeAgentId
-    ? Object.values(extensionWidgetsByAgent[activeAgentId] ?? {}).flatMap((lines) => lines)
-    : [];
   const composerStatusText =
     composerMode === "silent-shell"
       ? t("app.composerSilentStatus")
@@ -4907,14 +4904,16 @@ ${goalTextRef.current}
               </button>
             </div>
           )}
-          {activeExtensionWidgetLines.length > 0 && (
-            <div className="extension-widget-stack" aria-live="polite">
-              {activeExtensionWidgetLines.map((line, index) => (
-                <div key={`${index}-${line}`} className="extension-widget-line">
-                  {line}
-                </div>
-              ))}
-            </div>
+          {activeAgentId && extensionWidgetsByAgent[activeAgentId] && Object.keys(extensionWidgetsByAgent[activeAgentId]).length > 0 && (
+            Object.entries(extensionWidgetsByAgent[activeAgentId]).map(([widgetKey, widgetLines]) => (
+              <div key={widgetKey} className="extension-widget-stack" aria-live="polite">
+                {widgetLines.map((line, index) => (
+                  <div key={index} className="extension-widget-line">
+                    {line}
+                  </div>
+                ))}
+              </div>
+            ))
           )}
           <div
             ref={composerBoxRef}
