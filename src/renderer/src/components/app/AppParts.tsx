@@ -451,6 +451,8 @@ export function ComposerToolbar(props: {
 	onOpenComposerModePicker?: () => void;
 	/** 在思考按钮后插入的额外指示器（如飞书链接状态） */
 	feishuIndicator?: ReactNode;
+	/** Agent 正在运行中，显示全局脉冲指示 */
+	isRunning?: boolean;
 }) {
 	const ctxPercent = props.state?.contextPercent;
 	const showCompact = ctxPercent != null && ctxPercent > 30;
@@ -487,6 +489,12 @@ export function ComposerToolbar(props: {
 				{t("app.think")}: {thinkingDisplay}
 			</button>
 			{props.feishuIndicator}
+			{props.isRunning && (
+				<span className="composer-running-indicator">
+					<span className="running-dot" />
+					{t("app.statusRunning")}
+				</span>
+			)}
 			{showCompact && (
 				<button
 					className={

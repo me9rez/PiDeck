@@ -6089,6 +6089,29 @@ body.is-composer-resizing .composer-resize-handle::after {
 	50% { opacity: 0.65; }
 }
 
+/* 全局运行指示器：取代消息列表中的 ThinkingIndicator，在工具栏中常驻显示 */
+.composer-running-indicator {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin-left: auto;
+	color: var(--color-accent);
+	font-size: var(--font-size-caption);
+	font-family: var(--font-family-base);
+	user-select: none;
+}
+.running-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: var(--radius-pill);
+	background: var(--color-accent);
+	animation: runningDotPulse 1.2s ease-in-out infinite;
+}
+@keyframes runningDotPulse {
+	0%, 100% { opacity: 0.3; transform: scale(0.85); }
+	50% { opacity: 1; transform: scale(1); }
+}
+
 /* ---- 输入框命令模式指示 ---- */
 .composer-box textarea.bang,
 .composer-box .rich-input.bang {

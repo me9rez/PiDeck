@@ -93,7 +93,6 @@ import {
   AssistantText,
   ToolCard,
   AskQuestionCard,
-  ThinkingIndicator,
   applySuggestion,
   buildOutline,
   buildSuggestionItems,
@@ -4790,12 +4789,6 @@ ${goalTextRef.current}
               })}
               {isAwaitingAssistant && (
                 <>
-                  <ThinkingIndicator
-                    thinking={activeThinking}
-                    showThinking={settings.showThinking}
-                    isExecutingTool={activeRuntimeState?.isExecutingTool}
-                    executingToolName={activeRuntimeState?.executingToolName}
-                  />
                   {settings.showThinking && activeThinking && (
                     <section className="thinking-card streaming">
                       <div className="thinking-card-content">{activeThinking}</div>
@@ -4932,6 +4925,7 @@ ${goalTextRef.current}
               state={activeRuntimeState}
               compacting={compacting}
               disabled={isAgentBusy || composerDisabled}
+              isRunning={isAwaitingAssistant}
               onCycleModel={cycleModel}
               onPickModel={openModelPicker}
               onPickThinking={() => setThinkingPickerOpen(true)}
