@@ -1667,6 +1667,14 @@ function registerIpc() {
 		return result;
 	});
 	ipcMain.handle(ipcChannels.extensionsToggle, async (_event, source: string, enabled: boolean) => {
+		// Built-in extensions: also deploy/remove the .ts file so pi actually stops/starts loading it
+		if (source.startsWith("pi-deck-") && source.endsWith(".ts")) {
+			if (enabled) {
+				await ensurePiDeckExtension(source);
+			} else {
+				await removeStalePiDeckExtension(source);
+			}
+		}
 		await extensionManager.setEnabled(source, enabled);
 		void appLogger.info("extension", "Extension toggled", { source, enabled });
 	});
@@ -2105,12 +2113,23 @@ app.whenReady().then(async () => {
 
 	// 自动部署 PiDeck 内置扩展：这些扩展提供桌面端差异预览、提问卡片和 Plan Mode。
 	// 放到 pi 自动发现目录后，新建/重启的 RPC Agent 会自动加载；只在内容变更时覆盖，避免用户目录产生无意义写入。
+	// Read disabled extensions so disabled built-in extensions aren't re-deployed at startup
+	const disabledExtList: string[] = await readFile(join(app.getPath("home"), ".pi", "agent", "settings.json"), "utf-8")
+		.then((raw: string) => JSON.parse(raw).disabledExtensions ?? [])
+		.catch(() => [] as string[]);
+	const disabledBuiltIn = new Set<string>(disabledExtList);
+
 	for (const extensionName of [
 		"pi-deck-file-capture.ts",
 		"pi-deck-ask-question.ts",
 		"pi-deck-plan-mode.ts",
 		"pi-deck-todo.ts",
 	]) {
+		if (disabledBuiltIn.has(extensionName)) {
+			// 已禁用：确保 .ts 文件被移除，避免 pi 残余加载
+			await removeStalePiDeckExtension(extensionName).catch(() => {});
+			continue;
+		}
 		await ensurePiDeckExtension(extensionName).catch((error) => {
 			console.error(`Failed to install ${extensionName}:`, error);
 		});

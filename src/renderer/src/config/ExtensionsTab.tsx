@@ -306,15 +306,15 @@ function ExtensionCard(props: {
 					{extension.updateError && <small className="setting-status error">{extension.updateError}</small>}
 					{extension.path && <small>{extension.path}</small>}
 				</div>
-				{!extension.builtIn && (
-					<div className="session-card-actions skill-card-actions">
-						<button
-							className="session-rename-button"
-							disabled={props.toggling}
-							onClick={() => props.onToggle(extension)}
-						>
-							{props.toggling ? t("common.saving") : (extension.enabled !== false ? t("common.disable") : t("common.enabled"))}
-						</button>
+				<div className="session-card-actions skill-card-actions">
+					<button
+						className="session-rename-button"
+						disabled={props.toggling}
+						onClick={() => props.onToggle(extension)}
+					>
+						{props.toggling ? t("common.saving") : (extension.enabled !== false ? t("common.disable") : t("common.enabled"))}
+					</button>
+					{!extension.builtIn && (
 						<button
 							className="session-rename-button danger"
 							disabled={props.uninstalling}
@@ -322,8 +322,8 @@ function ExtensionCard(props: {
 						>
 							{props.uninstalling ? t("config.uninstalling") : t("config.uninstall")}
 						</button>
-					</div>
-				)}
+					)}
+				</div>
 			</div>
 		</article>
 	);
