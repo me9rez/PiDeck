@@ -679,9 +679,22 @@ export class AgentManager {
 	async abort(agentId: string) {
 		const runtime = this.requireRuntime(agentId);
 
-		// 不发 cancelled 信号——pi 内置 ask_question 收到 cancelled 后返回 undefined，
-		// 但其工具实现不处理 undefined，会默认选第一个选项。
-		// 直接发 abort（不等待返回），立刻清理 pending 请求并置 idle。
+		// pi 在等待 extension_ui_response 时（如 ask_question），不发 abort 也能处理，
+		// 但必须解除 pending 请求的阻塞，否则 pi 不会继续读取 stdin 中的后续命令。
+		// 发 cancelled: true 会导致 pi 返回 undefined，ask_question 工具默认选第一个；
+		// 改发 value: null（不带 cancelled 标记），select parser 返回 null，
+		// 工具 result 的 answer = null，answered 为 false → 卡片显示"已取消"。
+		const pending = this.pendingUIRequests.get(agentId);
+		if (pending && pending.size > 0) {
+			for (const [requestId] of pending) {
+				runtime.process.client.sendRaw({
+					type: "extension_ui_response",
+					id: requestId,
+					value: null,
+				});
+			}
+		}
+
 		runtime.process.client
 			.request({ type: "abort" }, 10_000)
 			.catch(() => {
@@ -689,7 +702,6 @@ export class AgentManager {
 			});
 
 		// 立即清理 pending UI 记录并移除 ask_question 卡片，不等待 abort 返回
-		const pending = this.pendingUIRequests.get(agentId);
 		if (pending && pending.size > 0) {
 			const messages = this.messages.get(agentId);
 			if (messages) {
