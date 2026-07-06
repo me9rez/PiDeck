@@ -1541,16 +1541,21 @@ export const ToolCard = memo(function ToolCard(props: {
 				<div className="tool-card-content">
 					{isAskCard && askCard ? (
 						<div className="ask-question-card-tool-inner">
-							<div className="ask-question-card-title">{askCard.question}</div>
+							<div className="ask-question-card-title"><MessageCircle size={13} />{askCard.question}</div>
 							{askCard.options && askCard.options.length > 0 && (
 								<div className="ask-question-card-options-list">
 									{askCard.options.map((opt, i) => {
-										const label = typeof opt === "string" ? opt : (opt as any).label ?? String((opt as any).value ?? "");
+										const optLabel = typeof opt === "string" ? opt : (opt as any).label ?? String((opt as any).value ?? "");
+										const optValue = typeof opt === "string" ? opt : String((opt as any).value ?? optLabel);
 										const desc = typeof opt === "object" ? (opt as any).description : undefined;
+										const isSelected = askCard.answered && (optLabel === askCard.answerLabel || optValue === askCard.answer);
 										return (
-											<div key={i} className="ask-question-card-option-item">
-												<span className="ask-question-card-option-label">{label}</span>
-												{desc && <span className="ask-question-card-option-desc">{desc}</span>}
+											<div key={i} className={`ask-question-card-option-item${isSelected ? " selected" : ""}`}>
+												<span className="ask-question-card-option-selector">{isSelected ? "✓" : ""}</span>
+												<div className="ask-question-card-option-text">
+													<span className="ask-question-card-option-label">{optLabel}</span>
+													{desc && <span className="ask-question-card-option-desc">{desc}</span>}
+												</div>
 											</div>
 										);
 									})}
@@ -1558,8 +1563,8 @@ export const ToolCard = memo(function ToolCard(props: {
 							)}
 							{askCard.answered ? (
 								<div className="ask-question-card-answered">
-									<Check size={13} className="ask-question-card-answered-ok" />
-									{askCard.answerLabel ?? (typeof askCard.answer === "string" ? askCard.answer : t("ask.answered"))}
+									<Check size={14} className="ask-question-card-answered-ok" />
+									<span className="ask-question-card-answer-text">{askCard.answerLabel ?? (typeof askCard.answer === "string" ? askCard.answer : t("ask.answered"))}</span>
 								</div>
 							) : (
 								<div className="ask-question-card-answered" style={{ color: "var(--color-text-tertiary)" }}>
