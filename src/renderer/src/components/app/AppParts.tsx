@@ -1,4 +1,5 @@
 import {
+	Fragment,
 	isValidElement,
 	memo,
 	useEffect,
@@ -2108,13 +2109,9 @@ export const TurnRow = memo(function TurnRow(props: {
 	const mergedText = textParts.join("\n\n");
 	const mergedThinking = thinkingParts.join("\n\n");
 
-	// 独立思考组：未伴随正文的纯 thinking 消息
-	const standaloneThinking = run.items.filter(
+	// 判断本轮是否有独立思考组（用于 inline thinking 是否展示的决策）
+	const hasStandaloneThinking = run.items.some(
 		(item): item is ThinkingGroupItem => item.kind === "thinking-group",
-	);
-	// 工具组
-	const toolGroups = run.items.filter(
-		(item): item is ToolGroupItem => item.kind === "tool-group",
 	);
 	// 优先使用运行结束时固化到 assistant 消息的摘要；若本轮没有 assistant 文本或历史 id 对不上，
 	// 则直接从本轮 tool 消息兜底提取，保证纯工具调用（如 write）也能在卡片里展示。
@@ -2134,8 +2131,8 @@ export const TurnRow = memo(function TurnRow(props: {
 	const hasContent =
 		mergedText ||
 		mergedThinking ||
-		standaloneThinking.length > 0 ||
-		toolGroups.length > 0 ||
+		run.items.some(item => item.kind === "thinking-group") ||
+		run.items.some(item => item.kind === "tool-group") ||
 		allImages.length > 0;
 	if (!hasContent) return null;
 
@@ -2163,125 +2160,134 @@ export const TurnRow = memo(function TurnRow(props: {
 					</div>
 				) : (
 					<>
-						{/* 思考过程：独立思考组在前 */}
-						{props.showThinking &&
-							standaloneThinking.map((g) => (
-								<ThinkingBlock
-									key={g.id}
-									text={g.text}
-									endedAt={g.endedAt}
-									showThinking={props.showThinking}
-								/>
-							))}
-						{/* 内联思考（来自 assistant 消息自身的 thinking 字段）：在工具调用和正文之前 */}
-						{props.showThinking &&
-							mergedThinking &&
-							standaloneThinking.length === 0 && (
-								<ThinkingBlock
-									text={mergedThinking}
-									endedAt={run.endedAt}
-									showThinking={props.showThinking}
-								/>
-							)}
-						{/* 工具调用组 */}
-						{toolGroups.map((g) => (
-							<ToolGroupCard key={g.id} group={g} />
-						))}
-						{/* 助手正文 — 编辑模式下显示 textarea，普通模式显示原文 */}
-						{mergedText && editing ? (
-							<div className="turn-row-edit-area" ref={editAreaRef}>
-								<div className="edit-area-indicator">{t("common.edit")}</div>
-								<textarea
-									className="turn-row-edit-textarea"
-									value={editText}
-									onChange={(e) => setEditText(e.target.value)}
-									onKeyDown={(e) => {
-										// Ctrl+Enter 保存，Escape 取消
-										if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-											e.preventDefault();
-											const targetId = assistantMessages.at(-1)?.message.id;
-											if (targetId && props.onEditMessage) {
-												props.onEditMessage(targetId, editText);
-												setEditing(false);
-											}
-										}
-										if (e.key === "Escape") {
-											setEditing(false);
-										}
-									}}
-									autoFocus
-								/>
-								<div className="turn-row-edit-actions">
-									<button
-										className="turn-row-edit-btn primary"
-										onClick={() => {
-											const targetId = assistantMessages.at(-1)?.message.id;
-											if (targetId && props.onEditMessage) {
-												props.onEditMessage(targetId, editText);
-												setEditing(false);
-											}
-										}}
-									>
-										{t("common.save")}
-									</button>
-									<button
-										className="turn-row-edit-btn"
-										onClick={() => setEditing(false)}
-									>
-										{t("common.cancel")}
-									</button>
-								</div>
-							</div>
-						) : mergedText ? (
-							<AssistantText
-								text={mergedText}
-								images={allImages}
-								onPreviewImage={props.onPreviewImage}
-								onOpenExternal={props.onOpenExternal}
-								onOpenFile={props.onOpenFile}
-								isStreaming={props.isStreaming ?? false}
-							/>
-						) : null}
-						{/* 操作栏：hover/focus 显隐，复制/编辑/删除整轮回答 */}
-						{mergedText && !editing && (
-							<div className="turn-row-actions">
-								<CopyMenu text={mergedText} markdown={mergedText} targetRef={rowRef} />
-								{!props.isStreaming && assistantMessages.at(-1)?.message.id && (
-									<>
-										<button
-											className="turn-row-action-btn"
-											onClick={() => {
-												setEditText(mergedText);
-												setEditing(true);
-											}}
-											title={t("common.edit")}
-										>
-											{t("common.edit")}
-										</button>
-										<button
-											className="turn-row-action-btn"
-											onClick={() => {
-												const targetId = assistantMessages.at(-1)?.message.id;
-												if (targetId && props.onDeleteMessage) {
-													props.onDeleteMessage(targetId);
-												}
-											}}
-											title={t("common.delete")}
-										>
-											{t("common.delete")}
-										</button>
-									</>
-								)}
-							</div>
-						)}
-						{/* 本轮修改文件摘要 */}
-						{fileSummary && fileSummary.length > 0 && (
-							<SessionFileSummary
-								files={fileSummary}
-								onOpenFile={props.onOpenFile}
-								onDiffFile={props.onDiffFile}
-							/>
-						)}
+						{/* 按时序渲染 thinking / tool / assistant 正文，不再按类型分组 */}
+						{run.items.map((item) => {
+							if (item.kind === "thinking-group") {
+								if (!props.showThinking) return null;
+								return (
+									<ThinkingBlock
+										key={item.id}
+										text={item.text}
+										endedAt={item.endedAt}
+										showThinking={props.showThinking}
+									/>
+								);
+							}
+							if (item.kind === "tool-group") {
+								return <ToolGroupCard key={item.id} group={item} />;
+							}
+							if (item.kind === "message" && item.message.role === "assistant") {
+								return (
+									<Fragment key={item.message.id}>
+										{/* 内联思考（来自 assistant 消息自身的 thinking 字段）：
+										    仅当本轮无独立思考组时才展示，避免冗余 */}
+										{props.showThinking && mergedThinking && !hasStandaloneThinking && (
+											<ThinkingBlock
+												text={mergedThinking}
+												endedAt={run.endedAt}
+												showThinking={props.showThinking}
+											/>
+										)}
+										{/* 助手正文 */}
+										{mergedText && editing ? (
+											<div className="turn-row-edit-area" ref={editAreaRef}>
+												<div className="edit-area-indicator">{t("common.edit")}</div>
+												<textarea
+													className="turn-row-edit-textarea"
+													value={editText}
+													onChange={(e) => setEditText(e.target.value)}
+													onKeyDown={(e) => {
+														// Ctrl+Enter 保存，Escape 取消
+														if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+															e.preventDefault();
+															const targetId = assistantMessages.at(-1)?.message.id;
+															if (targetId && props.onEditMessage) {
+																props.onEditMessage(targetId, editText);
+																setEditing(false);
+															}
+														}
+														if (e.key === "Escape") {
+															setEditing(false);
+														}
+													}}
+													autoFocus
+												/>
+												<div className="turn-row-edit-actions">
+													<button
+														className="turn-row-edit-btn primary"
+														onClick={() => {
+															const targetId = assistantMessages.at(-1)?.message.id;
+															if (targetId && props.onEditMessage) {
+																props.onEditMessage(targetId, editText);
+																setEditing(false);
+															}
+														}}
+													>
+														{t("common.save")}
+													</button>
+													<button
+														className="turn-row-edit-btn"
+														onClick={() => setEditing(false)}
+													>
+														{t("common.cancel")}
+													</button>
+												</div>
+											</div>
+										) : mergedText ? (
+											<AssistantText
+												text={mergedText}
+												images={allImages}
+												onPreviewImage={props.onPreviewImage}
+												onOpenExternal={props.onOpenExternal}
+												onOpenFile={props.onOpenFile}
+												isStreaming={props.isStreaming ?? false}
+											/>
+										) : null}
+										{/* 操作栏 */}
+										{mergedText && !editing && (
+											<div className="turn-row-actions">
+												<CopyMenu text={mergedText} markdown={mergedText} targetRef={rowRef} />
+												{!props.isStreaming && assistantMessages.at(-1)?.message.id && (
+													<>
+														<button
+															className="turn-row-action-btn"
+															onClick={() => {
+																setEditText(mergedText);
+																setEditing(true);
+															}}
+															title={t("common.edit")}
+														>
+															{t("common.edit")}
+														</button>
+														<button
+															className="turn-row-action-btn"
+															onClick={() => {
+																const targetId = assistantMessages.at(-1)?.message.id;
+																if (targetId && props.onDeleteMessage) {
+																	props.onDeleteMessage(targetId);
+																}
+															}}
+															title={t("common.delete")}
+														>
+															{t("common.delete")}
+														</button>
+													</>
+												)}
+											</div>
+										)}
+										{/* 本轮修改文件摘要 */}
+										{fileSummary && fileSummary.length > 0 && (
+											<SessionFileSummary
+												files={fileSummary}
+												onOpenFile={props.onOpenFile}
+												onDiffFile={props.onDiffFile}
+											/>
+										)}
+									</Fragment>
+								);
+							}
+							return null;
+						})}
 					</>
 				)}
 			</div>

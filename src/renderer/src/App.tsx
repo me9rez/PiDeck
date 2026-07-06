@@ -1720,6 +1720,8 @@ export function App() {
   // 流式回答时最后一条 assistant 消息原地增长但 messages.length 不变，
   // 依赖 length 的 effect 不会及时触发；通过 ResizeObserver 准确感知容器扩张。
   // autoScroll 在依赖中确保开关变化时重建 observer（同时触发一次初始滚动）。
+  // activeAgent?.status 让 agent 从 starting→idle/errored 时重建 observer
+  // 并触发一次滚动，解决状态切换后才出现 .message-list 时不会自动滚到底部的问题。
   useEffect(() => {
     const timeline = timelineRef.current;
     if (!timeline) return;
@@ -1737,7 +1739,7 @@ export function App() {
     resizeObserver.observe(messageList);
 
     return () => resizeObserver.disconnect();
-  }, [activeAgentId, autoScroll]);
+  }, [activeAgentId, autoScroll, activeAgent?.status]);
 
   // 加载更多历史消息后，按顶部锁定的方式恢复滚动位置。
   // 历史消息会插入到 .message-list 顶部，若不补偿新增高度，浏览器保持原 scrollTop 会导致视图跳动，

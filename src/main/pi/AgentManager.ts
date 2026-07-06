@@ -761,18 +761,15 @@ export class AgentManager {
 			stats?.cacheHitPercent,
 			stats?.cacheHitRate != null ? stats.cacheHitRate * 100 : undefined,
 		);
-		/**
-		 * 缓存命中率 = cacheRead / (cacheRead + cacheWrite) × 100%
-		 * 使用 Anthropic 标准公式：仅统计可缓存 token 的命中比例。
-		 * 和 pi CLI 计算方式一致（pi 不直接返回 hitPercent，我们自行推导）。
-		 * 如果 pi RPC 直接返回了 cacheHitPercent，优先信任。
-		 */
+	/**
+	 * 缓存命中率 = cacheRead / (inputTokens + cacheRead + cacheWrite) × 100%
+	 * 使用与 pi CLI 相同的公式：缓存读取 token 占全部输入 token 的比例。
+	 * pi 的 get_session_stats RPC 不直接返回 cacheHitPercent，需自行推导。
+	 */
 		const computedCacheHitPercent =
-			cacheRead != null && cacheWrite != null && (cacheRead + cacheWrite) > 0
-				? (cacheRead / (cacheRead + cacheWrite)) * 100
-				: cacheRead != null && cacheRead > 0
-					? 100
-					: undefined;
+			inputTokens != null && cacheRead != null && cacheWrite != null && (inputTokens + cacheRead + cacheWrite) > 0
+				? (cacheRead / (inputTokens + cacheRead + cacheWrite)) * 100
+				: undefined;
 		const cacheHitPercent = this.clampPercent(
 			directCacheHitPercent ?? computedCacheHitPercent,
 		);
