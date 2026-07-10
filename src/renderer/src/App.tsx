@@ -90,6 +90,7 @@ import {
   ProjectContextMenu,
   PromptSuggestions,
   SessionContextMenu,
+  SessionFileSummary,
   SessionManagerModal,
   SessionStatus,
 
@@ -5126,7 +5127,6 @@ ${goalTextRef.current}
                       onDiffFile={diffFilePath}
                       onEditMessage={editMessage}
                       onDeleteMessage={deleteMessage}
-                      fileSummariesByMessage={turnFileSummaryByMessage}
                       onEnterMultiSelect={() => setMultiSelectOpen(true)}
                     />
                   );
@@ -5289,6 +5289,13 @@ ${goalTextRef.current}
               </div>
             );
           })()}
+          {/* 会话文件修改摘要：位于扩展 widget 与输入框之间，默认折叠，可展开查看所有修改文件 */}
+          {activeAgentId && sessionFileSummaryByAgent[activeAgentId] && (
+            <SessionFileSummary
+              files={sessionFileSummaryByAgent[activeAgentId]}
+              onDiffFile={diffFilePath}
+            />
+          )}
           <div
             ref={composerBoxRef}
             className={`composer-box ${
