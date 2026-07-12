@@ -1,9 +1,8 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, rm, realpath } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { rm, realpath } from "node:fs/promises";
+import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { app } from "electron";
 import type { WorktreeEntry } from "../../shared/types";
 
 const execFileAsync = promisify(execFile);
@@ -11,8 +10,9 @@ const execFileAsync = promisify(execFile);
 /**
  * 管理 git worktree 的创建、查询、删除。
  *
- * 工作树目录统一存放在 {userData}/worktrees/{projectId}/{slug}，
- * 不污染项目目录本身。
+ * 工作树目录创建在项目目录的同级位置（标准 git worktree 行为）：
+ * {dirname(projectPath)}/{slug}，目录名与分支名一致，
+ * 用户可以直接在文件管理器中找到 worktree 文件。
  */
 export class WorktreeService {
 	/**
@@ -43,9 +43,11 @@ export class WorktreeService {
 		branchName: string,
 	): Promise<{ path: string; branch: string }> {
 		const baseSlug = this.slugify(branchName);
-		await mkdir(this.resolveWorktreeRootDir(projectId), { recursive: true });
+		// worktree 放在项目目录的同级位置：{dirname(projectPath)}/{slug}
+		// 这样用户可以在项目同级目录下直接找到 worktree 文件，符合标准 git worktree 习惯。
+		const parentDir = resolve(projectPath, "..");
 
-		const { worktreeDir, branch } = await this.allocateWorktreeTarget(projectPath, projectId, baseSlug);
+		const { worktreeDir, branch } = await this.allocateWorktreeTarget(projectPath, parentDir, baseSlug);
 
 		// 创建 worktree（仅创建目录结构，不 checkout），再 reset --hard 填充内容。
 		await execFileAsync(
@@ -88,8 +90,10 @@ export class WorktreeService {
 			return false;
 		}
 
-		// 只删除 PiDeck 创建的分支，避免误删用户外部 worktree 的业务分支。
-		if (branch?.startsWith("pideck/")) {
+		// 删除 PiDeck 创建的分支：旧版本使用 pideck/{slug}，新版本使用与目录名一致的 {slug}。
+		// 对外部 worktree 尽量保守，只在“分支名等于目录名”时认为是 PiDeck 创建的同名工作区。
+		const worktreeDirName = basename(worktreePath);
+		if (branch?.startsWith("pideck/") || branch === worktreeDirName) {
 			await execFileAsync("git", ["branch", "-D", branch], { cwd: projectPath }).catch(() => undefined);
 		}
 
@@ -97,45 +101,40 @@ export class WorktreeService {
 	}
 
 	/**
-	 * 生成唯一可用的目录名和分支名。
-	 * 将分支名 slug 化，避免非法字符。
+	 * 生成目标目录名和分支名。
+	 * 不再静默追加 -a/-b：用户输入 test 就只尝试创建 test，
+	 * 若同级目录或分支已存在则明确报错，避免最终出现非用户预期的 test-a。
 	 */
-	private async allocateWorktreeTarget(projectPath: string, projectId: string, baseSlug: string) {
-		for (let attempt = 0; attempt < 26; attempt++) {
-			const suffix = attempt === 0 ? "" : `-${String.fromCharCode(97 + attempt - 1)}`;
-			const slug = `${baseSlug}${suffix}`;
-			const worktreeDir = this.resolveWorktreeDir(projectId, slug);
-			const branch = `pideck/${slug}`;
-			if (existsSync(worktreeDir)) continue;
-			const ref = await execFileAsync("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], { cwd: projectPath })
-				.then(() => true)
-				.catch(() => false);
-			if (ref) continue;
-			return { worktreeDir, branch };
+	private async allocateWorktreeTarget(projectPath: string, parentDir: string, baseSlug: string) {
+		const slug = baseSlug;
+		const worktreeDir = join(parentDir, slug);
+		const branch = slug;
+		if (existsSync(worktreeDir)) {
+			throw new Error(`工作区目录已存在：${worktreeDir}`);
 		}
-		throw new Error("无法生成唯一的 worktree 名称");
+		const ref = await execFileAsync("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], { cwd: projectPath })
+			.then(() => true)
+			.catch(() => false);
+		if (ref) {
+			throw new Error(`分支已存在：${branch}`);
+		}
+		return { worktreeDir, branch };
 	}
 
+	/**
+	 * 把用户输入转换为合法的 worktree 目录名 / 分支名 slug。
+	 * 保留 Unicode 字母与数字（如中文、日文），只把空格、/、~、: 等 git 分支
+	 * 非法字符以及文件系统不友好的字符替换为 -，避免中文分支名被吞成 workspace。
+	 */
 	private slugify(input: string): string {
 		return input
 			.trim()
-			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/[^\p{L}\p{N}]+/gu, "-")
 			.replace(/^-+/, "")
 			.replace(/-+$/, "")
 			|| "workspace";
 	}
 
-	/** worktree 统一存放根目录：{userData}/worktrees/{projectId} */
-	private resolveWorktreeRootDir(projectId: string): string {
-		const userData = app.getPath("userData");
-		return join(userData, "worktrees", projectId);
-	}
-
-	/** worktree 目录：{userData}/worktrees/{projectId}/{slug} */
-	private resolveWorktreeDir(projectId: string, slug: string): string {
-		return join(this.resolveWorktreeRootDir(projectId), slug);
-	}
 
 	/**
 	 * 解析 git worktree list --porcelain 输出。

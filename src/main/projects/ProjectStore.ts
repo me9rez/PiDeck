@@ -198,8 +198,20 @@ export class ProjectStore {
     const project = this.get(id);
     if (!project) return null;
     project.worktreeEnabled = !project.worktreeEnabled;
+    // 关闭工作区模式时，清除已注册的 worktree 子项目记录，避免侧栏不再展示它们后
+    // 仍残留在 projects.json 中成为孤儿数据。仅移除项目记录，不删除物理 worktree 目录。
+    if (!project.worktreeEnabled) {
+      this.clearWorktreeChildren(id);
+    }
     await this.save();
     return project;
+  }
+
+  /** 移除指定父项目下的所有 worktree 子项目记录（不删除物理目录） */
+  clearWorktreeChildren(parentId: string) {
+    this.projects = this.projects.filter(
+      (project) => project.worktreeParentId !== parentId || this.isChatProject(project),
+    );
   }
 
   private isChatProject(project: Project) {

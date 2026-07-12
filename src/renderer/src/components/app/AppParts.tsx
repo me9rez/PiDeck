@@ -4090,8 +4090,20 @@ export function WorktreeCreateDialog(props: {
 		inputRef.current?.focus();
 	}, []);
 
+	// 预览最终创建的分支名，与后端 WorktreeService.slugify 保持一致：
+	// 保留 Unicode 字母数字，其余字符替换为 -。让用户在提交前看到中文/特殊字符的实际结果，
+	// 避免输入与最终分支名脱节。
+	const previewSlug = useMemo(() => {
+		const slug = name
+			.trim()
+			.replace(/[^\p{L}\p{N}]+/gu, "-")
+			.replace(/^-+/, "")
+			.replace(/-+$/, "");
+		return slug || "workspace";
+	}, [name]);
+
 	return (
-		<div className="context-backdrop" onClick={props.onClose}>
+		<div className="context-backdrop worktree-create-backdrop" onClick={props.onClose}>
 			<div
 				className="worktree-create-dialog"
 				onClick={(e) => e.stopPropagation()}
@@ -4112,6 +4124,11 @@ export function WorktreeCreateDialog(props: {
 					}}
 					disabled={props.creating}
 				/>
+				{name.trim() && (
+					<p className="worktree-create-preview">
+						{t("app.worktreeBranchPreview", { name: previewSlug })}
+					</p>
+				)}
 				<div className="worktree-create-actions">
 					<button
 						className="worktree-create-cancel"

@@ -1293,29 +1293,37 @@ body:not(.is-list-resizing)
 
 /* ── Worktree 工作区 ── */
 .worktree-children {
-  margin-left: 26px;
-  border-left: 1px solid var(--color-border);
-  padding-left: 4px;
+  margin-left: 28px;
+  border-left: 1px solid var(--color-border-subtle);
+  padding-left: 6px;
 }
+.worktree-main-header-only {
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
+/* worktree 主工作区直接复用 .conversation 行模型，只覆盖缩进层级所需的列宽。 */
 .worktree-workspace-header {
-  display: flex;
+  grid-template-columns: 16px minmax(0, 1fr);
+  min-height: var(--control-height-sm);
+  padding: 4px 6px;
+  color: var(--color-text-secondary);
+}
+.worktree-workspace-header.active {
+  color: var(--color-text-primary);
+}
+.worktree-main-branch-icon {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  font-size: var(--font-size-small);
-  font-weight: 600;
+  justify-content: center;
+  color: var(--color-text-tertiary);
+}
+.worktree-workspace-header.active .worktree-main-branch-icon {
+  color: var(--color-accent);
+}
+.worktree-main-branch {
   color: var(--color-text-tertiary);
   font-family: var(--font-family-business);
-  cursor: pointer;
-  border: none;
-  background: transparent;
-  width: 100%;
-  box-sizing: border-box;
-  border-radius: var(--radius-sm);
-  transition: background 0.15s;
-}
-.worktree-workspace-header:hover {
-  background: var(--color-hover);
+  font-size: var(--font-size-caption);
 }
 .project-group.worktree-enabled > .conversation.agent-row,
 .project-group.worktree-enabled > .conversation.session-row,
@@ -1323,16 +1331,19 @@ body:not(.is-list-resizing)
 .project-group.worktree-enabled > .session-more-row,
 .project-group.worktree-enabled > .project-session-loading {
   margin-left: 30px;
+  /* 开启/关闭工作区时 margin 会变化，加过渡避免行位置突变跳动 */
+  transition: margin-left 0.18s ease;
 }
 .worktree-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  font-size: var(--font-size-small);
+  gap: 7px;
+  min-height: 26px;
+  padding: 3px 6px;
+  font-size: var(--font-size-control);
   cursor: pointer;
   border-radius: var(--radius-sm);
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s;
   width: 100%;
   box-sizing: border-box;
   border: none;
@@ -1345,6 +1356,13 @@ body:not(.is-list-resizing)
 .worktree-row.active {
   color: var(--color-text-primary);
   background: var(--color-active);
+}
+/* 删除 worktree 时的淡出动画 */
+.worktree-row.worktree-removing {
+  opacity: 0;
+  transform: translateX(-12px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none;
 }
 .worktree-row .worktree-branch-icon {
   display: inline-flex;
@@ -1367,65 +1385,150 @@ body:not(.is-list-resizing)
 .worktree-row:hover .worktree-remove {
   opacity: 1;
 }
+/* 当前激活的 worktree 行上删除按钮始终可见，避免用户不移鼠标就找不到入口 */
+.worktree-row.active .worktree-remove {
+  opacity: 1;
+}
+/* 子工作区新建 Agent 按钮，与删除按钮一致的显隐策略 */
+.worktree-row .worktree-new-agent {
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+.worktree-row:hover .worktree-new-agent,
+.worktree-row.active .worktree-new-agent {
+  opacity: 1;
+}
+/* worktree 行的目录名副信息，低对比避免与分支名争夺注意力 */
+.worktree-row .worktree-dir-meta {
+  flex-shrink: 0;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-caption);
+  color: var(--color-text-muted);
+  font-family: var(--font-family-business);
+}
+.worktree-sessions-more {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-left: 18px;
+  padding: 3px 8px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-small);
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s, background 0.15s;
+}
+.worktree-sessions-more:hover {
+  color: var(--color-accent);
+  background: var(--color-hover);
+}
 .worktree-nested-row {
   margin-left: 18px;
   width: calc(100% - 18px);
 }
-.worktree-create-btn {
+.worktree-sandbox-toolbar {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  margin-top: 2px;
-  font-size: var(--font-size-micro);
+  justify-content: flex-start;
+  gap: 6px;
+  min-height: 22px;
+  margin: 4px 0 2px;
+  padding: 0 4px 0 6px;
   color: var(--color-text-tertiary);
-  cursor: pointer;
-  border: none;
-  background: transparent;
+  font-size: var(--font-size-caption);
+}
+.worktree-sandbox-toolbar > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.worktree-create-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: var(--control-height-xs);
+  padding: 0 5px;
+  border: 0;
   border-radius: var(--radius-sm);
-  width: 100%;
-  box-sizing: border-box;
-  transition: color 0.15s, background 0.15s;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-caption);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 .worktree-create-btn:hover {
+  background: var(--color-bg-hover);
   color: var(--color-accent);
-  background: var(--color-hover);
 }
 
 /* ── Worktree 创建对话框 ── */
+.worktree-create-backdrop {
+  z-index: 960;
+  display: grid;
+  place-items: center;
+  background: var(--overlay-backdrop);
+  backdrop-filter: blur(2px);
+}
 .worktree-create-dialog {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  position: relative;
+  width: min(380px, calc(100vw - 48px));
   background: var(--color-bg-panel);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 20px 24px;
-  min-width: 320px;
-  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  box-shadow: var(--shadow-xl);
   z-index: 1000;
+  animation: worktree-dialog-in 0.16s ease-out;
+}
+@keyframes worktree-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 .worktree-create-dialog h3 {
-  margin: 0 0 12px;
-  font-size: var(--font-size-base);
+  margin: 0 0 14px;
+  font-size: var(--font-size-control);
   font-weight: 600;
   color: var(--color-text-primary);
 }
 .worktree-create-input {
   width: 100%;
   box-sizing: border-box;
-  padding: 8px 12px;
-  font-size: var(--font-size-base);
+  padding: 8px 10px;
+  font-size: var(--font-size-body);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--color-bg-input);
   color: var(--color-text-primary);
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .worktree-create-input:focus {
   border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+/* 分支名预览：提示用户输入经 slugify 后的实际分支名 */
+.worktree-create-preview {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg-input) 86%, var(--color-accent) 14%);
+  font-size: var(--font-size-small);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-business);
 }
 .worktree-create-actions {
   display: flex;
@@ -1434,14 +1537,14 @@ body:not(.is-list-resizing)
   margin-top: 16px;
 }
 .worktree-create-actions button {
-  padding: 6px 16px;
+  padding: 7px 14px;
   font-size: var(--font-size-small);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   cursor: pointer;
   border: 1px solid var(--color-border);
-  background: transparent;
+  background: var(--color-bg-panel);
   color: var(--color-text-primary);
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .worktree-create-actions button:hover:not(:disabled) {
   background: var(--color-hover);
@@ -1542,7 +1645,12 @@ body:not(.is-list-resizing)
 .agent-node-marker {
   display: none;
 }
+.agent-row .conversation-title {
+  justify-content: flex-start;
+  gap: 6px;
+}
 .agent-row .conversation-title strong {
+  flex: 1;
   color: var(--color-text-secondary);
   font-size: var(--font-size-caption);
   font-weight: 500;
@@ -7277,10 +7385,9 @@ body.is-composer-resizing .composer-resize-handle::after {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  margin-left: 6px;
-  font-size: 11px;
+  font-size: var(--font-size-micro);
   line-height: 1.2;
-  padding: 1px 6px;
+  padding: 1px 5px;
   border-radius: var(--radius-xs);
   font-weight: 500;
   white-space: nowrap;
@@ -10160,34 +10267,39 @@ a.config-btn {
   box-shadow: var(--focus-ring);
 }
 
-/* 模型下拉选择行 */
+/* 自动获取模型选择面板：内嵌在模型表格上方，保持列表配置页的纵向节奏，不再使用浮层式下拉。 */
 .config-model-dropdown-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: var(--space-2);
   padding: 10px 12px;
-  background: var(--color-bg-active);
-  border: 1px solid
-    color-mix(in srgb, var(--color-accent) 24%, var(--color-border-subtle));
-  border-radius: var(--radius-lg);
-  margin-bottom: 10px;
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  margin: 0 0 10px;
 }
 
 .config-model-dropdown-row .config-model-combobox {
-  flex: 1;
+  width: 100%;
   min-width: 0;
 }
 
+.config-model-combobox-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .config-model-dropdown-row .config-model-combobox input {
-  width: 100%;
-  height: 36px;
+  flex: 1;
+  min-width: 0;
+  height: var(--control-height-sm);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
-  padding: 0 38px 0 12px;
+  padding: 0 10px;
   font-size: var(--font-size-control);
   background: var(--color-bg-panel);
   color: var(--color-text-primary);
-  cursor: pointer;
   transition:
     border-color 0.15s,
     box-shadow 0.15s,
@@ -10201,8 +10313,101 @@ a.config-btn {
   box-shadow: var(--focus-ring);
 }
 
+.config-model-combobox-summary {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-micro);
+}
+
+.config-model-dropdown-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
 .config-model-combobox-menu button {
   display: flex;
+}
+
+.config-model-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  max-height: 220px;
+  margin-top: var(--space-2);
+  overflow: auto;
+  padding: var(--space-1);
+}
+
+.config-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 260px;
+  min-height: 28px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-panel);
+  color: var(--color-text-primary);
+  padding: 4px 8px;
+  font-size: var(--font-size-caption);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s,
+    box-shadow 0.15s;
+}
+
+.config-model-chip:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-accent) 42%, var(--color-border-subtle));
+  background: var(--color-bg-hover);
+}
+
+.config-model-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.config-model-chip.selected {
+  border-color: color-mix(in srgb, var(--color-accent) 70%, var(--color-border-subtle));
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg-panel));
+  color: var(--color-accent);
+}
+
+.config-model-chip.configured {
+  cursor: not-allowed;
+  opacity: 0.68;
+  background: var(--color-bg-muted);
+}
+
+.config-model-chip-label,
+.config-model-chip-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-model-chip-label {
+  min-width: 0;
+  font-weight: 560;
+}
+
+.config-model-chip-id {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-micro);
+}
+
+.config-model-chip-check {
+  flex: 0 0 auto;
+}
+
+.config-model-combobox-empty {
+  width: 100%;
+  padding: var(--space-3);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-small);
+  text-align: center;
 }
 
 .config-model-combobox-menu small {

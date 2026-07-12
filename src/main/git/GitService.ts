@@ -6,6 +6,20 @@ import type { GitBranchInfo } from "../../shared/types";
 const execFileAsync = promisify(execFile);
 
 export class GitService {
+	/**
+	 * 判断给定目录是否处于一个 git 仓库内。
+	 * 启用工作区模式前做前置校验，避免非 git 项目开启后只能看到空列表、
+	 * 直到点击"新建工作区"才在 create 阶段报错。
+	 */
+	async isGitRepo(cwd: string): Promise<boolean> {
+		try {
+			await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], { cwd });
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
 	async getBranches(cwd: string): Promise<GitBranchInfo> {
 		try {
 			// 获取当前分支和所有本地分支（不包含远程分支）
