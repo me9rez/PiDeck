@@ -21,7 +21,7 @@ const history = [
 	{ id: "h2", agentId: "a", role: "assistant", text: "old answer", timestamp: 200 },
 ];
 const current = [
-	{ id: "placeholder", agentId: "a", role: "system", text: "loading", timestamp: 250 },
+	{ id: "placeholder", agentId: "a", role: "system", text: "loading", timestamp: 1_050, meta: { historyLoading: true } },
 	{ id: "new-user", agentId: "a", role: "user", text: "new", timestamp: 1_100 },
 	{ id: "new-assistant", agentId: "a", role: "assistant", text: "stream", timestamp: 1_200 },
 ];

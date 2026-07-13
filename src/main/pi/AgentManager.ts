@@ -418,8 +418,12 @@ export class AgentManager {
 			tab.status = "idle";
 			// 大历史会话的 get_messages 可能需要十几秒；Agent 可用只依赖 get_state，
 			// 因此历史消息后台加载，避免 40MB+ 会话把“打开 Agent”阻塞到十几秒。
+			// 同时插入一条临时系统消息，给用户明确的加载反馈，避免空白页面看起来像冻结。
 			// preserveMessagesAfter 保护加载期间用户新发的消息/流式回复，防止历史结果回写时覆盖当前会话。
 			const preserveMessagesAfter = Date.now();
+			this.addMessage(id, "system", "正在加载历史会话，大会话可能需要几秒钟…", {
+				historyLoading: true,
+			});
 			void this.loadMessages(id, true, messagesPromise, { preserveMessagesAfter })
 				.catch(() =>
 					new Promise<void>((resolve) => setTimeout(resolve, 800))
@@ -432,6 +436,15 @@ export class AgentManager {
 					});
 				})
 				.catch((error) => {
+					const list = this.messages.get(id) ?? [];
+					const loadingMessage = list.find((message) => message.meta?.historyLoading === true);
+					if (loadingMessage) {
+						loadingMessage.role = "error";
+						loadingMessage.text = "历史会话加载失败，可继续使用当前 Agent 或重新打开会话重试。";
+						loadingMessage.meta = { historyLoading: "failed" };
+						loadingMessage.timestamp = Date.now();
+						this.scheduleMessageEmit(id, true);
+					}
 					void this.appLogger?.warn("agent", "Agent history background load failed", {
 						agentId: id,
 						error: error instanceof Error ? error.message : String(error),

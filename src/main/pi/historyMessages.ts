@@ -12,7 +12,10 @@ export function mergeHistoryWithPreservedMessages(
 	if (!preserveMessagesAfter) return historyMessages;
 	const historyIds = new Set(historyMessages.map((message) => message.id));
 	const preservedMessages = currentMessages.filter(
-		(message) => message.timestamp >= preserveMessagesAfter && !historyIds.has(message.id),
+		(message) =>
+			message.timestamp >= preserveMessagesAfter &&
+			!historyIds.has(message.id) &&
+			message.meta?.historyLoading !== true,
 	);
 	return preservedMessages.length > 0
 		? [...historyMessages, ...preservedMessages]
