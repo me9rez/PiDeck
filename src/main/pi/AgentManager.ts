@@ -21,6 +21,7 @@ import { PiProcess } from "./PiProcess";
 import type { RpcResponse } from "./PiRpcClient";
 import { formatBashToolMessage } from "./bashResult";
 import { extractMessageText } from "./messageContent";
+import { mergeHistoryWithPreservedMessages } from "./historyMessages";
 import type { SettingsStore } from "../settings/SettingsStore";
 import type { ConfigManager } from "../config/ConfigManager";
 import type { RpcLogger } from "../logging/RpcLogger";
@@ -128,7 +129,12 @@ export class AgentManager {
 		return this.requireRuntime(agentId).tab.cwd;
 	}
 
-	async loadMessages(agentId: string, skipEntries = false, earlyMessagesPromise?: Promise<RpcResponse>) {
+	async loadMessages(
+		agentId: string,
+		skipEntries = false,
+		earlyMessagesPromise?: Promise<RpcResponse>,
+		options?: { preserveMessagesAfter?: number },
+	) {
 		const t0 = Date.now();
 		const runtime = this.requireRuntime(agentId);
 
@@ -182,10 +188,15 @@ export class AgentManager {
 		});
 		// abort 时 ask_question 的 answer 已被覆写为 null，不再需要跟踪
 		this.abortedDuringAsk.delete(agentId);
-		this.messages.set(agentId, messages);
+		const nextMessages = mergeHistoryWithPreservedMessages(
+			messages,
+			this.messages.get(agentId) ?? [],
+			options?.preserveMessagesAfter,
+		);
+		this.messages.set(agentId, nextMessages);
 		this.refreshAutoTitle(agentId);
 		this.scheduleMessageEmit(agentId, true);
-		return messages;
+		return nextMessages;
 	}
 
 	async create(input: CreateAgentInput) {
@@ -405,16 +416,31 @@ export class AgentManager {
 					? `${project.name} 历史会话`
 					: `${project.name} agent`);
 			tab.status = "idle";
-			// 加载历史消息（跳过 get_entries，编辑/删除时按需加载），最多重试一次
-			await this.loadMessages(id, true, messagesPromise)
+			// 大历史会话的 get_messages 可能需要十几秒；Agent 可用只依赖 get_state，
+			// 因此历史消息后台加载，避免 40MB+ 会话把“打开 Agent”阻塞到十几秒。
+			// preserveMessagesAfter 保护加载期间用户新发的消息/流式回复，防止历史结果回写时覆盖当前会话。
+			const preserveMessagesAfter = Date.now();
+			void this.loadMessages(id, true, messagesPromise, { preserveMessagesAfter })
 				.catch(() =>
 					new Promise<void>((resolve) => setTimeout(resolve, 800))
-						.then(() => this.loadMessages(id, true)),
+						.then(() => this.loadMessages(id, true, undefined, { preserveMessagesAfter })),
 				)
-				.catch(() => undefined);
+				.then(() => {
+					void this.appLogger?.info("agent", "Agent history loaded in background", {
+						agentId: id,
+						totalMs: Date.now() - preserveMessagesAfter,
+					});
+				})
+				.catch((error) => {
+					void this.appLogger?.warn("agent", "Agent history background load failed", {
+						agentId: id,
+						error: error instanceof Error ? error.message : String(error),
+					});
+				});
 			void this.appLogger?.info("agent", "Agent create completed", {
 				agentId: id,
 				totalMs: Date.now() - t0,
+				historyLoading: "background",
 			});
 		} catch (error) {
 			tab.status = "error";
