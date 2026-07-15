@@ -5718,7 +5718,8 @@ ${goalTextRef.current}
               onOpenComposerModePicker={() => setComposerModePickerOpen(true)}
               onCancelPlan={() => setCurrentComposerAgentMode("normal")}
               feishuIndicator={
-                <FeishuLinkIndicator
+                feishu.bots.length > 0 ? (
+                  <FeishuLinkIndicator
                   status={feishu.status}
                   bots={feishu.bots}
                   activeAgentId={activeAgentId}
@@ -5732,7 +5733,8 @@ ${goalTextRef.current}
                     await feishu.setSessionBot(agentId, botId);
                     setSessionFeishuBotId(botId ?? undefined);
                   }}
-                />
+                  />
+                ) : undefined
               }
             />
             <RichInput
