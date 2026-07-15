@@ -1110,7 +1110,6 @@ export function App() {
     return undefined;
   }, [activeMessages]);
 
-
   const isAwaitingAssistant = Boolean(
     activeAgent &&
     !cancellingUi &&
