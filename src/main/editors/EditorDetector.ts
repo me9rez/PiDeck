@@ -384,7 +384,7 @@ export async function openProjectInEditor(editor: ExternalEditor, projectPath: s
 	const launchCommand = (await resolveLaunchableCommand(editor.command)) ?? editor.command;
 	return new Promise<void>((resolve, reject) => {
 		const needsCmd = process.platform === "win32" && /\.(cmd|bat)$/i.test(launchCommand);
-		const launchArgs = [...(editor.args ?? []), ...(editor.id === "vscode" ? ["--reuse-window"] : []), projectPath];
+		const launchArgs = [...(editor.args ?? []), ...(editor.id === "vscode" ? ["--new-window"] : []), projectPath];
 		const command = needsCmd ? (process.env.ComSpec || "cmd.exe") : launchCommand;
 		const args = needsCmd
 			// Windows 批处理启动 GUI 程序时使用 start 更可靠；第一个空字符串是窗口标题占位。
