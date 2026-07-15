@@ -62,10 +62,15 @@ export class AgentManager {
 	 */
 	private static readonly AGENT_SETTLED_TIMEOUT_MS = 5000;
 	/**
-	 * 超过该大小的历史会话不自动 get_messages。
+	 * 超过该大小的历史会话跳过 get_messages RPC，改为直接从 JSONL 文件尾部读取最近 N 条消息。
 	 * pi 当前不支持 limit/cursor，40MB JSONL 会以单行大 JSON 返回，主进程 JSON.parse 会短暂冻结整个应用。
+	 * 文件直接读取仅解析近尾部少量消息，避免大会话加载导致的界面冻结。
 	 */
-	private static readonly MAX_AUTO_HISTORY_LOAD_BYTES = 8 * 1024 * 1024;
+	private static readonly MAX_AUTO_HISTORY_LOAD_BYTES = 5 * 1024 * 1024;
+	/**
+	 * 大会话直接从文件尾部读取时，最多保留的最近消息轮次（每条 user 消息算一轮）。
+	 */
+	private static readonly MAX_HISTORY_LOAD_TURNS = 8;
 	/**
 	 * 工具结果文本截断阈值（字符数）。工具结果（如 bash 输出、文件读取）可能达数十 KB，
 	 * 若完整存入 ChatMessage.meta 并随流式 emit 反复全量传输，会显著放大 IPC payload
@@ -245,6 +250,64 @@ export class AgentManager {
 			// 无法读取大小时保留旧行为尝试加载，避免临时文件/权限异常直接导致历史不可见。
 			return { shouldLoad: true };
 		}
+	}
+
+	/**
+	 * 直接从历史会话 JSONL 文件读取最近 N 轮对话的消息条目。
+	 * 用于大会话场景：绕过 get_messages RPC 的整文件 JSON 传输瓶颈，
+	 * 直接在桌面进程解析 JSONL 并只取尾部消息，避免大会话加载导致界面冻结。
+	 * 返回兼容 RpcResponse 格式的对象，可复用 loadMessages 的消息处理管线。
+	 */
+	private async readRecentMessagesFromSessionFile(
+		sessionPath: string,
+		maxTurns: number,
+	): Promise<RpcResponse> {
+		const t0 = Date.now();
+		let content: string;
+		try {
+			content = await readFile(sessionPath, "utf8");
+		} catch (error) {
+			void this.appLogger?.warn("agent", "Failed to read session file for recent messages", {
+				sessionPath,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			throw error;
+		}
+
+		const lines = content.split("\n");
+		const messageEntries: unknown[] = [];
+
+		for (const line of lines) {
+			if (!line.trim()) continue;
+			try {
+				const entry = JSON.parse(line);
+				if (entry.type === "message" && entry.message) {
+					messageEntries.push(entry.message);
+				}
+			} catch {
+				// 跳过单行解析失败，不影响后续行
+			}
+		}
+
+		// 只保留最近 maxTurns 轮对话
+		const trimmed = this.trimHistoryMessages(messageEntries, maxTurns);
+		const t1 = Date.now();
+
+		void this.appLogger?.info("agent", "Recent messages read from session file", {
+			sessionPath,
+			totalLines: lines.length,
+			messageEntries: messageEntries.length,
+			trimmedTurns: maxTurns,
+			trimmedMessages: trimmed.length,
+			readMs: t1 - t0,
+		});
+
+		return {
+			type: "response" as const,
+			command: "get_messages",
+			success: true,
+			data: { messages: trimmed },
+		};
 	}
 
 	private findRuntimeBySessionKey(sessionKey: string) {
@@ -486,18 +549,45 @@ export class AgentManager {
 				this.addMessage(
 					id,
 					"system",
-					"历史会话文件较大，已跳过自动加载以避免界面冻结；Agent 已可继续使用。",
+					`历史会话文件较大，正在加载最近 ${AgentManager.MAX_HISTORY_LOAD_TURNS} 条消息…`,
 					{
-						historyLoading: "skipped-large-session",
+						historyLoading: true,
 						sessionSizeBytes: historyLoadDecision.sizeBytes,
 					},
 				);
-				void this.appLogger?.info("agent", "Agent history auto-load skipped", {
-					agentId: id,
-					sessionPath: input.sessionPath,
-					sizeBytes: historyLoadDecision.sizeBytes,
-					maxAutoLoadBytes: AgentManager.MAX_AUTO_HISTORY_LOAD_BYTES,
-				});
+				void this.loadMessages(
+					id,
+					true,
+					this.readRecentMessagesFromSessionFile(
+						input.sessionPath,
+						AgentManager.MAX_HISTORY_LOAD_TURNS,
+					),
+					{ preserveMessagesAfter },
+				)
+					.then(() => {
+						void this.appLogger?.info("agent", "Agent recent history loaded from file", {
+							agentId: id,
+							sessionPath: input.sessionPath,
+							sizeBytes: historyLoadDecision.sizeBytes,
+							totalMs: Date.now() - preserveMessagesAfter,
+						});
+					})
+					.catch((error) => {
+						const list = this.messages.get(id) ?? [];
+						const loadingMessage = list.find((message) => message.meta?.historyLoading === true);
+						if (loadingMessage) {
+							loadingMessage.role = "error";
+							loadingMessage.text = "历史会话加载失败，可继续使用当前 Agent 或重新打开会话重试。";
+							loadingMessage.meta = { historyLoading: "failed" };
+							loadingMessage.timestamp = Date.now();
+							this.scheduleMessageEmit(id, true);
+						}
+						void this.appLogger?.warn("agent", "Agent recent history file load failed", {
+							agentId: id,
+							sessionPath: input.sessionPath,
+							error: error instanceof Error ? error.message : String(error),
+						});
+					});
 			}
 			void this.appLogger?.info("agent", "Agent create completed", {
 				agentId: id,

@@ -2169,7 +2169,7 @@ export const ThinkingBlock = memo(function ThinkingBlock(props: {
  * 状态优先级（与 AI 回复流并行展示）：
  *  1. 工具执行中 → "正在工具调用"（琥珀色）
  *  2. 思考中（有可见思考文本）→ "正在思考"（默认强调色）
- *  3. 流式回答中 → "正在回答"（更低透明度）
+ *  3. 流式回答中 → "正在回应"（更低透明度）
  *  4. 过渡等待 → 只显示三点动画，无标签
  */
 export function ThinkingIndicator(props: {

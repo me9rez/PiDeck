@@ -1315,7 +1315,7 @@ const zhCN = {
   "thinking.levelLabel.xhigh": "xhigh",
   "thinking.level.max": "最高推理深度，需模型支持",
   "thinking.levelLabel.max": "max",
-  "thinking.responding": "正在回答",
+  "thinking.responding": "正在回应",
   "thinking.executing": "正在工具调用",
   "thinking.executingFallback": "工具调用中",
   "thinking.streaming": "正在思考",
