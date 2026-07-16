@@ -3909,14 +3909,11 @@ ${text}
       } else {
         try {
           const all = await api.sessions.readMessages(session.filePath);
-          if (!all || all.length === 0) {
-            console.warn(`[&ref] session "${sessionName}" has 0 messages`);
-          }
           const loaded = all.map((m) => ({ role: m.role, content: m.content }));
           msgs = loaded;
           setSessionRefSelections((prev) => ({ ...prev, [raw]: { messages: loaded, fullContext: true, selectedIndices: loaded.map((_, i) => i) } }));
-        } catch (err) {
-          console.error(`[&ref] Failed to read "${sessionName}" from ${session.filePath}:`, err);
+        } catch {
+          // 加载失败时 chip 会在下面 else 分支被移除
         }
       }
       if (msgs && msgs.length > 0) {
