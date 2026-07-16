@@ -5598,7 +5598,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
 }
 .composer-box {
   position: relative;
-  min-height: 120px;
+  min-height: 112px;
   max-height: 50vh;
   min-width: 0;
   display: grid;

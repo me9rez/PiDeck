@@ -64,7 +64,11 @@ export function ProjectResourcesModal(props: {
 			setError(null);
 			try {
 				setData(await api.list(props.project.id));
-				if (showToast) toast(t("projectResources.refreshed"), { duration: 2000, position: "top-center" });
+				if (showToast) toast(t("projectResources.refreshed"), {
+					duration: 2000,
+					position: "top-center",
+					style: { minWidth: 160, textAlign: "center" },
+				});
 			} catch (err) {
 				setError(err instanceof Error ? err.message : String(err));
 			} finally {

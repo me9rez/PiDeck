@@ -1981,7 +1981,6 @@ export function App() {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         setComposerHeight((current) => clampComposerHeight(current));
-        syncComposerAutoHeight();
         setComposerOffsetHeight(composerRef.current?.offsetHeight ?? 0);
       });
     };
@@ -2010,7 +2009,6 @@ export function App() {
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       setComposerHeight((current) => clampComposerHeight(current));
-      syncComposerAutoHeight();
       setComposerOffsetHeight(composerRef.current?.offsetHeight ?? 0);
     });
     return () => cancelAnimationFrame(frame);
@@ -3248,6 +3246,8 @@ export function App() {
       setActiveProjectId(existing.projectId);
       setActiveAgentId(existing.id);
       setDrawer(null);
+      setAutoScroll(true);
+      autoScrollRef.current = true;
       return existing;
     }
     const previousAgentId = activeAgentId;
