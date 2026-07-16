@@ -328,8 +328,8 @@ export function detectTrigger(
 	if (char === "&") {
 		if (/[\n&]/.test(segment)) return null;
 		const prev = start > 0 ? before[start - 1] : "";
-		// 只阻止明显不可能是会话引用的上下文：前字符是 ? = 或另一个 &
-		if (prev && /[?=&]/.test(prev)) return null;
+		// 只阻止 URL 查询参数场景（?foo=bar&），不拦 &&、&chip& 等正常连续引用
+		if (prev === "=" || prev === "?") return null;
 		return { start, char, query: segment };
 	}
 	if (/[\s@/&]/.test(segment)) return null;
