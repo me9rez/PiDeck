@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Download, ExternalLink, Search, Sparkles } from "lucide-react";
 import type { PromptStoreItem, PromptStoreSearchResult, PiSkillSummary } from "../../../shared/types";
@@ -17,7 +18,7 @@ export function SkillStoreTab(props: {
 	const [result, setResult] = useState<PromptStoreSearchResult | null>(null);
 	const [previewItem, setPreviewItem] = useState<PromptStoreItem | null>(null);
 	const [importingId, setImportingId] = useState<string | null>(null);
-	const [toast, setToast] = useState<string | null>(null);
+	/* toast 已改用 sonner 实现 */
 	const searchInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
@@ -51,8 +52,7 @@ export function SkillStoreTab(props: {
 		setError(null);
 		try {
 			await api.skillStore.import(item, props.locationId);
-			setToast("已导入到本地 Skills");
-			window.setTimeout(() => setToast(null), 2500);
+			toast("已导入到本地 Skills", { duration: 2500 });
 			props.onImported?.();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
@@ -66,7 +66,7 @@ export function SkillStoreTab(props: {
 		return (
 			<div className="prompt-store-tab">
 				{error && <div className="config-error">{error}</div>}
-				{toast && <div className="config-toast">{toast}</div>}
+				{/* toast 已改用 sonner */}
 				<div className="prompt-store-toolbar">
 					<button className="config-btn" onClick={() => { setPreviewItem(null); }}>
 						<ArrowLeft size={14} strokeWidth={1.8} />
@@ -144,8 +144,7 @@ export function SkillStoreTab(props: {
 			</div>
 
 			{error && <div className="config-error">{error}</div>}
-			{toast && <div className="config-toast">{toast}</div>}
-
+			{/* toast 已改用 sonner */}
 			{searching && <div className="config-loading">搜索中…</div>}
 
 			{result && !searching && result.count === 0 && (

@@ -66,7 +66,6 @@ function SettingSwitch(props: {
 
 export function SettingsModal(props: {
 	settings: AppSettings;
-	notice: string;
 	piStatus: PiInstallStatus | null;
 	piChecking: boolean;
 	piProxyChecking: boolean;
@@ -92,6 +91,7 @@ export function SettingsModal(props: {
 	onUpdatePi: () => void;
 	onToggleDevTools: () => void;
 	onRestartApp: () => void;
+	onClearCheckFlag?: () => void;
 	onOpenWebService: (port: string) => void;
 	onClose: () => void;
 	onChange: (patch: Partial<AppSettings>) => void;
@@ -740,11 +740,21 @@ export function SettingsModal(props: {
 												</small>
 											)}
 										</div>
-										<Button onClick={props.onCheckPi} disabled={props.piChecking}>
-											{props.piChecking
-												? t("settings.detecting")
-												: t("settings.detectEnvironment")}
-										</Button>
+										<div className="setting-inline-actions">
+											<Button onClick={props.onCheckPi} disabled={props.piChecking}>
+												{props.piChecking
+													? t("settings.detecting")
+													: t("settings.detectEnvironment")}
+											</Button>
+											{props.onClearCheckFlag && (
+												<Button
+													className="setting-btn-secondary"
+													onClick={props.onClearCheckFlag}
+												>
+													{t("environment.clearCheckFlag")}
+												</Button>
+											)}
+										</div>
 									</div>
 									<div className="setting-pi-path-panel">
 										<TextField
@@ -1004,7 +1014,6 @@ export function SettingsModal(props: {
 								onChange={props.onChange}
 							/>
 						)}
-						<p>{props.notice || t("settings.restartNotice")}</p>
 					</div>
 				</div>
 			</div>

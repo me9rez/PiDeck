@@ -8,6 +8,7 @@ import {
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { toast } from "sonner";
 import { ChevronDown, ChevronUp, MoreHorizontal, Plus, X } from "lucide-react";
 import type { PiDesktopApi } from "../../../../preload";
 import type { TerminalTab } from "../../../../shared/types";
@@ -89,13 +90,13 @@ export function TerminalDock(props: {
 	const fitRef = useRef<FitAddon | null>(null);
 	const activeTabIdRef = useRef("");
 	const buffersRef = useRef<Record<string, string>>({});
-	const copyNoticeTimerRef = useRef<number | null>(null);
+	/* copyNotice 已改用 toast (sonner) 实现 */
 	const [tabs, setTabs] = useState<TerminalTab[]>([]);
 	const [activeTabId, setActiveTabId] = useState("");
 	const [themeId, setThemeId] = useState<TerminalThemeId>("pi-soft");
 	const [themeMenuOpen, setThemeMenuOpen] = useState(false);
 	const [confirmCloseAllOpen, setConfirmCloseAllOpen] = useState(false);
-	const [copyNotice, setCopyNotice] = useState(false);
+	/* copyNotice 已改用 toast (sonner) 实现 */
 	const [loading, setLoading] = useState(false);
 	const [appTheme, setAppTheme] = useState(
 		() => document.documentElement.dataset.theme ?? "light",
@@ -249,12 +250,7 @@ export function TerminalDock(props: {
 		requestAnimationFrame(() => xtermRef.current?.focus());
 	}, [activeTab?.id, activeTab?.exited, collapsed]);
 
-	useEffect(
-		() => () => {
-			if (copyNoticeTimerRef.current) window.clearTimeout(copyNoticeTimerRef.current);
-		},
-		[],
-	);
+	/* copyNotice cleanup 已禁用（改为 toast sonner） */
 
 	async function addTab() {
 		const next = await props.terminal.create(props.agentId);
@@ -296,12 +292,7 @@ export function TerminalDock(props: {
 		event.preventDefault();
 		event.stopPropagation();
 		await navigator.clipboard.writeText(selection);
-		setCopyNotice(true);
-		if (copyNoticeTimerRef.current) window.clearTimeout(copyNoticeTimerRef.current);
-		copyNoticeTimerRef.current = window.setTimeout(
-			() => setCopyNotice(false),
-			1200,
-		);
+		toast(t("terminal.copied"), { duration: 1200 });
 		xtermRef.current?.focus();
 	}
 
@@ -446,7 +437,7 @@ export function TerminalDock(props: {
 				>
 					{loading && <div className="terminal-placeholder">{t("terminal.starting")}</div>}
 					<div ref={containerRef} className="terminal-xterm" />
-					{copyNotice && <div className="terminal-copy-notice">{t("terminal.copied")}</div>}
+					{/* copyNotice 已改用 toast (sonner) 实现 */}
 				</div>
 			)}
 			{confirmCloseAllOpen && (

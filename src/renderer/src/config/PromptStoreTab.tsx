@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, BookOpen, Download, ExternalLink, Globe, Search } from "lucide-react";
 import type { PromptStoreItem, PromptStoreSearchResult, PiPromptTemplateSummary } from "../../../shared/types";
@@ -23,7 +24,7 @@ export function PromptStoreTab(props: {
 	const [result, setResult] = useState<PromptStoreSearchResult | null>(null);
 	const [previewItem, setPreviewItem] = useState<PromptStoreItem | null>(null);
 	const [importingId, setImportingId] = useState<string | null>(null);
-	const [toast, setToast] = useState<string | null>(null);
+	/* toast 已改用 sonner 实现 */
 	const searchInputRef = useRef<HTMLInputElement>(null);
 
 	// 自动聚焦搜索框
@@ -73,8 +74,7 @@ export function PromptStoreTab(props: {
 				description: item.description,
 				content: item.content,
 			});
-			setToast(t("config.promptStoreImported"));
-			window.setTimeout(() => setToast(null), 2500);
+			toast(t("config.promptStoreImported"), { duration: 2500 });
 			props.onImported?.();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
@@ -97,7 +97,7 @@ export function PromptStoreTab(props: {
 			<div className="prompt-store-tab">
 				{/* 预览视图也需要错误提示和 toast 反馈 */}
 				{error && <div className="config-error">{error}</div>}
-				{toast && <div className="config-toast">{toast}</div>}
+				{/* toast 已改用 sonner */}
 				<div className="prompt-store-toolbar">
 					<button className="config-btn" onClick={backToList}>
 						<ArrowLeft size={14} strokeWidth={1.8} />
@@ -206,9 +206,7 @@ export function PromptStoreTab(props: {
 			{/* 错误提示 */}
 			{error && <div className="config-error">{error}</div>}
 
-			{/* Toast 通知 */}
-			{toast && <div className="config-toast">{toast}</div>}
-
+			{/* Toast 已改用 sonner */}
 			{/* 搜索结果 */}
 			{searching && <div className="config-loading">{t("config.promptStoreSearching")}</div>}
 

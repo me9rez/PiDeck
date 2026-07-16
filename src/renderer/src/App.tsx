@@ -41,6 +41,7 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
+import { toast as showToastFn, Toaster } from "sonner";
 import { createPreviewApi } from "./previewApi";
 import { createBrowserApi } from "./browserApi";
 const ConfigModal = lazy(() => import("./ConfigModal").then((m) => ({ default: m.ConfigModal })));
@@ -874,7 +875,7 @@ export function App() {
   const [openCodeImportRunning, setOpenCodeImportRunning] = useState(false);
   const [openCodeImportReport, setOpenCodeImportReport] =
     useState<OpenCodeImportReport | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  // showToast 改用 sonner 实现，见下方函数定义
   // 历史命令相关状态
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -972,7 +973,7 @@ export function App() {
     fontFamilyMono: "commit-mono",
     fontFamilyMonoCustom: "",
   });
-  const [settingsNotice, setSettingsNotice] = useState("");
+  /* settingsNotice 已改用 showToast (sonner) 实现 */
   const [piProxyNotice, setPiProxyNotice] = useState("");
   const [piProxyNoticeTone, setPiProxyNoticeTone] = useState<
     "info" | "success" | "error"
@@ -1662,7 +1663,7 @@ export function App() {
     );
     const offSettings = api.settings.onApplyWindow((next) => {
       setSettings(next);
-      setSettingsNotice(t("settings.restartNotice"));
+      showToast(t("settings.restartNotice"));
     });
     const offUpdateProgress = api.app.onUpdateProgress((progress) => {
       setUpdateProgress(progress);
@@ -2333,17 +2334,16 @@ export function App() {
       if (next.installed) {
         const saved = await api.settings.update({ piEnvironmentChecked: true });
         setSettings(saved);
-        setSettingsNotice(
+        showToast(
           t("app.piCheckPassed", {
             value: next.command ?? next.version ?? "pi",
           }),
         );
       } else {
-        setSettingsNotice(
-          t("app.piCheckFailed", {
-            error: next.error ?? t("settings.piMissing"),
-          }),
-        );
+        /* 检测失败时弹出环境检测弹框，方便用户查看安装指引 */
+        setSettingsOpen(false);
+        setEnvironmentDialog(true);
+        setPiStatus(next);
       }
     } finally {
       setPiChecking(false);
@@ -2371,7 +2371,7 @@ export function App() {
         setSettings(updated);
         setCustomPiPath(updated.customPiPath ?? result.command ?? path);
         setPiStatus(result);
-        setSettingsNotice(
+        showToast(
           t("app.piPathSaved", {
             path: result.command ?? updated.customPiPath ?? path,
           }),
@@ -2381,7 +2381,7 @@ export function App() {
           window.setTimeout(() => setEnvironmentDialog(false), 3000);
         }
       } else {
-        setSettingsNotice(
+        showToast(
           t("app.piPathValidateFailed", {
             error: result.error ?? t("environment.unableToRun"),
           }),
@@ -2397,7 +2397,7 @@ export function App() {
     setSettings(updated);
     setCustomPiPath("");
     setCustomPathResult(null);
-    setSettingsNotice(t("app.piPathCleared"));
+    showToast(t("app.piPathCleared"));
     const status = await api.pi.check();
     setPiStatus(status);
   }
@@ -2439,9 +2439,9 @@ export function App() {
     }
   }
 
+  /** 使用 sonner 的 toast 通知，兼容旧签名 (message, duration?) */
   function showToast(message: string, duration = 3500) {
-    setToast(message);
-    window.setTimeout(() => setToast(null), duration);
+    showToastFn(message, { duration });
   }
 
   async function downloadAppUpdate() {
@@ -2484,7 +2484,6 @@ export function App() {
       if (result.hasUpdate) {
         // 启动后后台提醒即可，不阻塞主界面；低版本 pi 可能缺少新版协议/工具能力。
         const message = t("settings.piUpdateStartupNotice");
-        setSettingsNotice(message);
         showToast(message, 6500);
       }
     } catch {
@@ -2497,7 +2496,7 @@ export function App() {
     try {
       const result = await api.pi.checkUpdate();
       setPiUpdateCheck(result);
-      setSettingsNotice(result.error ? t("settings.piUpdateFailed", { error: result.error }) : result.hasUpdate ? t("settings.piUpdateAvailable") : t("settings.piUpdateChecked"));
+      showToast(result.error ? t("settings.piUpdateFailed", { error: result.error }) : result.hasUpdate ? t("settings.piUpdateAvailable") : t("settings.piUpdateChecked"));
     } finally {
       setPiUpdateChecking(false);
     }
@@ -2511,9 +2510,9 @@ export function App() {
       setPiUpdateResult(result);
       await checkPiInstallInline();
       setPiUpdateCheck(await api.pi.checkUpdate());
-      setSettingsNotice(result.updated ? t("settings.piUpdateDone") : t("settings.piUpdateChecked"));
+      showToast(result.updated ? t("settings.piUpdateDone") : t("settings.piUpdateChecked"));
     } catch (error) {
-      setSettingsNotice(t("settings.piUpdateFailed", { error: error instanceof Error ? error.message : String(error) }));
+      showToast(t("settings.piUpdateFailed", { error: error instanceof Error ? error.message : String(error) }));
     } finally {
       setPiUpdating(false);
     }
@@ -2530,14 +2529,14 @@ export function App() {
       } else if (source === "manual") {
         // 手动检查且无更新时,显示模态框提示
         setUpToDateVersion(next.currentVersion);
-        setSettingsNotice(
+        showToast(
           t("app.latestVersionNotice", { version: next.currentVersion }),
         );
       }
     } catch (error) {
       if (source === "manual") {
         const message = error instanceof Error ? error.message : String(error);
-        setSettingsNotice(t("app.updateFailedNotice", { error: message }));
+        showToast(t("app.updateFailedNotice", { error: message }));
         setUpdateError(message);
         showToast(t("app.updateFailed"));
       }
@@ -4199,7 +4198,7 @@ ${goalTextRef.current}
       "webServicePort" in patch;
     if (changesWebService) {
       setWebServiceChanging(true);
-      setSettingsNotice(
+      showToast(
         patch.webServiceEnabled === false
           ? t("app.webStopping")
           : t("app.webApplying"),
@@ -4244,10 +4243,10 @@ ${goalTextRef.current}
       if ("useNativeTitleBar" in patch) {
         notice = t("app.titleBarSaved");
       }
-      setSettingsNotice(notice);
+      showToast(notice);
     } catch (error) {
       setSettings(await api.settings.get());
-      setSettingsNotice(error instanceof Error ? error.message : String(error));
+      showToast(error instanceof Error ? error.message : String(error));
     } finally {
       if (changesWebService) setWebServiceChanging(false);
     }
@@ -6489,7 +6488,21 @@ ${goalTextRef.current}
         </div>
       )}
 
-      {toast && <div className="toast">{toast}</div>}
+      <Toaster
+        position="top-center"
+        richColors
+        closeButton
+        offset={{ top: "68px" }}
+        toastOptions={{
+          style: {
+            fontFamily: "var(--font-family-base)",
+            fontSize: "var(--font-size-caption)",
+            gap: "8px",
+            padding: "10px 16px",
+          },
+        }}
+        duration={3500}
+      />
       {worktreeCreateDialog && (
         <WorktreeCreateDialog
           projectId={worktreeCreateDialog.projectId}
@@ -6582,6 +6595,10 @@ ${goalTextRef.current}
           }}
           onExecInstall={execInstallCommand}
           onRestartApp={() => api.app.restart()}
+          onClearCheckFlag={async () => {
+            await api.settings.update({ piEnvironmentChecked: false });
+            showToast(t("environment.checkFlagCleared"));
+          }}
         />
       )}
       {promptTemplatePickerOpen && (
@@ -6626,7 +6643,6 @@ ${goalTextRef.current}
         <Suspense fallback={null}>
         <SettingsModal
           settings={settings}
-          notice={settingsNotice}
           piStatus={piStatus}
           piChecking={piChecking}
           piProxyChecking={piProxyChecking}
@@ -6655,17 +6671,20 @@ ${goalTextRef.current}
           onUpdatePi={updatePiCli}
           onToggleDevTools={async () => {
             const opened = await api.app.toggleDevTools();
-            setSettingsNotice(
+            showToast(
               opened ? t("app.devToolsOpened") : t("app.devToolsClosed"),
             );
           }}
           onRestartApp={() => api.app.restart()}
+          onClearCheckFlag={async () => {
+            await api.settings.update({ piEnvironmentChecked: false });
+            showToast(t("environment.checkFlagCleared"));
+          }}
           onOpenWebService={(port) =>
             api.app.openExternal(`http://127.0.0.1:${port}`)
           }
           onClose={() => {
             setSettingsOpen(false);
-            setSettingsNotice("");
           }}
           onChange={updateSettings}
         />

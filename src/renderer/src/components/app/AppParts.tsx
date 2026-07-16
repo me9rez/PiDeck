@@ -79,8 +79,10 @@ import {
 	Star,
 } from "lucide-react";
 import { t, type TranslationKey } from "../../i18n";
+import { toast } from "sonner";
 import { Button } from "../ui/Button";
 import { CloseIconButton, IconButton } from "../ui/IconButton";
+import { Modal } from "../ui/Modal";
 import { SelectField } from "../ui/SelectField";
 import { TextField } from "../ui/TextField";
 import type {
@@ -170,12 +172,14 @@ export function EnvironmentDialog(props: {
 	onToggleInstallMirror: () => void;
 	onExecInstall: () => void;
 	onRestartApp: () => void;
+	/** 重置 piEnvironmentChecked 标记，使下次启动重新触发环境检测 */
+	onClearCheckFlag?: () => void;
 }) {
 	const installed = props.status?.installed || props.customPathResult?.installed;
 	const searchedDirs = props.status?.searchedDirs.slice(0, 16) ?? [];
 	const errorText = props.status?.error ?? props.customPathResult?.error;
 	const steps = [
-		t("environment.stepCli"),
+		t("environment.stepInstall"),
 		t("environment.stepPath"),
 		t("environment.stepPermission"),
 		t("environment.stepDone"),
@@ -186,17 +190,13 @@ export function EnvironmentDialog(props: {
 	const refCmd = 'where pi';
 
 	return (
-		<div className="modal-backdrop environment-backdrop">
-			<section className="environment-modal">
-				<div className="modal-header">
-					<strong>{t("environment.title")}</strong>
-					<CloseIconButton
-						label={t("common.close")}
-						onClick={props.onClose}
-					/>
-				</div>
-
-				<div className="environment-body">
+		<Modal
+			open={true}
+			onClose={props.onClose}
+			title={t("environment.title")}
+			size="medium"
+		>
+			<div className="environment-body">
 					<div className="env-stepper" aria-label={t("environment.title")}>
 						{steps.map((step, index) => (
 							<div
@@ -250,10 +250,23 @@ export function EnvironmentDialog(props: {
 								</div>
 							)}
 
-							{/* npm 安装 pi 卡片 */}
+							{/* npm 安装 pi 卡片（合并了安装指引） */}
 							<div className="env-card env-npm-install-card">
 								<strong>{t("environment.installCardTitle")}</strong>
 								<small>{t("environment.installCardDesc")}</small>
+								<small>
+									{t("environment.installDesc")}{" "}
+									<a
+										className="env-inline-link"
+										href="#"
+										onClick={(e) => {
+											e.preventDefault();
+											props.onOpenInstallDocs();
+										}}
+									>
+										{t("environment.openInstallDocs")}
+									</a>
+								</small>
 
 								{/* npm 可用性检测 */}
 								{props.npmAvailable === null && !props.npmChecking && (
@@ -261,7 +274,7 @@ export function EnvironmentDialog(props: {
 										className="env-card-btn"
 										onClick={props.onCheckNpm}
 									>
-										{t("environment.stepCli")}
+										{t("environment.stepInstall")}
 									</button>
 								)}
 
@@ -384,18 +397,6 @@ export function EnvironmentDialog(props: {
 								)}
 							</div>
 
-							{/* 安装指引卡片 */}
-							<div className="env-card env-guide-card">
-								<strong>{t("environment.installTitle")}</strong>
-								<small>{t("environment.installDesc")}</small>
-								<button
-									className="env-card-btn"
-									onClick={props.onOpenInstallDocs}
-								>
-									{t("environment.openInstallDocs")}
-								</button>
-							</div>
-
 							{/* 手动输入 pi 路径卡片 */}
 							<div className="env-card env-custom-card">
 								<strong>{t("environment.customPathTitle")}</strong>
@@ -464,9 +465,17 @@ export function EnvironmentDialog(props: {
 					>
 						{t("environment.recheck")}
 					</button>
+					{props.onClearCheckFlag && (
+						<button
+							className="env-clear-flag-btn"
+							onClick={props.onClearCheckFlag}
+							title={t("environment.clearCheckFlagHint")}
+						>
+							{t("environment.clearCheckFlag")}
+						</button>
+					)}
 				</div>
-			</section>
-		</div>
+			</Modal>
 	);
 }
 
@@ -4343,10 +4352,7 @@ function SessionsPanel(props: {
 }) {
 	const [renamingPath, setRenamingPath] = useState<string | null>(null);
 	const [editValue, setEditValue] = useState("");
-	const [sessionActionNotice, setSessionActionNotice] = useState<{
-		filePath: string;
-		text: string;
-	} | null>(null);
+	/* sessionActionNotice 已改用 toast (sonner) 实现 */
 	const [sessionActionLoading, setSessionActionLoading] = useState<{
 		filePath: string;
 		action: "copy" | "export" | "delete";
@@ -4376,25 +4382,21 @@ function SessionsPanel(props: {
 		successText: string,
 	) {
 		setSessionActionLoading({ filePath: session.filePath, action: actionType });
-		setSessionActionNotice({
-			filePath: session.filePath,
-			text:
-				actionType === "copy"
-					? t("drawer.sessionActionCopying")
-					: actionType === "export"
-						? t("drawer.sessionActionExporting")
-						: t("drawer.sessionActionDeleting"),
-		});
+		toast(
+			actionType === "copy"
+				? t("drawer.sessionActionCopying")
+				: actionType === "export"
+					? t("drawer.sessionActionExporting")
+					: t("drawer.sessionActionDeleting"),
+		);
 		try {
 			await action();
-			setSessionActionNotice({ filePath: session.filePath, text: successText });
-			window.setTimeout(() => setSessionActionNotice(null), 1600);
+			toast(successText, { duration: 1600 });
 		} catch (error) {
-			setSessionActionNotice({
-				filePath: session.filePath,
-				text: error instanceof Error ? error.message : t("drawer.sessionActionFailed"),
-			});
-			window.setTimeout(() => setSessionActionNotice(null), 2400);
+			toast(
+				error instanceof Error ? error.message : t("drawer.sessionActionFailed"),
+				{ duration: 2400 },
+			);
 		} finally {
 			setSessionActionLoading(null);
 		}
@@ -4563,9 +4565,7 @@ function SessionsPanel(props: {
 									</span>
 								</button>
 							</div>
-							{sessionActionNotice?.filePath === session.filePath && (
-								<div className="session-action-notice">{sessionActionNotice.text}</div>
-							)}
+							{/* sessionActionNotice 已改用 toast (sonner) 实现 */}
 						</div>
 					)}
 				</div>

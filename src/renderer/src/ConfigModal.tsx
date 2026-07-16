@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { Component, useState, useEffect, useCallback, type ReactNode } from "react";
 import type { PiDesktopApi } from "../../preload";
 import { AuthTab } from "./config/AuthTab";
@@ -183,7 +184,7 @@ function ConfigModalContent(props: ConfigModalProps) {
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [configDiagnostic, setConfigDiagnostic] = useState<ConfigFileDiagnostic | null>(null);
-	const [toast, setToast] = useState<string | null>(null);
+	/* toast 已改用 sonner 实现 */
 
 	// 各 tab 的数据
 	const [modelsData, setModelsData] = useState<ModelsFile>({ providers: {} });
@@ -442,8 +443,7 @@ function ConfigModalContent(props: ConfigModalProps) {
 	}, [open, section, tab, loadConfig]);
 
 	const showToast = (msg: string) => {
-		setToast(msg);
-		setTimeout(() => setToast(null), 2500);
+		toast(msg, { duration: 2500 });
 	};
 
 	const saveAndReload = async (
@@ -1612,8 +1612,7 @@ function ConfigModalContent(props: ConfigModalProps) {
 					</div>
 				)}
 
-				{toast && <div className="config-toast">{toast}</div>}
-
+				{/* toast 已改用 sonner */}
 				{deleteConfirm && (
 					<div className="config-modal-overlay" onClick={() => setDeleteConfirm(null)}>
 						<div className="config-modal-dialog" onClick={(e) => e.stopPropagation()}>

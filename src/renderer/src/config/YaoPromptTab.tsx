@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { useEffect, useState } from "react";
 import { ArrowLeft, Download, Search } from "lucide-react";
 import type { YaoPromptListResult, YaoPromptItem, YaoPromptDetailResult, PiPromptTemplateSummary, YaoPromptCategory } from "../../../shared/types";
@@ -10,7 +11,7 @@ export function YaoPromptTab(props: {
 }) {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
-	const [toast, setToast] = useState<string | null>(null);
+	/* toast 已改用 sonner 实现 */
 	const [data, setData] = useState<YaoPromptListResult | null>(null);
 	const [activeCategory, setActiveCategory] = useState<string | null>(null);
 	const [searchQuery, setSearchQuery] = useState("");
@@ -61,8 +62,7 @@ export function YaoPromptTab(props: {
 		setError(null);
 		try {
 			await api.yaoPrompts.import(item.slug, item.category);
-			setToast("已导入到本地模板");
-			window.setTimeout(() => setToast(null), 2500);
+			toast("已导入到本地模板", { duration: 2500 });
 			props.onImported?.();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
@@ -90,7 +90,7 @@ export function YaoPromptTab(props: {
 		return (
 			<div className="store-sub-tab">
 				{error && <div className="config-error">{error}</div>}
-				{toast && <div className="config-toast">{toast}</div>}
+				{/* toast 已改用 sonner */}
 				<div className="prompt-store-toolbar">
 					<button className="config-btn" onClick={() => { setPreviewItem(null); setPreviewDetail(null); }}>
 						<ArrowLeft size={14} strokeWidth={1.8} />
@@ -143,8 +143,7 @@ export function YaoPromptTab(props: {
 			</div>
 
 			{error && <div className="config-error">{error}</div>}
-			{toast && <div className="config-toast">{toast}</div>}
-
+			{/* toast 已改用 sonner */}
 			{loading ? (
 				<div className="config-loading">{t("common.loading")}</div>
 			) : !data || data.categories.length === 0 ? (
