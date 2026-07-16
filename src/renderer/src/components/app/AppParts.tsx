@@ -512,6 +512,11 @@ export function SessionStatus(props: {
 					)}
 				</span>
 			)}
+			{state.cost != null && (
+				<span className="cost-chip" title={t("app.totalCost")}>
+					${state.cost.toFixed(3)}
+				</span>
+			)}
 		</div>
 	);
 }

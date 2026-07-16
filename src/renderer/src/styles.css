@@ -2340,6 +2340,18 @@ body.is-terminal-resizing {
   white-space: nowrap;
   cursor: default;
 }
+.chat-agent-id-hint {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-family-business);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+  opacity: 0.7;
+}
 .compaction-card {
   display: flex;
   align-items: flex-start;
@@ -8517,16 +8529,26 @@ body.is-composer-resizing .composer-resize-handle::after {
 .session-status .ctx-chip {
   max-width: none;
   flex: 0 0 auto;
-  color: var(--color-text-primary);
-  background: var(--color-chat-card-bg);
-  border-color: var(--color-border-subtle);
+  color: var(--color-brand-green);
+  background: color-mix(in srgb, var(--color-brand-green) 10%, var(--color-bg-panel));
+  border-color: color-mix(in srgb, var(--color-brand-green) 20%, transparent);
 }
 .session-status .cache-chip {
   max-width: none;
   flex: 0 0 auto;
-  color: var(--color-text-primary);
-  background: var(--color-chat-card-bg);
-  border-color: var(--color-border-subtle);
+  color: var(--color-brand-purple);
+  background: color-mix(in srgb, var(--color-brand-purple) 10%, var(--color-bg-panel));
+  border-color: color-mix(in srgb, var(--color-brand-purple) 20%, transparent);
+}
+.session-status .cost-chip {
+  max-width: none;
+  flex: 0 0 auto;
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 10%, var(--color-bg-panel));
+  border-color: color-mix(in srgb, var(--color-warning) 20%, transparent);
+  font-weight: 600;
+  font-family: var(--font-family-business);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Agent 状态徽章 */

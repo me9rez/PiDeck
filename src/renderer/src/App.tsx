@@ -5436,17 +5436,17 @@ ${goalTextRef.current}
                     : activeProject?.name) ??
                   "PiDeck"}
               </strong>
+              {activeAgent && (
+                <span className="chat-agent-id-hint">
+                  {activeAgent.id.slice(0, 8)}
+                </span>
+              )}
             </div>
           </div>
           <div
             className={`chat-header-actions${activeAgent?.status === "starting" ? " loading" : ""}`}
           >
             <>
-              {activeAgent && (
-                <span className="chat-agent-id" title={activeAgent.id}>
-                  AgentId: {activeAgent.id.slice(0, 8)}
-                </span>
-              )}
               <SessionStatus
                 state={activeRuntimeState}
                 duration={
