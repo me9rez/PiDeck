@@ -3952,9 +3952,12 @@ ${text}
     // 让输入框保持固定大小，超出部分滚动显示
     setComposerAutoHeight(COMPOSER_MIN_HEIGHT);
 
-    // 解析 & 会话引用：遍历活跃项目会话，匹配 prompt 中的 &会话名，注入上下文
+    // 解析 & 会话引用：按会话名长度降序排列，避免短名错误匹配长名的子串（如 "Session" 误匹配 "Session 2"）
     let resolvedMessage = message;
-    for (const session of activeProjectSessions) {
+    const sortedSessions = [...activeProjectSessions].sort(
+      (a, b) => (b.name ?? b.filePath).length - (a.name ?? a.filePath).length,
+    );
+    for (const session of sortedSessions) {
       const sessionName = session.name ?? session.filePath;
       const raw = `&${sessionName}`;
       if (!resolvedMessage.includes(raw)) continue;
