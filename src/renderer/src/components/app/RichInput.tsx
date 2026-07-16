@@ -143,10 +143,9 @@ export function parseRichInputChips(
 		if (m.index === atRe.lastIndex) atRe.lastIndex++;
 	}
 
-	// &session：捕获 & 后的非空白非 & 连续字符作为 chip 名。
-	// 白名单优先匹配（取最长），无白名单或未命中时回退为第一个空格前的单词。
-	// 未命中白名单也渲染为 chip（灰色样式区分），避免引用有效但 chip 不显示的割裂。
-	const ampRe = /(?<![:/.#!~?=&])(&[^&\n]+)/gu;
+	// &session：捕获 & 后到换行/末尾的全部文本，再从白名单中按前缀匹配出会话名。
+	// 白名单优先（取最长匹配），无白名单时取第一个空格前的单词。会话名可包含 &
+	const ampRe = /(?<![:/.#!~?=&])(&[^\n]+)/gu;
 	while ((m = ampRe.exec(text)) !== null) {
 		const start = m.index;
 		const captured = m[1].slice(1);
@@ -427,11 +426,11 @@ export const RichInput = forwardRef<HTMLDivElement, RichInputProps>(
 
 				const icon = document.createElement("span");
 				icon.className = "input-chip__icon";
-				icon.textContent = chip.kind === "file" ? "@" : chip.kind === "session" ? "&" : "/";
+				icon.textContent = chip.kind === "file" ? "@" : chip.kind === "session" ? "" : "/";
 				const label = document.createElement("span");
 				label.className = "input-chip__label";
 				label.textContent = chip.label;
-				span.appendChild(icon);
+				if (icon.textContent) span.appendChild(icon);
 				span.appendChild(label);
 				root.appendChild(span);
 				cursor = chip.end;
