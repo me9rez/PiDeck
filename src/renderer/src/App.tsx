@@ -647,7 +647,7 @@ export function App() {
   const [sessionRefPickerTarget, setSessionRefPickerTarget] = useState<SessionSummary | null>(null);
   /** & 会话引用选择缓存：key = chip raw（如 "&My Session"），value = 选中的消息列表 */
   const [sessionRefSelections, setSessionRefSelections] = useState<
-    Record<string, { messages: Array<{ role: string; content: string }>; fullContext: boolean }>
+    Record<string, { messages: Array<{ role: string; content: string }>; fullContext: boolean; selectedIndices: number[] }>
   >({});
 
   const [streamingThinking, setStreamingThinking] = useState<
@@ -3966,7 +3966,7 @@ ${text}
           const all = await api.sessions.readMessages(session.filePath);
           const msgs = all.map((m) => ({ role: m.role, content: m.content }));
           messages = msgs;
-          setSessionRefSelections((prev) => ({ ...prev, [raw]: { messages: msgs, fullContext: true } }));
+          setSessionRefSelections((prev) => ({ ...prev, [raw]: { messages: msgs, fullContext: true, selectedIndices: msgs.map((_, i) => i) } }));
         } catch { /* skip */ }
       }
       if (messages && messages.length > 0) {
@@ -5809,12 +5809,19 @@ ${goalTextRef.current}
           {sessionRefPickerOpen && sessionRefPickerTarget && (
             <SessionReferenceModal
               session={sessionRefPickerTarget}
+              initialSelected={
+                (() => {
+                  const chipRaw = `&${sessionRefPickerTarget.name ?? sessionRefPickerTarget.filePath}`;
+                  const saved = sessionRefSelections[chipRaw];
+                  return saved?.selectedIndices?.length ? new Set(saved.selectedIndices) : undefined;
+                })()
+              }
               onClose={() => { setSessionRefPickerOpen(false); setSessionRefPickerTarget(null); }}
-              onConfirm={(result: SessionReferenceResult) => {
+              onConfirm={(result: SessionReferenceResult, selectedIndices: number[]) => {
                 const chipRaw = `&${result.sessionName}`;
                 setSessionRefSelections((prev) => ({
                   ...prev,
-                  [chipRaw]: { messages: result.messages, fullContext: result.fullContext },
+                  [chipRaw]: { messages: result.messages, fullContext: result.fullContext, selectedIndices },
                 }));
                 setSessionRefPickerOpen(false);
                 setSessionRefPickerTarget(null);
