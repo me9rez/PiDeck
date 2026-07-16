@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { X, MessageCircle, Brain, FileText } from "lucide-react";
 import { t } from "../../i18n";
 import type { SessionSummary } from "../../../../shared/types";
@@ -19,6 +19,7 @@ export function SessionReferenceModal(props: {
 	loadMessages: (filePath: string) => Promise<SessionMessage[]>;
 	initialSelected?: Set<number>;
 }) {
+	// 原始顺序存储，selectedIds 始终引用原始索引
 	const [messages, setMessages] = useState<SessionMessage[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
@@ -44,10 +45,50 @@ export function SessionReferenceModal(props: {
 		return () => { cancelled = true; };
 	}, [props.session.filePath]);
 
+	// 倒序显示分组（最新的在前面），内部索引保持原始顺序不变
+	const items = useMemo(() => {
+		const result: Array<
+			| { kind: "user"; index: number; msg: SessionMessage }
+			| { kind: "assistant-run"; indices: number[]; msgs: SessionMessage[] }
+		> = [];
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const msg = messages[i];
+			if (msg.role === "assistant") {
+				// 收集连续的 assistant
+				const runIndices: number[] = [];
+				const runMsgs: SessionMessage[] = [];
+				while (i >= 0 && messages[i].role === "assistant") {
+					runIndices.unshift(i);
+					runMsgs.unshift(messages[i]);
+					i--;
+				}
+				i++; // 回退一个位置
+				result.push({ kind: "assistant-run", indices: runIndices, msgs: runMsgs });
+			} else if (msg.role === "user") {
+				result.push({ kind: "user", index: i, msg });
+			} else {
+				result.push({ kind: "user", index: i, msg });
+			}
+		}
+		return result;
+	}, [messages]);
+
 	const toggleMessage = useCallback((index: number) => {
 		setSelectedIds((prev) => {
 			const next = new Set(prev);
 			next.has(index) ? next.delete(index) : next.add(index);
+			return next;
+		});
+	}, []);
+
+	const toggleRun = useCallback((indices: number[]) => {
+		setSelectedIds((prev) => {
+			const next = new Set(prev);
+			const allSelected = indices.every((i) => next.has(i));
+			for (const i of indices) {
+				if (allSelected) next.delete(i);
+				else next.add(i);
+			}
 			return next;
 		});
 	}, []);
@@ -64,7 +105,7 @@ export function SessionReferenceModal(props: {
 		props.onConfirm({
 			sessionName: props.session.name ?? props.session.filePath,
 			messages: selected,
-			fullContext: selected.length === messages.length,
+			fullContext: selectedIds.size === messages.length,
 		}, indices);
 	}, [messages, selectedIds, props]);
 
@@ -87,62 +128,75 @@ export function SessionReferenceModal(props: {
 				<div className="multi-select-modal-tree session-ref-message-list">
 					{loading && <div className="session-ref-loading">{t("common.loading")}...</div>}
 					{error && <div className="session-ref-error">{t("sessionRef.loadError")}: {error}</div>}
-					{!loading && !error && messages.map((msg, index) => {
-						const isChecked = selectedIds.has(index);
 
-						// 用户消息：独立行，跟 MultiSelectModal 中 user message 一致
-						if (msg.role === "user") {
+					{!loading && !error && items.map((item) => {
+						// 用户消息：独立行，完全对齐 MultiSelectModal user message
+						if (item.kind === "user") {
+							const isChecked = selectedIds.has(item.index);
 							return (
 								<label
-									key={index}
+									key={item.index}
 									className={`multi-select-tree-node${isChecked ? " selected" : ""}`}
 								>
-									<input type="checkbox" checked={isChecked} onChange={() => toggleMessage(index)} />
+									<input type="checkbox" checked={isChecked} onChange={() => toggleMessage(item.index)} />
 									<MessageCircle size={14} className="multi-select-node-icon user" />
 									<span className="multi-select-node-label">
-										<span className="multi-select-node-summary">{summarizeMessage(stripAnsi(msg.content))}</span>
+										<span className="multi-select-node-summary">
+											{summarizeMessage(stripAnsi(item.msg.content))}
+										</span>
 									</span>
 								</label>
 							);
 						}
 
-						// 助理/其他消息：套 agent-run 结构，父行控制子行勾选
-						if (msg.role === "assistant") {
+						// 助理消息：agent-run 结构，完全对齐 MultiSelectModal agent-run
+						if (item.kind === "assistant-run") {
+							const runChecked = item.indices.every((i) => selectedIds.has(i));
+							const runHasSome = item.indices.some((i) => selectedIds.has(i));
+							const runAnyChecked = runChecked || runHasSome;
+
 							return (
-								<div key={index} className="multi-select-tree-run">
+								<div key={item.indices[0]} className="multi-select-tree-run">
 									<div
-										className={`multi-select-tree-node run-parent${isChecked ? " selected" : ""}`}
-										onClick={() => toggleMessage(index)}
+										className={`multi-select-tree-node run-parent${runAnyChecked ? " selected" : ""}`}
+										onClick={() => toggleRun(item.indices)}
 									>
 										<Brain size={15} className="multi-select-node-icon assistant" />
 										<span className="multi-select-node-label">
 											<span className="multi-select-node-run-label">pi</span>
-											<span className="multi-select-node-time">{formatTime(msg.timestamp)}</span>
+											<span className="multi-select-node-time">
+												{formatTime(item.msgs[item.msgs.length - 1]?.timestamp ?? 0)}
+											</span>
+										</span>
+										<span className="multi-select-node-assistant-count">
+											{item.msgs.length}
 										</span>
 									</div>
 									<div className="multi-select-run-children">
-										<label className={`multi-select-tree-node run-child${isChecked ? " selected" : ""}`}>
-											<input type="checkbox" checked={isChecked} onChange={() => toggleMessage(index)} />
-											<FileText size={14} className="multi-select-node-icon child" />
-											<span className="multi-select-node-label">
-												<span className="multi-select-node-summary">{summarizeMessage(stripAnsi(msg.content))}</span>
-											</span>
-										</label>
+										{item.msgs.map((sub, si) => {
+											const idx = item.indices[si];
+											const subChecked = selectedIds.has(idx);
+											return (
+												<label
+													key={idx}
+													className={`multi-select-tree-node run-child${subChecked ? " selected" : ""}`}
+												>
+													<input type="checkbox" checked={subChecked} onChange={() => toggleMessage(idx)} />
+													<FileText size={14} className="multi-select-node-icon child" />
+													<span className="multi-select-node-label">
+														<span className="multi-select-node-summary">
+															{summarizeMessage(stripAnsi(sub.content))}
+														</span>
+													</span>
+												</label>
+											);
+										})}
 									</div>
 								</div>
 							);
 						}
 
-						// 其他角色（system/error 等）
-						return (
-							<label key={index} className={`multi-select-tree-node${isChecked ? " selected" : ""}`}>
-								<input type="checkbox" checked={isChecked} onChange={() => toggleMessage(index)} />
-								<FileText size={14} className="multi-select-node-icon child" />
-								<span className="multi-select-node-label">
-									<span className="multi-select-node-summary">{summarizeMessage(stripAnsi(msg.content))}</span>
-								</span>
-							</label>
-						);
+						return null;
 					})}
 				</div>
 
