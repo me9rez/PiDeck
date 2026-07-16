@@ -494,7 +494,7 @@ export function buildSuggestionItems(
 			.slice(0, 8)
 			.map((item) => ({
 				key: item.session.filePath,
-				label: `&${item.session.name ?? item.session.filePath}`,
+				label: item.session.name ?? item.session.filePath,
 				description: item.session.preview,
 				value: `&${item.session.name ?? item.session.filePath}`,
 				sessionMeta: { sessionId: item.session.id, filePath: item.session.filePath, projectPath: item.session.projectPath },

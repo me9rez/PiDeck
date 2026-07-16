@@ -3974,7 +3974,9 @@ ${text}
       }
       if (messages && messages.length > 0) {
         const context = messages.map((m) => `[${m.role === "user" ? "User" : "Assistant"}]: ${m.content}`).join("\n");
-        resolvedMessage = resolvedMessage.replace(raw, `<referenced_session name="${sessionName}">\n${context}\n</referenced_session>`);
+        resolvedMessage = resolvedMessage.replaceAll(raw, `<referenced_session name="${sessionName}">\n${context}\n</referenced_session>`);
+      } else {
+        resolvedMessage = resolvedMessage.replaceAll(raw, "");
       }
     }
 
