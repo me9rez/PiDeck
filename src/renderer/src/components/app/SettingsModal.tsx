@@ -794,6 +794,7 @@ export function SettingsModal(props: {
 									</div>
 								<div className="setting-pi-wsl-panel">
 									<SelectField
+										className="setting-field"
 										label={t("settings.piSource.label")}
 										description={t("settings.piSource.desc")}
 										value={props.settings.wslEnabled ? "wsl" : "windows"}

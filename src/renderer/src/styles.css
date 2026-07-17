@@ -5315,9 +5315,10 @@ body.is-terminal-resizing .terminal-resize-handle::before {
 .tool-card--ask {
   background: transparent;
 }
-/* ask dialog 打开时隐藏内联卡片的展开内容，避免重复显示 */
-body.ask-dialog-open .tool-card--ask .tool-card-content,
-body.ask-dialog-open .ask-card-preview {
+/* ask dialog 打开时隐藏内联卡片的全部内容，避免对话中重复显示提问 */
+body.ask-dialog-open .tool-card--ask,
+body.ask-dialog-open .ask-card-preview,
+body.ask-dialog-open .ask-question-card.pending {
   display: none;
 }
 .tool-card--ask .tool-card-icon {
@@ -5462,6 +5463,16 @@ body.ask-dialog-open .ask-card-preview {
   display: grid;
   gap: 8px;
 }
+.ask-dialog-options-confirm {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.ask-dialog-options-confirm .ask-dialog-option {
+  flex: 1;
+  justify-content: center;
+  text-align: center;
+}
 .ask-dialog-option {
   display: flex;
   align-items: center;
@@ -5553,6 +5564,27 @@ body.ask-dialog-open .ask-card-preview {
 .ask-dialog-option:hover {
   border-color: var(--color-accent);
   background: var(--color-bg-active);
+}
+.ask-dialog-custom-input {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+}
+.ask-dialog-custom-field {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-base);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-control);
+  font-family: var(--font-family-base);
+  outline: none;
+}
+.ask-dialog-custom-field:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 .ask-dialog-input-area {
   display: flex;
@@ -9722,6 +9754,9 @@ body.is-composer-resizing .composer-resize-handle::after {
   background: var(--color-bg-panel);
   padding: 0 var(--space-3);
   color: var(--color-text-primary);
+}
+.ui-select-field {
+  position: relative;
 }
 .ui-select-control {
   width: 100%;

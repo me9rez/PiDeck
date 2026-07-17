@@ -457,6 +457,7 @@ interface UiRequest {
 	options?: string[];
 	placeholder?: string;
 	prefill?: string;
+	allowOther?: boolean;
 	completed?: boolean;
 	value?: string;
 	cancelled?: boolean;
@@ -572,6 +573,8 @@ export function App() {
     Record<string, ImageContent[]>
   >({});
   const [previewImage, setPreviewImage] = useState<ImageContent | null>(null);
+  /** 存储用户在 select 弹框自定义输入框中键入的值，用于在后续 input 弹框中自动提交 */
+  const pendingCustomInputRef = useRef("");
   /** 外部编辑器列表 + 弹出气泡状态 */
   const [externalEditors, setExternalEditors] = useState<ExternalEditor[]>([]);
   const [editorsOpen, setEditorsOpen] = useState(false);
@@ -902,6 +905,47 @@ export function App() {
   const [savedPrompt, setSavedPrompt] = useState("");
   const [compacting, setCompacting] = useState(false);
   const [drawer, setDrawer] = useState<DrawerPanel | null>(null);
+
+  // ── 每个 Agent 的抽屉面板状态持久化（localStorage） ──
+  // 用户切换会话时自动恢复上次的文件面板状态和展开目录，避免每次进来都要重新点开。
+  const AGENT_DRAWER_KEY_PREFIX = "pid:agent-drawer:";
+  const AGENT_EXPANDED_DIRS_KEY_PREFIX = "pid:agent-expanded-dirs:";
+
+  const saveDrawerState = useCallback((agentId: string, panel: DrawerPanel | null, pinned: boolean) => {
+    try {
+      localStorage.setItem(AGENT_DRAWER_KEY_PREFIX + agentId, JSON.stringify({ panel, pinned }));
+    } catch { /* localStorage 不可用时静默忽略 */ }
+  }, []);
+
+  const loadDrawerState = useCallback((agentId: string): { panel: DrawerPanel | null; pinned: boolean } | null => {
+    try {
+      const raw = localStorage.getItem(AGENT_DRAWER_KEY_PREFIX + agentId);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && (parsed.panel === null || ["files", "sessions", "browser", "editor"].includes(parsed.panel))) {
+          return parsed;
+        }
+      }
+    } catch { /* ignore */ }
+    return null;
+  }, []);
+
+  const saveExpandedDirs = useCallback((agentId: string, dirs: Set<string>) => {
+    try {
+      localStorage.setItem(AGENT_EXPANDED_DIRS_KEY_PREFIX + agentId, JSON.stringify([...dirs]));
+    } catch { /* ignore */ }
+  }, []);
+
+  const loadExpandedDirs = useCallback((agentId: string): Set<string> => {
+    try {
+      const raw = localStorage.getItem(AGENT_EXPANDED_DIRS_KEY_PREFIX + agentId);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) return new Set(arr);
+      }
+    } catch { /* ignore */ }
+    return new Set();
+  }, []);
   const [renderedDrawer, setRenderedDrawer] = useState<DrawerPanel | null>(null);
   const drawerUnmountTimerRef = useRef<number | null>(null);
   // 最后一个 editor tab 被关闭时自动收起 drawer
@@ -1072,6 +1116,28 @@ export function App() {
 
   const feishu = useFeishuBridge();
   const scratchPad = useScratchPad();
+
+  // 当活跃 Agent 切换时，从 localStorage 恢复该 Agent 的抽屉面板状态和展开目录
+  // 使得用户切换会话后文件面板和展开目录保持之前的状态。
+  useEffect(() => {
+    if (!activeAgentId) return;
+    const savedState = loadDrawerState(activeAgentId);
+    if (savedState) {
+      const panel: DrawerPanel | null = savedState.panel;
+      if (savedState.pinned && panel) {
+        setDrawerPinnedByAgent((current) => {
+          if (current[activeAgentId] === panel) return current;
+          return { ...current, [activeAgentId]: panel };
+        });
+      }
+      if (panel) {
+        setDrawer(panel);
+        setDrawerCollapsed(false);
+      }
+    }
+    const dirs = loadExpandedDirs(activeAgentId);
+    setExpandedDirs(dirs);
+  }, [activeAgentId, loadDrawerState, loadExpandedDirs]);
 
   // 当活跃 Agent 切换或绑定列表变更时，加载该 Agent 指定的飞书 Bot
   // 绑定变更后同步刷新，确保配置页断开关联后已连接状态正确反映。
@@ -1850,6 +1916,15 @@ export function App() {
           delete next[request.requestId];
           if (Object.keys(next).length === 0) return null;
           return next;
+        }
+        /* 用户通过 select 弹框自定义输入框提交自定义值后，Pi 会收到 "✎ 自行输入..."
+           选项值并发送 input 弹框让用户输入。此处检测到 pending 值后自动提交 input
+           弹框，对用户表现为一次提交即完成，无需二次输入。 */
+        if (request.method === "input" && pendingCustomInputRef.current) {
+          const value = pendingCustomInputRef.current;
+          pendingCustomInputRef.current = "";
+          api.agents.sendUiResponse(activeAgentIdRef.current ?? "", request.requestId, { value });
+          return current; // 不显示 input 弹框
         }
         // 新增或更新 UI 请求
         return { ...(current ?? {}), [request.requestId]: request as UiRequest };
@@ -2719,11 +2794,11 @@ export function App() {
     showToast(t("app.projectRefreshed"), 1800);
   }
 
-  async function refreshFiles(projectId = activeProjectId) {
+  async function refreshFiles(projectId = activeProjectId, silent = false) {
     if (!projectId) return;
     const next = await api.files.list(projectId);
     setFiles(next);
-    showToast(t("app.filesRefreshed"), 1800);
+    if (!silent) showToast(t("app.filesRefreshed"), 1800);
   }
 
   async function refreshGitChangedFiles(projectId = activeProjectId) {
@@ -4376,6 +4451,17 @@ ${goalTextRef.current}
       if ("useNativeTitleBar" in patch) {
         notice = t("app.titleBarSaved");
       }
+      // WSL/Windows pi 源切换：重新检测 pi 环境、刷新项目和会话列表
+      if ("wslEnabled" in patch || "wslDistro" in patch || "wslUser" in patch) {
+        void api.pi.check().then((next) => setPiStatus(next)).catch(() => undefined);
+        void api.agents.list().then(setAgents).catch(() => undefined);
+        void api.projects.list().then(setProjects).catch(() => undefined);
+        if (activeProjectId) {
+          void api.sessions.list(activeProjectId).then((sessions) => {
+            setSessions([...sessions].sort((a, b) => b.updatedAt - a.updatedAt));
+          }).catch(() => undefined);
+        }
+      }
       showToast(notice);
     } catch (error) {
       setSettings(await api.settings.get());
@@ -4541,8 +4627,15 @@ ${goalTextRef.current}
       setSessionsProjectId(activeProjectId);
       void refreshSessions(activeProjectId);
     }
+    // 打开文件面板时触发一次静默刷新，确保目录结构是最新的，避免上次打开时文件已有变更但未刷新。
+    if (panel === "files" && activeProjectId) {
+      void refreshFiles(activeProjectId, true);
+      void refreshGitChangedFiles(activeProjectId);
+    }
     setDrawer((current) => {
       if (current === panel) return drawerPinned ? current : null;
+      // 持久化当前 Agent 的抽屉面板状态
+      if (activeAgentId) saveDrawerState(activeAgentId, panel, drawerPinned);
       return panel;
     });
   }
@@ -4559,12 +4652,15 @@ ${goalTextRef.current}
 
   function toggleDrawerPinned() {
     if (!activeAgentId || !drawer) return;
+    const willPin = !drawerPinned;
     setDrawerPinnedByAgent((current) => {
       const next = { ...current };
       if (next[activeAgentId]) delete next[activeAgentId];
       else next[activeAgentId] = drawer;
       return next;
     });
+    // 持久化钉选状态
+    saveDrawerState(activeAgentId, drawer, willPin);
   }
 
   function toggleDirectory(path: string) {
@@ -4573,6 +4669,8 @@ ${goalTextRef.current}
       const next = new Set(current);
       if (next.has(path)) next.delete(path);
       else next.add(path);
+      // 持久化展开状态到 localStorage，切换回此会话时恢复
+      if (activeAgentId) saveExpandedDirs(activeAgentId, next);
       return next;
     });
   }
@@ -7157,9 +7255,36 @@ ${goalTextRef.current}
             </button>
           </div>
           <div className="ask-dialog-question">{activeUiAsk.title || t("ask.pending")}</div>
-          {activeUiAsk.options && activeUiAsk.options.length > 0 ? (
+          {activeUiAsk.method === "confirm" ? (
+            <div className="ask-dialog-options ask-dialog-options-confirm">
+              <button
+                className="ask-dialog-option"
+                onClick={() => {
+                  if (activeUiAsk.requestId && activeAgentId) {
+                    api.agents.sendUiResponse(activeAgentId, activeUiAsk.requestId, { confirmed: true });
+                  }
+                }}
+              >
+                {t("common.true")}
+              </button>
+              <button
+                className="ask-dialog-option"
+                onClick={() => {
+                  if (activeUiAsk.requestId && activeAgentId) {
+                    api.agents.sendUiResponse(activeAgentId, activeUiAsk.requestId, { confirmed: false });
+                  }
+                }}
+              >
+                {t("common.false")}
+              </button>
+            </div>
+          ) : activeUiAsk.options && activeUiAsk.options.length > 0 ? (
             <div className="ask-dialog-options">
-              {activeUiAsk.options.map((opt, i) => {
+              {/* 过滤掉 Pi 自带的 "✎ 自行输入..." 选项，用下方内联输入框替代 */}
+              {activeUiAsk.options.filter((opt) => {
+                const label = typeof opt === "string" ? opt : String((opt as any).label ?? opt);
+                return !label.startsWith("✎");
+              }).map((opt, i) => {
                 const val = typeof opt === "string" ? opt : String((opt as any).value ?? (opt as any).label ?? opt);
                 const label = typeof opt === "string" ? opt : (opt as any).label ?? val;
                 return (
@@ -7176,6 +7301,41 @@ ${goalTextRef.current}
                   </button>
                 );
               })}
+              <div className="ask-dialog-custom-input">
+                <input
+                  id="ask-dialog-custom-field"
+                  className="ask-dialog-custom-field"
+                  placeholder={t("ask.customPlaceholder")}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      const el = document.getElementById("ask-dialog-custom-field") as HTMLInputElement | null;
+                      const val = el?.value?.trim() ?? "";
+                      if (val && activeUiAsk.requestId && activeAgentId) {
+                        /* 保存自定义值到 ref，选择 "✎ 自行输入..." 让 Pi 走 input 流 */
+                        pendingCustomInputRef.current = val;
+                        api.agents.sendUiResponse(activeAgentId, activeUiAsk.requestId, { value: "✎ 自行输入..." });
+                      }
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="ask-dialog-submit-btn"
+                  onClick={() => {
+                    const el = document.getElementById("ask-dialog-custom-field") as HTMLInputElement | null;
+                    const val = el?.value?.trim() ?? "";
+                    if (val && activeUiAsk.requestId && activeAgentId) {
+                      /* 保存自定义值到 ref，选择 "✎ 自行输入..." 让 Pi 走 input 流 */
+                      pendingCustomInputRef.current = val;
+                      api.agents.sendUiResponse(activeAgentId, activeUiAsk.requestId, { value: "✎ 自行输入..." });
+                    }
+                  }}
+                >
+                  {t("common.submit")}
+                </button>
+              </div>
             </div>
           ) : activeUiAsk.method === "input" || activeUiAsk.method === "editor" ? (
             <div className="ask-dialog-input-area">

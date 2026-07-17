@@ -106,10 +106,9 @@ export class PiLocator {
   createInvocation(command: string, args: string[]): PiCommandInvocation {
     // WSL 模式：command 为 "wsl://<distro>/<user>/pi" 形式的标记
     if (command.startsWith("wsl://")) {
-      const parts = command.split("/");
-      const distro = parts[1];
-      const user = parts[2];
-      const piCommand = parts[3] || "pi";
+      const parsed = this.parseWslUrl(command);
+      if (!parsed) return { command, args, shell: false };
+      const { distro, user, piCommand } = parsed;
       return {
         command: this.wslExePath,
         args: ["-d", distro, "-u", user, piCommand, ...args],
@@ -177,11 +176,9 @@ export class PiLocator {
     }
     if (this.isUnsupportedPowerShellShim(command)) return this.unsupportedPowerShellStatus(command);
     if (command.startsWith("wsl://")) {
-      const parts = command.split("/");
-      const distro = parts[1];
-      const user = parts[2];
-      const piCommand = parts[3] || "pi";
-      return this.checkWslCommand(distro, user, piCommand);
+      const parsed = this.parseWslUrl(command);
+      if (!parsed) return { installed: false, searchedDirs: [], error: "Invalid wsl:// URL" };
+      return this.checkWslCommand(parsed.distro, parsed.user, parsed.piCommand);
     }
     return this.runCheck(command, []);
   }
@@ -195,14 +192,12 @@ export class PiLocator {
     const searchedDirs = this.getSearchDirs();
 
     if (command.startsWith("wsl://")) {
-      const parts = command.split("/");
-      const distro = parts[1];
-      const user = parts[2];
-      const piCommand = parts[3] || "pi";
-      const wslStatus = await this.checkWslCommand(distro, user, piCommand);
+      const parsed = this.parseWslUrl(command);
+      if (!parsed) return { installed: false, command, searchedDirs: [], error: "Invalid wsl:// URL" };
+      const wslStatus = await this.checkWslCommand(parsed.distro, parsed.user, parsed.piCommand);
       return {
         ...wslStatus,
-        command: `wsl -d ${distro} -u ${user} ${piCommand}`,
+        command: `wsl -d ${parsed.distro} -u ${parsed.user} ${parsed.piCommand}`,
         searchedDirs: [],
       };
     }
@@ -305,6 +300,16 @@ export class PiLocator {
   private get wslExePath(): string {
     const systemRoot = process.env.SystemRoot || "C:\\Windows";
     return join(systemRoot, "System32", "wsl.exe");
+  }
+
+  /**
+   * 解析 "wsl://<distro>/<user>/<piCommand>" 格式的 URL。
+   * 使用正则代替 .split("/") 避免 wsl:// 的双斜杠产生空字符串元素导致解析错位。
+   */
+  private parseWslUrl(url: string): { distro: string; user: string; piCommand: string } | null {
+    const match = url.match(/^wsl:\/\/([^/]+)\/([^/]+)\/(.+)$/);
+    if (!match) return null;
+    return { distro: match[1], user: match[2], piCommand: match[3] };
   }
 
   private resolveWslCommand(distro: string, user: string): string | undefined {
