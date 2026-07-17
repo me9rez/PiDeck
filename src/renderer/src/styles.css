@@ -9571,6 +9571,9 @@ body.is-composer-resizing .composer-resize-handle::after {
   padding: 0 var(--space-3);
   color: var(--color-text-primary);
 }
+.ui-select-field {
+  position: relative;
+}
 .ui-select-control {
   width: 100%;
   height: var(--control-height-lg);

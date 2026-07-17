@@ -4361,6 +4361,17 @@ ${goalTextRef.current}
       if ("useNativeTitleBar" in patch) {
         notice = t("app.titleBarSaved");
       }
+      // WSL/Windows pi 源切换：重新检测 pi 环境、刷新项目和会话列表
+      if ("wslEnabled" in patch || "wslDistro" in patch || "wslUser" in patch) {
+        void api.pi.check().then((next) => setPiStatus(next)).catch(() => undefined);
+        void api.agents.list().then(setAgents).catch(() => undefined);
+        void api.projects.list().then(setProjects).catch(() => undefined);
+        if (activeProjectId) {
+          void api.sessions.list(activeProjectId).then((sessions) => {
+            setSessions([...sessions].sort((a, b) => b.updatedAt - a.updatedAt));
+          }).catch(() => undefined);
+        }
+      }
       showToast(notice);
     } catch (error) {
       setSettings(await api.settings.get());
