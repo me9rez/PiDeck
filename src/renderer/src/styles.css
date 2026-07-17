@@ -6619,28 +6619,13 @@ body.is-composer-resizing .composer-resize-handle::after {
   display: inline-flex;
 }
 .composer-footer .send-behavior-toggle {
-  width: 22px;
-  height: 22px;
-  min-width: 0;
+  min-width: 30px;
+  width: 30px;
   padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--color-warning) 70%, #fff);
-  color: #fff;
+  border-top-left-radius: var(--radius-md);
+  border-bottom-left-radius: var(--radius-md);
   display: grid;
   place-items: center;
-  cursor: pointer;
-  position: absolute;
-  bottom: -4px;
-  right: -4px;
-  transition: background 0.15s;
-}
-.composer-footer .send-behavior-toggle:hover {
-  background: var(--color-warning);
-}
-.composer-footer .send-behavior-toggle svg {
-  width: 14px;
-  height: 14px;
 }
 .send-behavior-menu {
   position: absolute;

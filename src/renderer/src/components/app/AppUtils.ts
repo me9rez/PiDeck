@@ -251,6 +251,17 @@ export function groupToolMessages(messages: ChatMessage[]): RenderMessage[] {
 			flushThinking();
 			if (currentRun.length === 0) runStartedAt = message.timestamp;
 			currentTools.push(message);
+		} else if (message.role === "system") {
+			// System 消息（如 askQuestion 卡片）不应中断当前 agent run。
+			// 工具、thinking 和后续 assistant 消息应合并为同一轮回答，
+			// 否则会被拆成两个独立的折叠区域。
+			// 若已有暂存 run（前一次 ask_question 未合并），先 flush 掉。
+			if (pendingRun) {
+				currentRun.push(...pendingRun);
+				pendingRun = null;
+				flushRun();
+			}
+			result.push({ kind: "message", message });
 		} else {
 			// 若已有暂存 run（前一次 ask_question 未合并），先 flush 掉
 			if (pendingRun) {
