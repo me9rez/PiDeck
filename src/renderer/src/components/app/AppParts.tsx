@@ -2495,9 +2495,14 @@ export const TurnRow = memo(function TurnRow(props: {
 		}
 		return -1;
 	})();
-	const hasExecutionProcess = lastAssistantIndex > 0;
-	const executionItems = hasExecutionProcess
-		? (run.items as (ThinkingGroupItem | ToolGroupItem | MessageItem)[]).slice(0, lastAssistantIndex)
+	// 执行过程 = 除最终回答外的所有条目（最终回答在折叠区外始终可见，不能再进折叠详情）。
+	// 边界：lastAssistantIndex === 0（如「思考+直接回答」的无工具回合）时，若取 run.items 全量，
+	// 最终回答会被同时渲染进折叠详情和下方正文，展开后出现两份；filter 排除它本身，
+	// 同时保留最终回答之后可能存在的尾部 tool/thinking 条目（slice 方案会将其丢弃）。
+	const executionItems = lastAssistantIndex >= 0
+		? (run.items as (ThinkingGroupItem | ToolGroupItem | MessageItem)[]).filter(
+			(_, index) => index !== lastAssistantIndex,
+		)
 		: (run.items as (ThinkingGroupItem | ToolGroupItem | MessageItem)[]);
 	const finalMessageItem = lastAssistantIndex >= 0 ? (run.items[lastAssistantIndex] as MessageItem) : null;
 
