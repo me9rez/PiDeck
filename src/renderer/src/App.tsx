@@ -43,7 +43,7 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
-import { toast as showToastFn, Toaster } from "sonner";
+import { subscribeToNotice, showNotice } from "./utils/notice";
 import { createPreviewApi } from "./previewApi";
 import { createBrowserApi } from "./browserApi";
 const ConfigModal = lazy(() => import("./ConfigModal").then((m) => ({ default: m.ConfigModal })));
@@ -559,8 +559,8 @@ export function App() {
     string | undefined
   >(undefined);
   const [sessionActionsOpen, setSessionActionsOpen] = useState(false);
-  const [ponytailNotice, setPonytailNotice] = useState<string | null>(null);
-  const ponytailNoticeTimeoutRef = useRef<number | null>(null);
+  const [appNotice, setAppNotice] = useState<{ message: string; duration: number } | null>(null);
+  const appNoticeTimeoutRef = useRef<number | null>(null);
   const [switchingBranch, setSwitchingBranch] = useState<string | null>(null);
   const [promptByAgent, setPromptByAgent] = useState<Record<string, string>>(
     {},
@@ -598,6 +598,21 @@ export function App() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [editorsOpen]);
+  // 订阅 app-notice 通知：替代 sonner toast
+  useEffect(() => {
+    return subscribeToNotice((data) => {
+      if (data) {
+        setAppNotice({ message: data.message, duration: data.duration });
+        if (appNoticeTimeoutRef.current) {
+          window.clearTimeout(appNoticeTimeoutRef.current);
+        }
+        appNoticeTimeoutRef.current = window.setTimeout(() => {
+          setAppNotice(null);
+          appNoticeTimeoutRef.current = null;
+        }, data.duration);
+      }
+    });
+  }, []);
   /** 活跃的 Extension UI 请求 map（requestId → UiRequest），用于实时显示 ask_question 卡片 */
   const [activeUiRequest, setActiveUiRequest] = useState<Record<string, UiRequest> | null>(null);
   /** Extension 通过 RPC setWidget 推送的轻量状态块；按 agent 隔离，避免切换会话串台。 */
@@ -897,7 +912,7 @@ export function App() {
   const [openCodeImportRunning, setOpenCodeImportRunning] = useState(false);
   const [openCodeImportReport, setOpenCodeImportReport] =
     useState<OpenCodeImportReport | null>(null);
-  // showToast 改用 sonner 实现，见下方函数定义
+  // showToast 使用 app-notice 统一展示，见下方函数定义
   // 历史命令相关状态
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -1039,7 +1054,7 @@ export function App() {
     fontFamilyMono: "commit-mono",
     fontFamilyMonoCustom: "",
   });
-  /* settingsNotice 已改用 showToast (sonner) 实现 */
+  /* settingsNotice 已改用 showToast (app-notice) 实现 */
   const [piProxyNotice, setPiProxyNotice] = useState("");
   const [piProxyNoticeTone, setPiProxyNoticeTone] = useState<
     "info" | "success" | "error"
@@ -1851,18 +1866,7 @@ export function App() {
       if (request.method === "notify") {
         const notifyRequest = request as UiRequest;
         if (notifyRequest.message) {
-          if (/ponytail/i.test(notifyRequest.message)) {
-            setPonytailNotice(notifyRequest.message);
-            if (ponytailNoticeTimeoutRef.current) {
-              window.clearTimeout(ponytailNoticeTimeoutRef.current);
-            }
-            ponytailNoticeTimeoutRef.current = window.setTimeout(() => {
-              setPonytailNotice(null);
-              ponytailNoticeTimeoutRef.current = null;
-            }, 3500);
-          } else {
-            showToast(notifyRequest.message, notifyRequest.notifyType === "error" ? 5000 : 3500);
-          }
+          showNotice(notifyRequest.message, notifyRequest.notifyType === "error" ? 5000 : 3500);
         }
         return;
       }
@@ -2615,9 +2619,9 @@ export function App() {
     }
   }
 
-  /** 使用 sonner 的 toast 通知，兼容旧签名 (message, duration?) */
+  /** 统一通知：所有非模态消息都走 app-notice 位置 */
   function showToast(message: string, duration = 3500) {
-    showToastFn(message, { duration });
+    showNotice(message, duration);
   }
 
   async function downloadAppUpdate() {
@@ -5596,9 +5600,9 @@ ${goalTextRef.current}
                         </span>
                       )}
                     </button>
-                    {ponytailNotice && (
-                      <div className="ponytail-notice" role="status">
-                        {ponytailNotice}
+                    {appNotice && (
+                      <div className="app-notice" role="status">
+                        {appNotice.message}
                       </div>
                     )}
                   {sessionActionsOpen && activeAgentId && (
@@ -6715,23 +6719,7 @@ ${goalTextRef.current}
         </div>
       )}
 
-      <Toaster
-        position="top-center"
-        richColors
-        closeButton
-        offset={{ top: "68px" }}
-        toastOptions={{
-          style: {
-            fontFamily: "var(--font-family-base)",
-            fontSize: "var(--font-size-caption)",
-            gap: "8px",
-            padding: "10px 16px",
-            width: "fit-content",
-            maxWidth: "fit-content",
-          },
-        }}
-        duration={3500}
-      />
+
       {worktreeCreateDialog && (
         <WorktreeCreateDialog
           projectId={worktreeCreateDialog.projectId}

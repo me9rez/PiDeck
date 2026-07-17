@@ -81,7 +81,7 @@ import {
 } from "lucide-react";
 import { getFileIconSeti, getFileIconColor, getFileTypeLabel } from "../../fileIcons";
 import { t, type TranslationKey } from "../../i18n";
-import { toast } from "sonner";
+import { showNotice } from "../../utils/notice";
 import { Button } from "../ui/Button";
 import { CloseIconButton, IconButton } from "../ui/IconButton";
 import { Modal } from "../ui/Modal";
@@ -4492,20 +4492,21 @@ function SessionsPanel(props: {
 		successText: string,
 	) {
 		setSessionActionLoading({ filePath: session.filePath, action: actionType });
-		toast(
+		showNotice(
 			actionType === "copy"
 				? t("drawer.sessionActionCopying")
 				: actionType === "export"
 					? t("drawer.sessionActionExporting")
 					: t("drawer.sessionActionDeleting"),
+			3500,
 		);
 		try {
 			await action();
-			toast(successText, { duration: 1600 });
+			showNotice(successText, 1600);
 		} catch (error) {
-			toast(
+			showNotice(
 				error instanceof Error ? error.message : t("drawer.sessionActionFailed"),
-				{ duration: 2400 },
+				2400,
 			);
 		} finally {
 			setSessionActionLoading(null);
