@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import type { AppLogLevel } from "@shared/types";
 import { App } from "./App";
 import "./styles.css";
+import "./file-icons.css";
 
 function writeStartupLog(level: AppLogLevel, message: string, detail?: unknown) {
   window.piDesktop?.app.rendererLog(level, "renderer", message, detail).catch(() => undefined);

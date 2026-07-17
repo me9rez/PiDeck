@@ -77,7 +77,9 @@ import {
 	Wrench,
 	X,
 	Star,
+	FolderOpen,
 } from "lucide-react";
+import { getFileIconSeti, getFileIconColor, getFileTypeLabel } from "../../fileIcons";
 import { t, type TranslationKey } from "../../i18n";
 import { toast } from "sonner";
 import { Button } from "../ui/Button";
@@ -4019,7 +4021,7 @@ export function DrawerContent(props: {
 					modifiedFiles={props.gitChangedFiles.map((f) => ({
 						path: f.path,
 						toolName: "git",
-						status: "done",
+						status: f.status,
 					}))}
 					expandedDirs={props.expandedDirs}
 					onToggleDirectory={props.onToggleDirectory}
@@ -4082,6 +4084,14 @@ function FilesPanel(props: {
 		0,
 		latestModifiedFiles.length - visibleModifiedFiles.length,
 	);
+
+	const gitStatusMap = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const f of props.modifiedFiles) {
+			if (f.toolName === "git" && f.status) map.set(f.path, f.status);
+		}
+		return map;
+	}, [props.modifiedFiles]);
 
 	return (
 		<div className="files-panel">
@@ -4171,6 +4181,7 @@ function FilesPanel(props: {
 					onOpenFile={props.onOpenFile}
 					onViewFile={props.onViewFile}
 					onDiffFile={props.onDiffFile}
+					gitStatuses={gitStatusMap}
 				/>
 			))}
 		</div>
@@ -4308,6 +4319,27 @@ export function SessionFileSummary(props: {
 	);
 }
 
+function fileIconElement(name: string, isDirectory: boolean, isExpanded: boolean) {
+	if (isDirectory) {
+		return isExpanded ? <FolderOpen size={16} /> : <Folder size={16} />;
+	}
+	try {
+		const { svg, colorName } = getFileIconSeti(name);
+		const color = getFileIconColor(colorName);
+		// SVG 只来自仓库内附带许可证的只读 Seti 数据快照，不接收文件内容或用户输入。
+		return (
+			<span
+				aria-hidden="true"
+				className="file-node-seti-icon"
+				style={{ color }}
+				dangerouslySetInnerHTML={{ __html: svg }}
+			/>
+		);
+	} catch {
+		return <FileText size={15} />;
+	}
+}
+
 function FileNode(props: {
 	node: FileTreeNode;
 	expandedDirs: Set<string>;
@@ -4316,11 +4348,13 @@ function FileNode(props: {
 	onOpenFile?: (path: string) => void;
 	onViewFile?: (path: string) => void;
 	onDiffFile?: (path: string) => void;
+	gitStatuses?: Map<string, string>;
 	depth?: number;
 }) {
-	const { node, expandedDirs, onToggleDirectory, depth = 0 } = props;
+	const { node, expandedDirs, onToggleDirectory, depth = 0, gitStatuses } = props;
 	const expanded = expandedDirs.has(node.path);
-	// 每行保持同一个宽度，只通过 CSS 变量控制缩进；避免深层递归容器把最后一层可用宽度越压越窄。
+	const typeLabel = node.type === "file" ? getFileTypeLabel(node.name) : "";
+	const gitStatus = gitStatuses?.get(node.path);
 	const rowStyle = { "--file-depth-offset": `${depth * 16}px` } as CSSProperties;
 	const menu = (event: React.MouseEvent) => {
 		event.preventDefault();
@@ -4329,58 +4363,49 @@ function FileNode(props: {
 	if (node.type === "file")
 		return (
 			<div className="file-node" style={rowStyle}>
-				<button
-					className="file file-node-row"
-					style={rowStyle}
-					title={node.relativePath}
+				<button className="file file-node-row" style={rowStyle}
+					title={`${node.relativePath}\n${typeLabel}`}
 					onClick={() => props.onViewFile?.(node.path)}
-					onContextMenu={menu}
-				>
-					<span className="file-node-icon">{fileIcon(node.name)}</span>
+					onContextMenu={menu}>
+					<span className="file-node-icon">
+						{fileIconElement(node.name, false, false)}
+						{gitStatus && (
+							<span aria-hidden="true" className={`file-node-git-badge git-${gitStatus}`} />
+						)}
+					</span>
 					<span className="file-node-name">{node.name}</span>
+					<span className="file-node-type-label">{typeLabel}</span>
 				</button>
 			</div>
 		);
 	return (
 		<div className="file-node" style={rowStyle}>
-			<button
-				className="directory file-node-row"
-				style={rowStyle}
+			<button className="directory file-node-row" style={rowStyle}
 				onClick={() => onToggleDirectory(node.path)}
 				onContextMenu={menu}
-				title={node.relativePath}
-			>
+				title={node.relativePath}>
 				<span className="file-node-icon">
-					{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+					{fileIconElement(node.name, true, expanded)}
 				</span>
 				<span className="file-node-name">{node.name}</span>
 			</button>
 			{expanded && node.children && node.children.length > 0 && (
 				<div className="file-children">
 					{node.children.map((child) => (
-						<FileNode
-							key={child.path}
-							node={child}
+						<FileNode key={child.path} node={child}
 							expandedDirs={expandedDirs}
 							onToggleDirectory={onToggleDirectory}
 							onFileContextMenu={props.onFileContextMenu}
 							onOpenFile={props.onOpenFile}
 							onViewFile={props.onViewFile}
 							onDiffFile={props.onDiffFile}
-							depth={depth + 1}
-						/>
+							gitStatuses={gitStatuses}
+							depth={depth + 1} />
 					))}
 				</div>
 			)}
 		</div>
 	);
-}
-
-function fileIcon(name: string) {
-	if (/\.(ts|tsx|js|jsx)$/.test(name)) return "◇";
-	if (/\.(md|mdx)$/.test(name)) return "M";
-	if (/\.(json|yaml|yml)$/.test(name)) return "{}";
-	return "·";
 }
 
 function gitStatusIcon(status: string): string {

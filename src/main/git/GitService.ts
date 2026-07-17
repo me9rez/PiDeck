@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { dirname, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { GitBranchInfo } from "../../shared/types";
 
 const execFileAsync = promisify(execFile);
@@ -47,8 +47,13 @@ export class GitService {
 	}
 
 	async checkout(cwd: string, branch: string): Promise<GitBranchInfo> {
-		// 分支切换会改变工作区状态，先只支持切换已有本地分支，避免隐式创建或修改远端跟踪关系。
-		await execFileAsync("git", ["checkout", branch], { cwd });
+		try {
+			await execFileAsync("git", ["checkout", branch], { cwd });
+		} catch (e: unknown) {
+			const msg = e instanceof Error ? e.message : String(e);
+			// execFile 默认只输出 stdout；checkout 失败时 stderr 包含真正原因。
+			throw new Error(`Git checkout "${branch}" failed: ${msg}`);
+		}
 		return this.getBranches(cwd);
 	}
 
@@ -106,57 +111,74 @@ export class GitService {
 		cwd: string,
 	): Promise<{ path: string; status: string }[]> {
 		try {
+			const { stdout: repoRootRaw } = await execFileAsync(
+				"git",
+				["rev-parse", "--show-toplevel"],
+				{ cwd },
+			);
+			const repoRoot = resolve(repoRootRaw.trim());
+			const projectRoot = resolve(cwd);
 			const [{ stdout: stagedRaw }, { stdout: unstagedRaw }, { stdout: untrackedRaw }] =
 				await Promise.all([
 					execFileAsync(
 						"git",
-						["diff", "--cached", "--name-status", "--diff-filter=ACDMR"],
-						{ cwd },
+						["diff", "--cached", "--name-status", "-z", "--diff-filter=ACDMR"],
+						{ cwd: repoRoot },
 					),
 					execFileAsync(
 						"git",
-						["diff", "--name-status", "--diff-filter=ACDMR"],
-						{ cwd },
+						["diff", "--name-status", "-z", "--diff-filter=ACDMR"],
+						{ cwd: repoRoot },
 					),
 					execFileAsync(
 						"git",
-						["ls-files", "--others", "--exclude-standard"],
-						{ cwd },
+						["ls-files", "--others", "--exclude-standard", "-z"],
+						{ cwd: repoRoot },
 					),
 				]);
 
 			const files: { path: string; status: string }[] = [];
 			const seen = new Set<string>();
 
-			// 辅助函数：将相对路径转为绝对路径并去重
-			const addFile = (relPath: string, status: string) => {
-				if (!relPath || seen.has(relPath)) return;
-				seen.add(relPath);
-				files.push({ path: join(cwd, relPath), status });
+			// Git 始终返回仓库根相对路径；嵌套项目只展示自己目录内的变更。
+			const addFile = (repoRelativePath: string, status: string) => {
+				if (!repoRelativePath) return;
+				const absolutePath = resolve(repoRoot, repoRelativePath);
+				const projectRelativePath = relative(projectRoot, absolutePath);
+				if (
+					projectRelativePath === ".." ||
+					projectRelativePath.startsWith(`..${sep}`) ||
+					isAbsolute(projectRelativePath) ||
+					seen.has(absolutePath)
+				) return;
+				seen.add(absolutePath);
+				files.push({ path: absolutePath, status });
 			};
 
-			for (const line of stagedRaw.split(/\r?\n/)) {
-				const trimmed = line.trim();
-				if (!trimmed) continue;
-				const [statusChar, ...pathParts] = trimmed.split(/\s+/);
-				addFile(
-					pathParts.join(" "),
-					statusChar === "A" ? "added" : statusChar === "D" ? "deleted" : "modified",
-				);
-			}
+			// `-z` 让 Git 用 NUL 分隔状态和路径，避免空格、引号或非 ASCII 文件名被拆坏。
+			// rename/copy 会额外返回旧路径；文件树徽标应绑定到当前存在的新路径。
+			const addDiffEntries = (raw: string) => {
+				const fields = raw.split("\0");
+				for (let index = 0; index < fields.length - 1; ) {
+					const statusToken = fields[index++];
+					const statusChar = statusToken[0];
+					const oldOrCurrentPath = fields[index++];
+					const isRenameOrCopy = statusChar === "R" || statusChar === "C";
+					const currentPath = isRenameOrCopy ? fields[index++] : oldOrCurrentPath;
+					const status =
+						statusChar === "A" ? "added"
+							: statusChar === "D" ? "deleted"
+								: statusChar === "R" ? "renamed"
+									: "modified";
+					addFile(currentPath, status);
+				}
+			};
 
-			for (const line of unstagedRaw.split(/\r?\n/)) {
-				const trimmed = line.trim();
-				if (!trimmed) continue;
-				const [statusChar, ...pathParts] = trimmed.split(/\s+/);
-				addFile(
-					pathParts.join(" "),
-					statusChar === "A" ? "added" : statusChar === "D" ? "deleted" : "modified",
-				);
-			}
+			addDiffEntries(stagedRaw);
+			addDiffEntries(unstagedRaw);
 
-			for (const line of untrackedRaw.split(/\r?\n/)) {
-				addFile(line.trim(), "added");
+			for (const path of untrackedRaw.split("\0")) {
+				addFile(path, "added");
 			}
 
 			return files;

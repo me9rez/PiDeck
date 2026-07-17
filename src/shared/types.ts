@@ -789,6 +789,13 @@ export type GitBranchInfo = {
 	branches: string[];
 };
 
+export type GitFileStatus = "modified" | "added" | "deleted" | "renamed";
+
+export type GitChangedFile = {
+	path: string;
+	status: GitFileStatus;
+};
+
 /** git worktree --porcelain 输出解析出的单条工作树信息 */
 export type WorktreeEntry = {
 	path: string;
