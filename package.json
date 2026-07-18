@@ -73,6 +73,7 @@
     "@larksuiteoapi/node-sdk": "^1.67.0",
     "@radix-ui/react-dialog": "^1.1.19",
     "node-pty": "^1.1.0",
+    "seti-icons": "^0.0.4",
     "sonner": "^2.0.7"
   },
   "build": {

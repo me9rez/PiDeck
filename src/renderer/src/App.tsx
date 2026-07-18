@@ -68,14 +68,17 @@ import { resolveLocale, setI18nLocale, t } from "./i18n";
 import { mergeAgentRuntimeState } from "./utils/agentRuntimeState";
 import {
   acknowledgeUnknownPrompt,
+  canDiscardQueuedPrompt,
+  canRetractQueuedPromptToInput,
   claimIdleHead,
   claimNextSteerPrompt,
   enqueuePrompt,
   migrateQueuedPrompts,
+  QUEUED_PROMPT_LIMIT,
+  QUEUED_PROMPT_VISIBLE,
   replaceAgentQueue,
   resolveClaimedPrompt,
   retractPrompt,
-  retryFailedPrompt,
   type QueuedPromptSnapshot,
 } from "./utils/queuedPromptQueue";
 import {
@@ -581,6 +584,9 @@ export function App() {
   const [composerModePickerOpen, setComposerModePickerOpen] = useState(false);
   const [thinkingPickerOpen, setThinkingPickerOpen] = useState(false);
   const [sendBehaviorMenuOpen, setSendBehaviorMenuOpen] = useState(false);
+  const sendBehaviorMenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 如果用户在 Agent 忙碌时开始撰写，保持分段发送控件，避免 Agent 恰好结束时按钮在手边消失。
+  const [busyDraftByAgent, setBusyDraftByAgent] = useState<Record<string, boolean>>({});
   const [sessionFeishuBotId, setSessionFeishuBotId] = useState<
     string | undefined
   >(undefined);
@@ -1483,24 +1489,19 @@ export function App() {
     COMPOSER_MIN_TIMELINE_HEIGHT +
     COMPOSER_MIN_HEIGHT +
     28;
-  // At short window heights the terminal yields first (down to its own 120px resize minimum),
-  // then the queue gets only genuine remaining space. This keeps every grid row inside chat-pane.
+  // Queue chrome includes the track gap, panel padding/header/border, and complete rows.
+  // Keep this in sync with .queued-list so the third row is never clipped by the composer.
+  const queuedChromeBudget =
+    activeQueuedPrompts.length > 0
+      ? 38 + Math.min(activeQueuedPrompts.length, QUEUED_PROMPT_VISIBLE) * 34
+      : 0;
   const terminalRowHeight = terminalCollapsed
     ? requestedTerminalRowHeight
     : Math.min(
         requestedTerminalRowHeight,
-        Math.max(0, chatPaneHeight - fixedChatHeight - (activeQueuedPrompts.length ? 48 : 0)),
+        Math.max(0, chatPaneHeight - fixedChatHeight - queuedChromeBudget),
       );
-  const maxQueueHeight = Math.max(
-    0,
-    Math.min(
-      240,
-      Math.floor(chatPaneHeight - fixedChatHeight - terminalRowHeight),
-    ),
-  );
-  const queueTrackMaxHeight = activeQueuedPrompts.length > 0
-    ? maxQueueHeight
-    : 0;
+  const visibleQueuedPrompts = activeQueuedPrompts;
   const resolvedComposerHeight = Math.min(
     getComposerMaxHeight(),
     Math.max(composerHeight, composerAutoHeight),
@@ -3839,8 +3840,12 @@ export function App() {
     updateQueuedPrompts((current) => replaceAgentQueue(current, agentId, updater));
   }
 
-  function enqueueQueuedPrompt(agentId: string, queuedPrompt: QueuedPrompt) {
+  /** 入队；满员时返回 false，调用方应保留输入框内容并 toast。 */
+  function enqueueQueuedPrompt(agentId: string, queuedPrompt: QueuedPrompt): boolean {
+    const before = queuedPromptsRef.current[agentId]?.length ?? 0;
+    if (before >= QUEUED_PROMPT_LIMIT) return false;
     updateQueuedPrompts((current) => enqueuePrompt(current, agentId, queuedPrompt));
+    return (queuedPromptsRef.current[agentId]?.length ?? 0) > before;
   }
 
   function appendUnknownQueuedPrompt(
@@ -3848,24 +3853,30 @@ export function App() {
     queuedPrompt: QueuedPrompt,
     error?: string,
   ) {
-    setAgentQueuedPrompts(agentId, (current) => [
-      ...current,
-      { ...queuedPrompt, status: "unknown", error },
-    ]);
-  }
-
-  function retryQueuedPrompt(agentId: string, promptId: string) {
-    updateQueuedPrompts((current) => retryFailedPrompt(current, agentId, promptId));
-  }
-
-  function acknowledgeUnknownQueuedPrompt(agentId: string, promptId: string) {
-    updateQueuedPrompts((current) =>
-      acknowledgeUnknownPrompt(current, agentId, promptId),
-    );
+    setAgentQueuedPrompts(agentId, (current) => {
+      if (current.length >= QUEUED_PROMPT_LIMIT) return current;
+      return [
+        ...current,
+        { ...queuedPrompt, status: "unknown", error },
+      ];
+    });
   }
 
   function retractQueuedPrompt(agentId: string, promptId: string) {
     updateQueuedPrompts((current) => retractPrompt(current, agentId, promptId));
+  }
+
+  /** 丢弃：pending/failed 走 retract；unknown 仅移除提示（不重发）。sending 不可丢弃。 */
+  function discardQueuedPrompt(agentId: string, promptId: string) {
+    const live = queuedPromptsRef.current[agentId]?.find((item) => item.id === promptId);
+    if (!live || live.status === "sending") return;
+    if (live.status === "unknown") {
+      updateQueuedPrompts((current) =>
+        acknowledgeUnknownPrompt(current, agentId, promptId),
+      );
+      return;
+    }
+    retractQueuedPrompt(agentId, promptId);
   }
 
   function retractQueuedPromptForEdit(agentId: string, queuedPrompt: QueuedPrompt) {
@@ -3878,9 +3889,10 @@ export function App() {
       livePrompt.status === "unknown"
     ) return;
     retractQueuedPrompt(agentId, livePrompt.id);
-    setPromptForAgent(agentId, (current) =>
-      [livePrompt.displayText, current].filter((text) => text.trim()).join("\n\n"),
-    );
+    const restoredPrompt = [livePrompt.displayText, prompt]
+      .filter((text) => text.trim())
+      .join("\n\n");
+    setPromptForAgent(agentId, restoredPrompt);
     if (livePrompt.images?.length) {
       setAttachedImagesForAgent(agentId, (current) => [
         ...livePrompt.images!,
@@ -3889,7 +3901,13 @@ export function App() {
     }
     setComposerAgentModeForAgent(agentId, livePrompt.agentMode);
     if (activeAgentIdRef.current === agentId) {
-      requestAnimationFrame(() => composerTextareaRef.current?.focus());
+      setComposerCursor(restoredPrompt.length);
+      pendingComposerCaretRef.current = restoredPrompt.length;
+      requestAnimationFrame(() => {
+        const editor = composerTextareaRef.current;
+        editor?.focus();
+        if (editor) editor.scrollTop = editor.scrollHeight;
+      });
     }
   }
 
@@ -4172,6 +4190,26 @@ export function App() {
     activeAgent &&
     (activeAgent.status === "running" || activeRuntimeState?.isStreaming),
   );
+  const hasComposerContent = Boolean(prompt.trim() || attachedImages.length > 0);
+  const keepBusyDraftControls = Boolean(
+    activeAgentId && hasComposerContent && busyDraftByAgent[activeAgentId],
+  );
+  const showBusySendControls = isAgentBusy || keepBusyDraftControls;
+
+  // 图片附件等非文本输入同样应锁定忙碌草稿控件；内容清空后再释放锁定。
+  useEffect(() => {
+    if (!activeAgentId) return;
+    setBusyDraftByAgent((current) => {
+      if (!hasComposerContent) {
+        if (!current[activeAgentId]) return current;
+        const next = { ...current };
+        delete next[activeAgentId];
+        return next;
+      }
+      if (!isAgentBusy || current[activeAgentId]) return current;
+      return { ...current, [activeAgentId]: true };
+    });
+  }, [activeAgentId, hasComposerContent, isAgentBusy]);
 
   // 切换 agent 时不能沿用上一会话的 busy 边沿,否则旧 agent 结束可能误触发新 agent 的 goal 续接。
   useEffect(() => {
@@ -4269,6 +4307,24 @@ ${text}
     }
   }, [agents, runtimeStateByAgent, queuedPrompts]);
 
+  function keepSendBehaviorMenuOpen() {
+    if (sendBehaviorMenuCloseTimerRef.current) {
+      clearTimeout(sendBehaviorMenuCloseTimerRef.current);
+      sendBehaviorMenuCloseTimerRef.current = null;
+    }
+    setSendBehaviorMenuOpen(true);
+  }
+
+  function scheduleSendBehaviorMenuClose() {
+    if (sendBehaviorMenuCloseTimerRef.current) {
+      clearTimeout(sendBehaviorMenuCloseTimerRef.current);
+    }
+    sendBehaviorMenuCloseTimerRef.current = setTimeout(() => {
+      setSendBehaviorMenuOpen(false);
+      sendBehaviorMenuCloseTimerRef.current = null;
+    }, 160);
+  }
+
   async function sendPrompt() {
     const targetAgentId = activeAgentId;
     if (
@@ -4324,6 +4380,12 @@ ${text}
     if (scrollTimeline) scrollTimeline.scrollTo({ top: scrollTimeline.scrollHeight, behavior: "instant" });
     setPrompt("");
     setAttachedImages([]);
+    setBusyDraftByAgent((current) => {
+      if (!current[targetAgentId]) return current;
+      const next = { ...current };
+      delete next[targetAgentId];
+      return next;
+    });
     setSuggestionsOpen(false);
     setSendBehaviorMenuOpen(false);
     // 发送后强制重置自动高度：避免粘贴多行内容后 scrollHeight 残留导致 composer 无法恢复默认高度。
@@ -4348,7 +4410,15 @@ ${text}
       timestamp: Date.now(),
     };
     if (isAgentBusy) {
-      enqueueQueuedPrompt(targetAgentId, queuedPromptSnapshot);
+      if (!enqueueQueuedPrompt(targetAgentId, queuedPromptSnapshot)) {
+        setPromptForAgent(targetAgentId, (current) =>
+          [message, current].filter((text) => text.trim()).join("\n\n"),
+        );
+        if (images) {
+          setAttachedImagesForAgent(targetAgentId, (current) => [...images, ...current]);
+        }
+        showToast(t("app.queuedFull", { count: QUEUED_PROMPT_LIMIT }), 3000);
+      }
       return;
     }
 
@@ -4409,6 +4479,12 @@ ${text}
     if (scrollTimeline) scrollTimeline.scrollTo({ top: scrollTimeline.scrollHeight, behavior: "instant" });
     setPrompt("");
     setAttachedImages([]);
+    setBusyDraftByAgent((current) => {
+      if (!current[targetAgentId]) return current;
+      const next = { ...current };
+      delete next[targetAgentId];
+      return next;
+    });
     setSuggestionsOpen(false);
     setSendBehaviorMenuOpen(false);
     // 发送后固定 composer 高度
@@ -4424,7 +4500,15 @@ ${text}
       timestamp: Date.now(),
     };
     if (isAgentBusy) {
-      enqueueQueuedPrompt(targetAgentId, queuedPromptSnapshot);
+      if (!enqueueQueuedPrompt(targetAgentId, queuedPromptSnapshot)) {
+        setPromptForAgent(targetAgentId, (current) =>
+          [message, current].filter((text) => text.trim()).join("\n\n"),
+        );
+        if (images) {
+          setAttachedImagesForAgent(targetAgentId, (current) => [...images, ...current]);
+        }
+        showToast(t("app.queuedFull", { count: QUEUED_PROMPT_LIMIT }), 3000);
+      }
       return;
     }
 
@@ -6393,105 +6477,96 @@ ${goalTextRef.current}
               ref={queuedTrackRef}
               className="queued-track"
               aria-label={t("app.queuedMessagesLabel")}
-              style={{ "--queued-track-max-height": `${queueTrackMaxHeight}px` } as CSSProperties}
             >
-              {activeQueuedPrompts.map((queuedPrompt) => (
-                <div
-                  key={queuedPrompt.id}
-                  className={`queued-card ${queuedPrompt.status ?? "pending"}`}
-                  title={queuedPrompt.error}
-                >
-                  <div className="queued-card-content">
-                    <span
-                      className={`queued-tag ${queuedPrompt.behavior === "followUp" ? "follow-up" : queuedPrompt.behavior === "steer" ? "steer" : "direct"}`}
-                    >
-                      {queuedPrompt.behavior === "steer"
-                        ? t("app.steerTag")
-                        : queuedPrompt.behavior === "followUp"
-                          ? t("app.followUpTag")
-                          : t("app.directTag")}
-                    </span>
-                    <span className="queued-text">
-                      {queuedPrompt.displayText.trim() || t("app.queuedImageMessage")}
-                    </span>
-                    {queuedPrompt.images?.length ? (
-                      <span className="queued-attachment-count">
-                        {t("app.queuedImageCount", {
-                          count: String(queuedPrompt.images.length),
-                        })}
-                      </span>
-                    ) : null}
-                    {queuedPrompt.status === "sending" ? (
-                      <span className="queued-status">{t("app.queuedSending")}</span>
-                    ) : queuedPrompt.status === "failed" ? (
-                      <span className="queued-status failed">
-                        {t("app.queuedFailed")}
-                      </span>
-                    ) : queuedPrompt.status === "unknown" ? (
-                      <span className="queued-status unknown">
-                        {t("app.queuedUnknownShort")}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="queued-actions">
-                    {queuedPrompt.status === "unknown" && (
-                      <button
-                        type="button"
-                        className="queued-btn"
-                        onClick={() =>
-                          acknowledgeUnknownQueuedPrompt(activeAgentId, queuedPrompt.id)
-                        }
-                      >
-                        {t("app.queuedAcknowledge")}
-                      </button>
-                    )}
-                    {queuedPrompt.status === "failed" && (
-                      <button
-                        type="button"
-                        className="queued-btn"
-                        onClick={() => {
-                          retryQueuedPrompt(activeAgentId, queuedPrompt.id);
-                          window.setTimeout(() => {
-                            if (canFlushQueuedPrompt(activeAgentId)) {
-                              void flushNextQueuedPrompt(activeAgentId);
-                            } else if (isAgentCurrentlyBusy(activeAgentId)) {
-                              void flushQueuedSteerPrompts(activeAgentId);
-                            }
-                          }, 0);
-                        }}
-                      >
-                        {t("app.queuedRetry")}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="queued-btn"
-                      disabled={
-                        queuedPrompt.status === "sending" ||
-                        queuedPrompt.status === "unknown"
-                      }
-                      onClick={() =>
-                        retractQueuedPromptForEdit(activeAgentId, queuedPrompt)
-                      }
-                    >
-                      {t("app.retractEdit")}
-                    </button>
-                    <button
-                      type="button"
-                      className="queued-btn queued-btn-cancel"
-                      disabled={
-                        queuedPrompt.status === "sending" ||
-                        queuedPrompt.status === "unknown"
-                      }
-                      onClick={() =>
-                        retractQueuedPrompt(activeAgentId, queuedPrompt.id)
-                      }
-                    >
-                      {t("app.retractCancel")}
-                    </button>
-                  </div>
+              <div className="queued-panel">
+                <div className="queued-panel-header">
+                  <span>{t("app.queuedMessagesLabel")}</span>
+                  <span className="queued-panel-count">
+                    {activeQueuedPrompts.length}
+                  </span>
                 </div>
-              ))}
+                <div className="queued-list">
+                  {visibleQueuedPrompts.map((queuedPrompt, index) => {
+                    const status = queuedPrompt.status ?? "pending";
+                    const canRetractToInput = canRetractQueuedPromptToInput(status);
+                    const canDiscard = canDiscardQueuedPrompt(status);
+                    const previewText =
+                      queuedPrompt.displayText.trim() ||
+                      t("app.queuedImageMessage");
+                    const rowTitle = [
+                      previewText,
+                      queuedPrompt.error,
+                      status === "unknown" ? t("app.queuedUnknown") : "",
+                    ]
+                      .filter(Boolean)
+                      .join("\n");
+                    return (
+                      <div
+                        key={queuedPrompt.id}
+                        className={`queued-row ${status} queued-behavior-${queuedPrompt.behavior}`}
+                        title={rowTitle}
+                      >
+                        <span className="queued-index" aria-hidden="true">
+                          {index + 1}
+                        </span>
+                        <span className="queued-text">{previewText}</span>
+                        {queuedPrompt.images?.length ? (
+                          <span className="queued-meta">
+                            {t("app.queuedImageCount", {
+                              count: String(queuedPrompt.images.length),
+                            })}
+                          </span>
+                        ) : null}
+                        {status === "sending" ? (
+                          <span className="queued-meta">
+                            {t("app.queuedSending")}
+                          </span>
+                        ) : status === "failed" ? (
+                          <span className="queued-meta failed">
+                            {t("app.queuedFailed")}
+                          </span>
+                        ) : status === "unknown" ? (
+                          <span className="queued-meta unknown">
+                            {t("app.queuedUnknownShort")}
+                          </span>
+                        ) : null}
+                        <div className="queued-actions">
+                          <button
+                            type="button"
+                            className="queued-icon-btn"
+                            disabled={!canRetractToInput}
+                            title={t("app.retractToInput")}
+                            aria-label={t("app.retractToInput")}
+                            onClick={() =>
+                              retractQueuedPromptForEdit(
+                                activeAgentId,
+                                queuedPrompt,
+                              )
+                            }
+                          >
+                            <Pencil size={13} strokeWidth={2} />
+                          </button>
+                          <button
+                            type="button"
+                            className="queued-icon-btn danger"
+                            disabled={!canDiscard}
+                            title={t("app.retractDiscard")}
+                            aria-label={t("app.retractDiscard")}
+                            onClick={() =>
+                              discardQueuedPrompt(
+                                activeAgentId,
+                                queuedPrompt.id,
+                              )
+                            }
+                          >
+                            <X size={13} strokeWidth={2} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
           <div
@@ -6579,6 +6654,19 @@ ${goalTextRef.current}
               }}
               onChange={(newValue, cursor) => {
                 setPrompt(newValue);
+                const targetAgentId = activeAgentIdRef.current;
+                if (targetAgentId) {
+                  setBusyDraftByAgent((current) => {
+                    if (!newValue.trim()) {
+                      if (!current[targetAgentId]) return current;
+                      const next = { ...current };
+                      delete next[targetAgentId];
+                      return next;
+                    }
+                    if (!isAgentBusy || current[targetAgentId]) return current;
+                    return { ...current, [targetAgentId]: true };
+                  });
+                }
                 setComposerCursor(cursor);
                 setSuggestionsOpen(detectTrigger(newValue, cursor) !== null);
                 // 如果正在历史导航,检测到用户手动编辑内容则退出历史模式
@@ -6648,12 +6736,47 @@ ${goalTextRef.current}
                 <span className="composer-mode-status">{composerStatusText}</span>
               )}
               <div className="footer-actions">
-                <div className="send-behavior-menu-wrap">
+                <div
+                  className="send-behavior-menu-wrap"
+                  onMouseLeave={scheduleSendBehaviorMenuClose}
+                >
+                  {showBusySendControls && hasComposerContent && (
+                      <div className="send-behavior-toggle">
+                        <button
+                          type="button"
+                          className="send-behavior-primary"
+                          title={t("app.sendSteerTitle")}
+                          aria-label={t("app.sendSteerTitle")}
+                          onClick={sendPrompt}
+                        >
+                          <ArrowUp size={15} strokeWidth={2.4} />
+                        </button>
+                        <button
+                          type="button"
+                          className="send-behavior-chevron"
+                          title={t("app.sendBehaviorTitle")}
+                          aria-label={t("app.sendBehaviorTitle")}
+                          aria-haspopup="menu"
+                          aria-expanded={sendBehaviorMenuOpen}
+                          onMouseEnter={keepSendBehaviorMenuOpen}
+                          onFocus={keepSendBehaviorMenuOpen}
+                          onClick={() => setSendBehaviorMenuOpen((open) => !open)}
+                        >
+                          <ChevronDown size={12} strokeWidth={2.2} />
+                        </button>
+                      </div>
+                    )}
                   {isAgentBusy ? (
-                    <button className="btn-circle stop" onClick={() => abortAgent()} title={t("app.stop")}>
+                    <button
+                      type="button"
+                      className="btn-circle stop"
+                      onClick={() => abortAgent()}
+                      title={t("app.stop")}
+                      aria-label={t("app.stop")}
+                    >
                       <Square size={18} strokeWidth={0} fill="currentColor" />
                     </button>
-                  ) : (
+                  ) : !keepBusyDraftControls ? (
                     <button
                       disabled={
                         isAgentStarting ||
@@ -6666,26 +6789,21 @@ ${goalTextRef.current}
                     >
                       <ArrowUp size={18} strokeWidth={2.5} />
                     </button>
-                  )}
-                  {isAgentBusy &&
-                    (prompt.trim() || attachedImages.length > 0) && (
-                      <button
-                        className="send-behavior-toggle"
-                        title={t("app.sendBehaviorTitle")}
-                        onClick={() => setSendBehaviorMenuOpen((open) => !open)}
-                      >
-                        <ChevronDown size={14} />
-                      </button>
-                    )}
+                  ) : null}
                   {sendBehaviorMenuOpen && (
-                    <div className="send-behavior-menu">
-                      <button onClick={sendPrompt}>
-                        <strong>{t("app.sendSteerTitle")}</strong>
-                        <span>{t("app.sendSteerDesc")}</span>
+                    <div
+                      className="send-behavior-menu"
+                      role="menu"
+                      onMouseEnter={keepSendBehaviorMenuOpen}
+                      onMouseLeave={scheduleSendBehaviorMenuClose}
+                    >
+                      <button className="send-behavior-option steer" role="menuitem" onClick={sendPrompt}>
+                        <span className="send-behavior-option-dot" aria-hidden="true" />
+                        <span>{t("app.sendSteerTitle")}</span>
                       </button>
-                      <button onClick={sendPromptAsFollowUp}>
-                        <strong>{t("app.sendFollowUpTitle")}</strong>
-                        <span>{t("app.sendFollowUpDesc")}</span>
+                      <button className="send-behavior-option follow-up" role="menuitem" onClick={sendPromptAsFollowUp}>
+                        <span className="send-behavior-option-dot" aria-hidden="true" />
+                        <span>{t("app.sendFollowUpTitle")}</span>
                       </button>
                     </div>
                   )}
@@ -6716,7 +6834,7 @@ ${goalTextRef.current}
                   COMPOSER_MIN_TIMELINE_HEIGHT -
                   COMPOSER_MIN_HEIGHT -
                   28 -
-                  (activeQueuedPrompts.length ? 48 : 0),
+                  queuedChromeBudget,
               );
               setTerminalHeightByAgent((current) => ({
                 ...current,

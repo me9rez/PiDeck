@@ -41,9 +41,55 @@ test("pending prompts share the native content width constraint without hiding c
     stylesSource,
     /\.chat-pane\[style\*="--content-max-width"\][\s\S]*?\.queued-track,[\s\S]*?width: min\(100%, var\(--content-max-width\)\)/,
   );
-  assert.match(stylesSource, /\.queued-track \{[\s\S]*?align-items: flex-end;/);
-  assert.match(stylesSource, /\.queued-track \{[\s\S]*?max-height: var\(--queued-track-max-height, min\(32vh, 240px\)\);[\s\S]*?overflow-y: auto;/);
-  assert.match(stylesSource, /\.queued-card \{[\s\S]*?width: fit-content;[\s\S]*?max-width: min\(82%, 64ch\);/);
+  // Outer track is a full-width anchor; the compact panel sits on the right with proportional width.
+  assert.match(stylesSource, /\.queued-track \{[\s\S]*?justify-content: flex-end;/);
+  assert.match(stylesSource, /\.queued-panel \{[\s\S]*?width: clamp\(/);
+  assert.match(stylesSource, /\.queued-row \{[\s\S]*?min-height: 32px;/);
+  assert.match(stylesSource, /\.queued-text \{[\s\S]*?text-overflow: ellipsis;[\s\S]*?white-space: nowrap;/);
+  assert.doesNotMatch(stylesSource, /\.queued-card \{/);
+});
+
+test("compact queue panel exposes retract-to-input and discard only", () => {
+  assert.match(appSource, /app\.retractToInput/);
+  assert.match(appSource, /app\.retractDiscard/);
+  assert.match(appSource, /discardQueuedPrompt/);
+  assert.match(appSource, /canRetractQueuedPromptToInput/);
+  assert.match(appSource, /canDiscardQueuedPrompt/);
+  assert.match(appSource, /const visibleQueuedPrompts = activeQueuedPrompts/);
+  assert.match(appSource, /queued-behavior-\$\{queuedPrompt\.behavior\}/);
+  assert.match(stylesSource, /\.queued-list \{[\s\S]*?max-height: 102px;[\s\S]*?overflow-y: auto;/);
+  assert.match(stylesSource, /\.queued-row\.queued-behavior-steer \{/);
+  assert.match(stylesSource, /\.queued-row\.queued-behavior-followUp \{/);
+  assert.match(appSource, /QUEUED_PROMPT_LIMIT/);
+  assert.match(appSource, /app\.queuedFull/);
+  assert.doesNotMatch(appSource, /app\.queuedRetry/);
+  assert.doesNotMatch(appSource, /app\.queuedAcknowledge/);
+  assert.doesNotMatch(appSource, /retryQueuedPrompt/);
+  assert.match(queueStateSource, /export const QUEUED_PROMPT_LIMIT = 10/);
+  assert.match(queueStateSource, /export const QUEUED_PROMPT_VISIBLE = 3/);
+});
+
+test("busy composer keeps stop and queued-send controls separate", () => {
+  assert.match(appSource, /className="btn-circle stop"/);
+  assert.match(appSource, /className="send-behavior-toggle"/);
+  assert.match(appSource, /className="send-behavior-primary"/);
+  assert.match(appSource, /className="send-behavior-chevron"/);
+  assert.match(appSource, /const \[busyDraftByAgent, setBusyDraftByAgent\] = useState<Record<string, boolean>>/);
+  assert.match(appSource, /const showBusySendControls = isAgentBusy \|\| keepBusyDraftControls/);
+  assert.match(appSource, /\{showBusySendControls && hasComposerContent && \(/);
+  assert.match(appSource, /\) : !keepBusyDraftControls \? \(/);
+  assert.match(appSource, /if \(!isAgentBusy \|\| current\[activeAgentId\]\) return current;/);
+  assert.match(stylesSource, /\.send-behavior-menu-wrap \{[\s\S]*?gap: 8px;/);
+  assert.match(stylesSource, /\.composer-footer \.send-behavior-toggle \{[\s\S]*?height: 36px;[\s\S]*?background: var\(--color-accent\);[\s\S]*?border-radius: var\(--radius-pill\)/);
+  assert.match(stylesSource, /\.send-behavior-chevron \{[\s\S]*?border-left:/);
+  assert.match(appSource, /className="send-behavior-primary"[\s\S]*?onClick=\{sendPrompt\}/);
+  assert.match(appSource, /className="send-behavior-chevron"[\s\S]*?onMouseEnter=\{keepSendBehaviorMenuOpen\}[\s\S]*?setSendBehaviorMenuOpen/);
+  assert.match(appSource, /className="send-behavior-option steer"/);
+  assert.match(appSource, /className="send-behavior-option follow-up"/);
+  assert.match(appSource, /setTimeout\(\(\) => \{[\s\S]*?setSendBehaviorMenuOpen\(false\)[\s\S]*?\}, 160\)/);
+  assert.doesNotMatch(appSource, /<span>\{t\("app\.sendSteerDesc"\)\}<\/span>/);
+  assert.match(stylesSource, /\.send-behavior-menu \{[\s\S]*?width: 156px;[\s\S]*?padding: 4px;/);
+  assert.match(stylesSource, /\.send-behavior-option-dot \{[\s\S]*?width: 7px;[\s\S]*?height: 7px;/);
 });
 
 test("queue drain is serialized and waits for an ordered raw tool-end event", () => {
@@ -67,14 +113,24 @@ test("retract edit restores text, attachments, and composer mode to the owning a
   assert.match(appSource, /livePrompt\.displayText/);
   assert.match(appSource, /setAttachedImagesForAgent\(agentId, \(current\) => \[/);
   assert.match(appSource, /setComposerAgentModeForAgent\(agentId, livePrompt\.agentMode\)/);
+  assert.match(appSource, /pendingComposerCaretRef\.current = restoredPrompt\.length/);
+  assert.match(appSource, /setComposerCursor\(restoredPrompt\.length\)/);
+  assert.match(appSource, /editor\.scrollTop = editor\.scrollHeight/);
   assert.match(appSource, /livePrompt\.status === "sending"/);
+});
+
+test("retract edit uses action-oriented copy", () => {
+  setI18nLocale("zh-CN");
+  assert.equal(t("app.retractToInput"), "撤回修改");
+  setI18nLocale("en-US");
+  assert.equal(t("app.retractToInput"), "Retract to edit");
 });
 
 test("queued image count uses the standard i18n interpolation syntax", () => {
   setI18nLocale("zh-CN");
-  assert.equal(t("app.queuedImageCount", { count: 3 }), "3 张图片");
+  assert.equal(t("app.queuedImageCount", { count: 3 }), "3 图");
   setI18nLocale("en-US");
-  assert.equal(t("app.queuedImageCount", { count: 3 }), "3 image(s)");
+  assert.equal(t("app.queuedImageCount", { count: 3 }), "3 img");
 });
 
 test("runtime state merge rejects stale tool edges without losing non-tool fields", () => {
@@ -112,7 +168,7 @@ test("indeterminate prompt timeout never becomes a retryable rejection", () => {
   );
   assert.match(queueStateSource, /outcome\.type === "accepted"/);
   assert.match(queueStateSource, /\{ type: "failed" \| "unknown"; error: string \}/);
-  assert.match(appSource, /acknowledgeUnknownQueuedPrompt/);
+  assert.match(appSource, /discardQueuedPrompt/);
   assert.match(appSource, /appendUnknownQueuedPrompt\(targetAgentId, queuedPromptSnapshot\)/);
   assert.match(appSource, /status: "unknown"/);
   assert.match(appSource, /accepted === "unknown"/);

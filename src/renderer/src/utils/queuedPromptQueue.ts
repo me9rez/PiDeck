@@ -19,6 +19,11 @@ export interface QueuedPromptSnapshot {
 
 export type QueuedPromptMap = Record<string, QueuedPromptSnapshot[]>;
 
+/** 单会话待发送队列上限；超出时拒绝入队，保留输入框内容。 */
+export const QUEUED_PROMPT_LIMIT = 10;
+/** 队列面板默认最多展示的行数，超出以 +N 提示。 */
+export const QUEUED_PROMPT_VISIBLE = 3;
+
 export function replaceAgentQueue(
   current: QueuedPromptMap,
   agentId: string,
@@ -31,15 +36,46 @@ export function replaceAgentQueue(
   return next;
 }
 
+/**
+ * 入队；已达 QUEUED_PROMPT_LIMIT 时返回原 map 且不追加。
+ * 调用方应检查返回值 length 是否增加，以决定是否 toast / 保留输入。
+ */
 export function enqueuePrompt(
   current: QueuedPromptMap,
   agentId: string,
   prompt: QueuedPromptSnapshot,
+  limit: number = QUEUED_PROMPT_LIMIT,
 ): QueuedPromptMap {
+  const existing = current[agentId] ?? [];
+  if (existing.length >= limit) return current;
   return replaceAgentQueue(current, agentId, (queue) => [
     ...queue,
     { ...prompt, status: "pending", error: undefined },
   ]);
+}
+
+/** 面板只展示前 visibleLimit 条，其余用 +N 提示。 */
+export function getQueuedPromptView(
+  queue: QueuedPromptSnapshot[],
+  visibleLimit: number = QUEUED_PROMPT_VISIBLE,
+): { visible: QueuedPromptSnapshot[]; hiddenCount: number } {
+  const limit = Math.max(0, visibleLimit);
+  return {
+    visible: queue.slice(0, limit),
+    hiddenCount: Math.max(0, queue.length - limit),
+  };
+}
+
+/** 撤回输入框：sending/unknown 禁用（可能已提交，防双发/误导）。 */
+export function canRetractQueuedPromptToInput(
+  status?: QueuedPromptStatus,
+): boolean {
+  return status !== "sending" && status !== "unknown";
+}
+
+/** 丢弃：sending 禁用；unknown 仅清提示，pending/failed 真正移除。 */
+export function canDiscardQueuedPrompt(status?: QueuedPromptStatus): boolean {
+  return status !== "sending";
 }
 
 export function retryFailedPrompt(
