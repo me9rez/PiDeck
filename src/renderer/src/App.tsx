@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   useCallback,
+  useTransition,
   type PointerEvent,
   type CSSProperties,
   type ReactNode,
@@ -595,6 +596,9 @@ export function App() {
   const [promptByAgent, setPromptByAgent] = useState<Record<string, string>>(
     {},
   );
+  // contentEditable 的实时值不等待大型 App 完成渲染；发送路径始终从这里读取最新草稿。
+  const livePromptByAgentRef = useRef<Record<string, string>>({});
+  const [, startPromptTransition] = useTransition();
   /** 当前正在重启的 Agent，用于仅给对应会话显示 loading，避免切到其他 Agent 后仍被全局禁用。 */
   const [restartingAgentId, setRestartingAgentId] = useState<string | null>(null);
   /** 用户点击 ask_question 取消/abort 后的过渡标记，立即隐藏运行指示器。 */
@@ -1234,9 +1238,11 @@ export function App() {
     value: string | ((current: string) => string),
   ) {
     const targetAgentId = agentId;
+    const previous = livePromptByAgentRef.current[targetAgentId] ?? "";
+    const nextValue = typeof value === "function" ? value(previous) : value;
+    if (nextValue) livePromptByAgentRef.current[targetAgentId] = nextValue;
+    else delete livePromptByAgentRef.current[targetAgentId];
     setPromptByAgent((current) => {
-      const previous = current[targetAgentId] ?? "";
-      const nextValue = typeof value === "function" ? value(previous) : value;
       if (!nextValue) {
         const next = { ...current };
         delete next[targetAgentId];
@@ -1246,6 +1252,21 @@ export function App() {
         ...current,
         [targetAgentId]: nextValue,
       };
+    });
+  }
+
+  function setPromptFromNativeInput(agentId: string, value: string) {
+    if (value) livePromptByAgentRef.current[agentId] = value;
+    else delete livePromptByAgentRef.current[agentId];
+    startPromptTransition(() => {
+      setPromptByAgent((current) => {
+        if (!value) {
+          const next = { ...current };
+          delete next[agentId];
+          return next;
+        }
+        return { ...current, [agentId]: value };
+      });
     });
   }
 
@@ -1857,9 +1878,15 @@ export function App() {
           Object.entries(current).filter(([agentId]) => activeIds.has(agentId)),
         ),
       );
-      setPromptByAgent((current) =>
-        migrateAgentRecord(current, pendingReplacementById, draftIds),
-      );
+      setPromptByAgent((current) => {
+        const next = migrateAgentRecord(current, pendingReplacementById, draftIds);
+        livePromptByAgentRef.current = migrateAgentRecord(
+          livePromptByAgentRef.current,
+          pendingReplacementById,
+          draftIds,
+        );
+        return next;
+      });
       setAttachedImagesByAgent((current) =>
         migrateAgentRecord(current, pendingReplacementById, draftIds),
       );
@@ -1956,12 +1983,7 @@ export function App() {
       if (request.method === "set_editor_text") {
         const editorRequest = request as UiRequest;
         const text = editorRequest.text ?? "";
-        setPromptByAgent((current) => {
-          const next = { ...current };
-          if (text) next[request.agentId] = text;
-          else delete next[request.agentId];
-          return next;
-        });
+        setPromptForAgent(request.agentId, text);
         if (request.agentId === activeAgentIdRef.current) {
           setComposerCursor(text.length);
           pendingComposerCaretRef.current = text.length;
@@ -3573,10 +3595,12 @@ export function App() {
           : current,
       );
       setPromptByAgent((current) => {
-        const draft = current[pendingTab.id];
+        const draft = livePromptByAgentRef.current[pendingTab.id] ?? current[pendingTab.id];
         if (draft == null) return current;
         const next = { ...current, [tab.id]: draft };
         delete next[pendingTab.id];
+        livePromptByAgentRef.current[tab.id] = draft;
+        delete livePromptByAgentRef.current[pendingTab.id];
         return next;
       });
       setAttachedImagesByAgent((current) => {
@@ -3889,7 +3913,9 @@ export function App() {
       livePrompt.status === "unknown"
     ) return;
     retractQueuedPrompt(agentId, livePrompt.id);
-    const restoredPrompt = [livePrompt.displayText, prompt]
+    const currentDraft =
+      livePromptByAgentRef.current[agentId] ?? promptByAgent[agentId] ?? "";
+    const restoredPrompt = [livePrompt.displayText, currentDraft]
       .filter((text) => text.trim())
       .join("\n\n");
     setPromptForAgent(agentId, restoredPrompt);
@@ -3997,7 +4023,7 @@ export function App() {
         agentId,
         queuedPrompt.message,
         queuedPrompt.images,
-        undefined,
+        queuedPrompt.behavior === "direct" ? undefined : queuedPrompt.behavior,
         queuedPrompt.agentMode,
         queuedPrompt.templateDescription,
       );
@@ -4083,7 +4109,10 @@ export function App() {
           // 以光标为锚替换触发符..光标这一段,并在下一帧恢复光标到插入项之后。
           const el = event.currentTarget;
           const cursor = getCaretOffsetOf(el);
-          const result = applySuggestion(prompt, cursor, selected.value);
+          const liveComposerPrompt = activeAgentIdRef.current
+            ? (livePromptByAgentRef.current[activeAgentIdRef.current] ?? prompt)
+            : prompt;
+          const result = applySuggestion(liveComposerPrompt, cursor, selected.value);
           // RichInput 的受控同步会基于 value 重渲染并恢复光标,这里同步状态即可。
           setPrompt(result.text);
           setComposerCursor(result.cursor);
@@ -4099,7 +4128,10 @@ export function App() {
         event.preventDefault();
         const el = event.currentTarget;
         const cursor = getCaretOffsetOf(el);
-        const result = clearSuggestionTrigger(prompt, cursor);
+        const liveComposerPrompt = activeAgentIdRef.current
+          ? (livePromptByAgentRef.current[activeAgentIdRef.current] ?? prompt)
+          : prompt;
+        const result = clearSuggestionTrigger(liveComposerPrompt, cursor);
         setPrompt(result.text);
         setComposerCursor(result.cursor);
         pendingComposerCaretRef.current = result.cursor;
@@ -4161,7 +4193,10 @@ export function App() {
     if (event.key === "Escape") {
       const el = event.currentTarget;
       const cursor = getCaretOffsetOf(el);
-      const result = clearSuggestionTrigger(prompt, cursor);
+      const liveComposerPrompt = activeAgentIdRef.current
+        ? (livePromptByAgentRef.current[activeAgentIdRef.current] ?? prompt)
+        : prompt;
+      const result = clearSuggestionTrigger(liveComposerPrompt, cursor);
       setPrompt(result.text);
       setComposerCursor(result.cursor);
       setSuggestionsOpen(false);
@@ -4307,6 +4342,15 @@ ${text}
     }
   }, [agents, runtimeStateByAgent, queuedPrompts]);
 
+  useEffect(() => {
+    return () => {
+      if (sendBehaviorMenuCloseTimerRef.current) {
+        clearTimeout(sendBehaviorMenuCloseTimerRef.current);
+        sendBehaviorMenuCloseTimerRef.current = null;
+      }
+    };
+  }, []);
+
   function keepSendBehaviorMenuOpen() {
     if (sendBehaviorMenuCloseTimerRef.current) {
       clearTimeout(sendBehaviorMenuCloseTimerRef.current);
@@ -4327,13 +4371,18 @@ ${text}
 
   async function sendPrompt() {
     const targetAgentId = activeAgentId;
+    const livePrompt = targetAgentId
+      ? (livePromptByAgentRef.current[targetAgentId] ?? prompt)
+      : prompt;
     if (
       isAgentStarting ||
       !targetAgentId ||
-      (!prompt.trim() && attachedImages.length === 0)
+      (!livePrompt.trim() && attachedImages.length === 0)
     )
       return;
-    const message = prompt;
+    const message = livePrompt;
+    // 在任何 await 之前清掉实时草稿，防止双击/Enter 连发读取同一份消息。
+    delete livePromptByAgentRef.current[targetAgentId];
     const images = attachedImages.length > 0 ? attachedImages : undefined;
 
     const trimmedMessage = message.trim();
@@ -4438,6 +4487,7 @@ ${text}
       return;
     }
     if (!accepted) {
+      livePromptByAgentRef.current[targetAgentId] = message;
       setPromptForAgent(targetAgentId, (current) =>
         [message, current].filter((text) => text.trim()).join("\n\n"),
       );
@@ -4465,13 +4515,18 @@ ${text}
 
   async function sendPromptAsFollowUp() {
     const targetAgentId = activeAgentId;
+    const livePrompt = targetAgentId
+      ? (livePromptByAgentRef.current[targetAgentId] ?? prompt)
+      : prompt;
     if (
       isAgentStarting ||
       !targetAgentId ||
-      (!prompt.trim() && attachedImages.length === 0)
+      (!livePrompt.trim() && attachedImages.length === 0)
     )
       return;
-    const message = prompt;
+    const message = livePrompt;
+    // 在任何 await 之前清掉实时草稿，防止双击/Enter 连发读取同一份消息。
+    delete livePromptByAgentRef.current[targetAgentId];
     const images = attachedImages.length > 0 ? attachedImages : undefined;
     setAutoScroll(true);
     autoScrollRef.current = true;
@@ -4524,6 +4579,7 @@ ${text}
       return;
     }
     if (!accepted) {
+      livePromptByAgentRef.current[targetAgentId] = message;
       setPromptForAgent(targetAgentId, (current) =>
         [message, current].filter((text) => text.trim()).join("\n\n"),
       );
@@ -6653,8 +6709,8 @@ ${goalTextRef.current}
                 setSuggestionsOpen(detectTrigger(prompt, composerCursor) !== null);
               }}
               onChange={(newValue, cursor) => {
-                setPrompt(newValue);
                 const targetAgentId = activeAgentIdRef.current;
+                if (targetAgentId) setPromptFromNativeInput(targetAgentId, newValue);
                 if (targetAgentId) {
                   setBusyDraftByAgent((current) => {
                     if (!newValue.trim()) {
@@ -6667,8 +6723,11 @@ ${goalTextRef.current}
                     return { ...current, [targetAgentId]: true };
                   });
                 }
-                setComposerCursor(cursor);
-                setSuggestionsOpen(detectTrigger(newValue, cursor) !== null);
+                if (suggestionsOpen) setComposerCursor(cursor);
+                const nextSuggestionsOpen = detectTrigger(newValue, cursor) !== null;
+                if (nextSuggestionsOpen !== suggestionsOpen) {
+                  setSuggestionsOpen(nextSuggestionsOpen);
+                }
                 // 如果正在历史导航,检测到用户手动编辑内容则退出历史模式
                 if (historyNavigating) {
                   const currentHistoryCommand = commandHistory[historyIndex];
@@ -6680,7 +6739,7 @@ ${goalTextRef.current}
                 }
               }}
               onCursorChange={(cursor) => {
-                setComposerCursor(cursor);
+                if (suggestionsOpen) setComposerCursor(cursor);
               }}
               onKeyDown={handleComposerKeyDown}
               onPaste={handlePaste}
@@ -6708,7 +6767,10 @@ ${goalTextRef.current}
                 onClose={() => {
                   const el = composerTextareaRef.current;
                   const cursor = el ? getCaretOffsetOf(el) : composerCursor;
-                  const result = clearSuggestionTrigger(prompt, cursor);
+                  const liveComposerPrompt = activeAgentIdRef.current
+                    ? (livePromptByAgentRef.current[activeAgentIdRef.current] ?? prompt)
+                    : prompt;
+                  const result = clearSuggestionTrigger(liveComposerPrompt, cursor);
                   setPrompt(result.text);
                   setComposerCursor(result.cursor);
                   pendingComposerCaretRef.current = result.cursor;
@@ -6720,7 +6782,10 @@ ${goalTextRef.current}
                 onPick={(value) => {
                   const el = composerTextareaRef.current;
                   const cursor = el ? getCaretOffsetOf(el) : composerCursor;
-                  const result = applySuggestion(prompt, cursor, value);
+                  const liveComposerPrompt = activeAgentIdRef.current
+                    ? (livePromptByAgentRef.current[activeAgentIdRef.current] ?? prompt)
+                    : prompt;
+                  const result = applySuggestion(liveComposerPrompt, cursor, value);
                   setPrompt(result.text);
                   setComposerCursor(result.cursor);
                   pendingComposerCaretRef.current = result.cursor;
@@ -6778,6 +6843,7 @@ ${goalTextRef.current}
                     </button>
                   ) : !keepBusyDraftControls ? (
                     <button
+                      type="button"
                       disabled={
                         isAgentStarting ||
                         !activeAgentId ||
@@ -6786,22 +6852,23 @@ ${goalTextRef.current}
                       className="btn-circle send"
                       onClick={sendPrompt}
                       title={t("app.send")}
+                      aria-label={t("app.send")}
                     >
                       <ArrowUp size={18} strokeWidth={2.5} />
                     </button>
                   ) : null}
-                  {sendBehaviorMenuOpen && (
+                  {sendBehaviorMenuOpen && showBusySendControls && hasComposerContent && (
                     <div
                       className="send-behavior-menu"
                       role="menu"
                       onMouseEnter={keepSendBehaviorMenuOpen}
                       onMouseLeave={scheduleSendBehaviorMenuClose}
                     >
-                      <button className="send-behavior-option steer" role="menuitem" onClick={sendPrompt}>
+                      <button className="send-behavior-option steer" type="button" role="menuitem" onClick={sendPrompt}>
                         <span className="send-behavior-option-dot" aria-hidden="true" />
                         <span>{t("app.sendSteerTitle")}</span>
                       </button>
-                      <button className="send-behavior-option follow-up" role="menuitem" onClick={sendPromptAsFollowUp}>
+                      <button className="send-behavior-option follow-up" type="button" role="menuitem" onClick={sendPromptAsFollowUp}>
                         <span className="send-behavior-option-dot" aria-hidden="true" />
                         <span>{t("app.sendFollowUpTitle")}</span>
                       </button>

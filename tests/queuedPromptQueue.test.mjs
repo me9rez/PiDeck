@@ -92,6 +92,23 @@ test("busy composer keeps stop and queued-send controls separate", () => {
   assert.match(stylesSource, /\.send-behavior-option-dot \{[\s\S]*?width: 7px;[\s\S]*?height: 7px;/);
 });
 
+test("App keeps native typing responsive with a live draft ref and transition", () => {
+  assert.match(appSource, /const livePromptByAgentRef = useRef<Record<string, string>>\(\{\}\)/);
+  assert.match(appSource, /const \[, startPromptTransition\] = useTransition\(\)/);
+  assert.match(appSource, /function setPromptFromNativeInput\(agentId: string, value: string\)/);
+  assert.match(appSource, /startPromptTransition\(\(\) => \{\s*setPromptByAgent/s);
+  assert.match(appSource, /const livePrompt = targetAgentId[\s\S]*?livePromptByAgentRef\.current\[targetAgentId\] \?\? prompt/);
+  assert.match(appSource, /if \(suggestionsOpen\) setComposerCursor\(cursor\)/);
+  assert.match(appSource, /queuedPrompt\.behavior === "direct" \? undefined : queuedPrompt\.behavior/);
+  assert.match(appSource, /const currentDraft =[\s\S]*?livePromptByAgentRef\.current\[agentId\] \?\? promptByAgent\[agentId\]/);
+  assert.match(appSource, /setPromptForAgent\(request\.agentId, text\)/);
+  assert.match(appSource, /livePromptByAgentRef\.current = migrateAgentRecord/);
+  assert.match(appSource, /sendBehaviorMenuOpen && showBusySendControls && hasComposerContent/);
+  assert.match(appSource, /clearTimeout\(sendBehaviorMenuCloseTimerRef\.current\)/);
+  assert.match(appSource, /className="send-behavior-option steer" type="button"/);
+  assert.match(appSource, /className="send-behavior-option follow-up" type="button"/);
+});
+
 test("queue drain is serialized and waits for an ordered raw tool-end event", () => {
   assert.match(appSource, /queueFlushByAgentRef = useRef<Set<string>>/);
   assert.match(
