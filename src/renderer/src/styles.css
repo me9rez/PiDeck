@@ -7035,10 +7035,14 @@ body.is-composer-resizing .composer-resize-handle::after {
   opacity: 0.5;
   cursor: not-allowed;
 }
+.composer-footer .btn-circle.send:not(:disabled) {
+  cursor: pointer;
+}
 .send-behavior-menu-wrap {
   position: relative;
   display: inline-flex;
   align-items: center;
+  flex: none;
   gap: 8px;
 }
 .composer-footer .send-behavior-toggle {

@@ -464,7 +464,7 @@ export class AgentManager {
 		this.messages.set(id, []);
 		this.emitState();
 
-		const client = process.start(input.sessionPath, trustOverride);
+		const client = await process.start(input.sessionPath, trustOverride);
 		const t3 = Date.now();
 		void this.appLogger?.info("agent", "Pi process spawned", {
 			agentId: id,
@@ -1140,7 +1140,7 @@ export class AgentManager {
 		});
 
 		const process = new PiProcess(project.path, this.settingsStore.get());
-		const client = process.start(sessionPath);
+		const client = await process.start(sessionPath);
 
 		// 注册事件监听（与 create() 保持一致）
 		process.on("event", (event) => this.handlePiEvent(agentId, event));
@@ -2081,7 +2081,7 @@ export class AgentManager {
 		const project = this.getProject(projectId);
 		if (!project) throw new Error(`Project not found: ${projectId}`);
 		const process = new PiProcess(project.path, this.settingsStore.get());
-		process.start(sessionPath);
+		await process.start(sessionPath);
 		try {
 			return await run(process);
 		} finally {
