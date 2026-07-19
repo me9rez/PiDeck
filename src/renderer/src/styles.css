@@ -1587,12 +1587,11 @@ body:not(.is-list-resizing)
   position: relative;
   display: block;
   /* 项目之间仅保留较小间距，避免目录树过于松散；行内 padding 已承担点击热区。 */
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 .project-group.chat-project-group {
-  /* 内置聊天区不是普通项目目录，使用轻量卡片感与下面的真实项目树分开。 */
+  /* 内置聊天区不是普通项目目录，仅用下边线与下方真实项目树分隔，不再额外内缩。 */
   margin: 0 0 6px;
-  padding: 4px 4px 6px;
   border-bottom: 1px solid var(--color-border-subtle);
 }
 .project-group.chat-project-group > .conversation:first-child {
