@@ -8,7 +8,9 @@ import {
   useRef,
   useState,
   useCallback,
+  useTransition,
   type PointerEvent,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import ReactMarkdown from "react-markdown";
@@ -64,6 +66,22 @@ import {
   isSameSessionPath,
 } from "./agentListDisplay";
 import { resolveLocale, setI18nLocale, t } from "./i18n";
+import { mergeAgentRuntimeState } from "./utils/agentRuntimeState";
+import {
+  acknowledgeUnknownPrompt,
+  canDiscardQueuedPrompt,
+  canRetractQueuedPromptToInput,
+  claimIdleHead,
+  claimNextSteerPrompt,
+  enqueuePrompt,
+  migrateQueuedPrompts,
+  QUEUED_PROMPT_LIMIT,
+  QUEUED_PROMPT_VISIBLE,
+  replaceAgentQueue,
+  resolveClaimedPrompt,
+  retractPrompt,
+  type QueuedPromptSnapshot,
+} from "./utils/queuedPromptQueue";
 import {
   pruneTerminalDockState,
   setTerminalDockCollapsed,
@@ -485,6 +503,16 @@ function migrateAgentRecord<T>(
   return next;
 }
 
+/** Agent 运行时暂存在 renderer、尚未提交给 pi 的消息。 */
+type QueuedPrompt = QueuedPromptSnapshot;
+
+class PromptDeliveryUnknownError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PromptDeliveryUnknownError";
+  }
+}
+
 export function App() {
   if (missingElectronPreload) {
     return (
@@ -549,6 +577,8 @@ export function App() {
   const [runtimeStateByAgent, setRuntimeStateByAgent] = useState<
     Record<string, AgentRuntimeState>
   >({});
+  const runtimeStateByAgentRef = useRef<Record<string, AgentRuntimeState>>({});
+  runtimeStateByAgentRef.current = runtimeStateByAgent;
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [promptTemplatePickerOpen, setPromptTemplatePickerOpen] = useState(false);
@@ -558,6 +588,9 @@ export function App() {
   const [composerModePickerOpen, setComposerModePickerOpen] = useState(false);
   const [thinkingPickerOpen, setThinkingPickerOpen] = useState(false);
   const [sendBehaviorMenuOpen, setSendBehaviorMenuOpen] = useState(false);
+  const sendBehaviorMenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 如果用户在 Agent 忙碌时开始撰写，保持分段发送控件，避免 Agent 恰好结束时按钮在手边消失。
+  const [busyDraftByAgent, setBusyDraftByAgent] = useState<Record<string, boolean>>({});
   const [sessionFeishuBotId, setSessionFeishuBotId] = useState<
     string | undefined
   >(undefined);
@@ -568,6 +601,9 @@ export function App() {
   const [promptByAgent, setPromptByAgent] = useState<Record<string, string>>(
     {},
   );
+  // contentEditable 的实时值不等待大型 App 完成渲染；发送路径始终从这里读取最新草稿。
+  const livePromptByAgentRef = useRef<Record<string, string>>({});
+  const [, startPromptTransition] = useTransition();
   /** 当前正在重启的 Agent，用于仅给对应会话显示 loading，避免切到其他 Agent 后仍被全局禁用。 */
   const [restartingAgentId, setRestartingAgentId] = useState<string | null>(null);
   /** 用户点击 ask_question 取消/abort 后的过渡标记，立即隐藏运行指示器。 */
@@ -641,9 +677,13 @@ export function App() {
   const [composerAgentModes, setComposerAgentModes] = useState<Record<string, ComposerAgentMode>>({});
   /** 当前 agent 的发送模式，按 agentId 隔离。 */
   const currentComposerAgentMode = composerAgentModes[activeAgentId ?? ""] ?? "normal";
+  const setComposerAgentModeForAgent = (agentId: string, mode: ComposerAgentMode) => {
+    setComposerAgentModes((prev) => ({ ...prev, [agentId]: mode }));
+  };
   const setCurrentComposerAgentMode = (mode: ComposerAgentMode) => {
-    if (!activeAgentId) return;
-    setComposerAgentModes((prev) => ({ ...prev, [activeAgentId]: mode }));
+    const targetAgentId = activeAgentIdRef.current;
+    if (!targetAgentId) return;
+    setComposerAgentModeForAgent(targetAgentId, mode);
   };
   /** Goal 状态 */
   const [goalText, setGoalText] = useState<string>("");
@@ -662,6 +702,11 @@ export function App() {
   const GOAL_MAX_CONTINUATIONS = 5;
   /** 上一次 isAgentBusy 状态,用于检测 busy→idle 转换 */
   const prevIsAgentBusyRef = useRef(false);
+  /** 客户端队列按 agent 记录 flush 锁，避免 tool-end 与 idle 并发投递。 */
+  const queueFlushByAgentRef = useRef<Set<string>>(new Set());
+  const [queuedPrompts, setQueuedPrompts] = useState<Record<string, QueuedPrompt[]>>({});
+  const queuedPromptsRef = useRef<Record<string, QueuedPrompt[]>>({});
+  const activeQueuedPrompts = activeAgentId ? (queuedPrompts[activeAgentId] ?? []) : [];
 
   /** 当前 agent 流式思考的实时文本,agent_end 时清空 */
   const [multiSelectOpen, setMultiSelectOpen] = useState(false);
@@ -1105,6 +1150,8 @@ export function App() {
   const [drawerWidth, setDrawerWidth] = useState(270);
   const [composerHeight, setComposerHeight] = useState(COMPOSER_MIN_HEIGHT);
   const [composerOffsetHeight, setComposerOffsetHeight] = useState(0);
+  /** ResizeObserver 驱动布局预算重新计算；ref 尺寸本身变化不会触发 React render。 */
+  const [chatLayoutHeight, setChatLayoutHeight] = useState(() => window.innerHeight);
   const [composerAutoHeight, setComposerAutoHeight] =
     useState(COMPOSER_MIN_HEIGHT);
   const [terminalDockStateByAgent, setTerminalDockStateByAgent] =
@@ -1128,6 +1175,7 @@ export function App() {
   const sessionComboRef = useRef<HTMLDivElement | null>(null);
   const chatHeaderRef = useRef<HTMLElement | null>(null);
   const composerRef = useRef<HTMLElement | null>(null);
+  const queuedTrackRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLElement | null>(null);
   const composerBoxRef = useRef<HTMLDivElement | null>(null);
   const composerTextareaRef = useRef<HTMLDivElement | null>(null);
@@ -1211,12 +1259,16 @@ export function App() {
     ? (attachedImagesByAgent[activeAgentId] ?? [])
     : [];
 
-  function setPrompt(value: string | ((current: string) => string)) {
-    const targetAgentId = activeAgentIdRef.current;
-    if (!targetAgentId) return;
+  function setPromptForAgent(
+    agentId: string,
+    value: string | ((current: string) => string),
+  ) {
+    const targetAgentId = agentId;
+    const previous = livePromptByAgentRef.current[targetAgentId] ?? "";
+    const nextValue = typeof value === "function" ? value(previous) : value;
+    if (nextValue) livePromptByAgentRef.current[targetAgentId] = nextValue;
+    else delete livePromptByAgentRef.current[targetAgentId];
     setPromptByAgent((current) => {
-      const previous = current[targetAgentId] ?? "";
-      const nextValue = typeof value === "function" ? value(previous) : value;
       if (!nextValue) {
         const next = { ...current };
         delete next[targetAgentId];
@@ -1229,23 +1281,50 @@ export function App() {
     });
   }
 
-  function setAttachedImages(
+  function setPromptFromNativeInput(agentId: string, value: string) {
+    if (value) livePromptByAgentRef.current[agentId] = value;
+    else delete livePromptByAgentRef.current[agentId];
+    startPromptTransition(() => {
+      setPromptByAgent((current) => {
+        if (!value) {
+          const next = { ...current };
+          delete next[agentId];
+          return next;
+        }
+        return { ...current, [agentId]: value };
+      });
+    });
+  }
+
+  function setPrompt(value: string | ((current: string) => string)) {
+    const targetAgentId = activeAgentIdRef.current;
+    if (targetAgentId) setPromptForAgent(targetAgentId, value);
+  }
+
+  function setAttachedImagesForAgent(
+    agentId: string,
     value: ImageContent[] | ((current: ImageContent[]) => ImageContent[]),
   ) {
-    if (!activeAgentId) return;
     setAttachedImagesByAgent((current) => {
-      const previous = current[activeAgentId] ?? [];
+      const previous = current[agentId] ?? [];
       const nextValue = typeof value === "function" ? value(previous) : value;
       if (nextValue.length === 0) {
         const next = { ...current };
-        delete next[activeAgentId];
+        delete next[agentId];
         return next;
       }
       return {
         ...current,
-        [activeAgentId]: nextValue,
+        [agentId]: nextValue,
       };
     });
+  }
+
+  function setAttachedImages(
+    value: ImageContent[] | ((current: ImageContent[]) => ImageContent[]),
+  ) {
+    const targetAgentId = activeAgentIdRef.current;
+    if (targetAgentId) setAttachedImagesForAgent(targetAgentId, value);
   }
   const terminalDockState = activeAgentId
     ? terminalDockStateByAgent[activeAgentId]
@@ -1444,14 +1523,36 @@ export function App() {
   const activeTerminalHeight = activeAgentId
     ? (terminalHeightByAgent[activeAgentId] ?? COMPOSER_DEFAULT_TERMINAL_HEIGHT)
     : COMPOSER_DEFAULT_TERMINAL_HEIGHT;
-  // 终端 Grid 只做 120ms 短过渡，面板表面仍由 transform 完成主要运动。
-  const terminalRowHeight =
+  const requestedTerminalRowHeight =
     !terminalDockVisible || terminalDockClosing
       ? 0
       : terminalCollapsed
         ? 34
         : activeTerminalHeight;
-  const resolvedComposerHeight = Math.max(composerHeight, composerAutoHeight);
+  const chatPaneHeight = chatLayoutHeight;
+  const chatHeaderHeight = chatHeaderRef.current?.offsetHeight ?? 78;
+  const fixedChatHeight =
+    chatHeaderHeight +
+    COMPOSER_MIN_TIMELINE_HEIGHT +
+    COMPOSER_MIN_HEIGHT +
+    28;
+  // Queue chrome includes the track gap, panel padding/header/border, and complete rows.
+  // Keep this in sync with .queued-list so the third row is never clipped by the composer.
+  const queuedChromeBudget =
+    activeQueuedPrompts.length > 0
+      ? 38 + Math.min(activeQueuedPrompts.length, QUEUED_PROMPT_VISIBLE) * 34
+      : 0;
+  const terminalRowHeight = terminalCollapsed
+    ? requestedTerminalRowHeight
+    : Math.min(
+        requestedTerminalRowHeight,
+        Math.max(0, chatPaneHeight - fixedChatHeight - queuedChromeBudget),
+      );
+  const visibleQueuedPrompts = activeQueuedPrompts;
+  const resolvedComposerHeight = Math.min(
+    getComposerMaxHeight(),
+    Math.max(composerHeight, composerAutoHeight),
+  );
   const composerMode = prompt.startsWith("!!")
     ? "silent-shell"
     : prompt.startsWith("!")
@@ -1811,12 +1912,29 @@ export function App() {
           Object.entries(current).filter(([agentId]) => activeIds.has(agentId)),
         ),
       );
-      setPromptByAgent((current) =>
-        migrateAgentRecord(current, pendingReplacementById, draftIds),
-      );
+      setPromptByAgent((current) => {
+        const next = migrateAgentRecord(current, pendingReplacementById, draftIds);
+        livePromptByAgentRef.current = migrateAgentRecord(
+          livePromptByAgentRef.current,
+          pendingReplacementById,
+          draftIds,
+        );
+        return next;
+      });
       setAttachedImagesByAgent((current) =>
         migrateAgentRecord(current, pendingReplacementById, draftIds),
       );
+      // 发送中的条目必须保持 sending，直到对应 IPC promise 明确完成。
+      // 普通 state 推送（包括 sendPrompt 先发出的 running）不能把它重新开放为可撤回。
+      updateQueuedPrompts((current) =>
+        migrateQueuedPrompts(current, pendingReplacementById, draftIds),
+      );
+      for (const [oldAgentId] of pendingReplacementById) {
+        queueFlushByAgentRef.current.delete(oldAgentId);
+      }
+      for (const agentId of queueFlushByAgentRef.current) {
+        if (!draftIds.has(agentId)) queueFlushByAgentRef.current.delete(agentId);
+      }
       // 裁剪已关闭 agent 的消息缓存，释放 renderer 内存；重启占位需要参与 liveIds，避免旧进程移除时聊天记录闪空。
       setMessagesByAgent((current) =>
         migrateAgentRecord(current, pendingReplacementById, draftIds),
@@ -1863,14 +1981,24 @@ export function App() {
         setUpdateError(progress.error ?? t("update.downloadFailed"));
       }
     });
-    // 监听后端主动推送的 runtimeState 更新(如 agent_end 时重置 isStreaming),
-    // 确保前端 isAgentBusy 判断基于最新状态,排队 flush 能正常触发。
-    const offRuntimeState = api.agents.onRuntimeState((payload) =>
-      setRuntimeStateByAgent((current) => ({
-        ...current,
-        [payload.agentId]: payload.state,
-      })),
-    );
+    // 直接在原始 runtimeState 事件上识别 tool true→false，避免 React 把很快的
+    // tool_start/tool_end 批量成一次 render 后漏掉 steer 的投递窗口。
+    const offRuntimeState = api.agents.onRuntimeState((payload) => {
+      const previous = runtimeStateByAgentRef.current[payload.agentId];
+      const nextState = applyAgentRuntimeState(payload.agentId, payload.state);
+      // tool start/end 会由主进程以轻量 patch 立即推送；与最近一次完整状态合并，
+      // 避免为了保证工具边沿顺序而短暂丢失模型、token 等运行信息。
+      if (
+        previous?.isExecutingTool &&
+        !nextState.isExecutingTool &&
+        (payload.state.toolStateSequence == null ||
+          previous.toolStateSequence == null ||
+          payload.state.toolStateSequence >= previous.toolStateSequence) &&
+        isAgentCurrentlyBusy(payload.agentId)
+      ) {
+        void flushQueuedSteerPrompts(payload.agentId);
+      }
+    });
     // 监听流式思考内容更新,用于在 agent 响应前展示推理过程
     const offThinking = api.agents.onThinking((payload: ThinkingUpdate) =>
       setStreamingThinking((current) => ({
@@ -1891,12 +2019,7 @@ export function App() {
       if (request.method === "set_editor_text") {
         const editorRequest = request as UiRequest;
         const text = editorRequest.text ?? "";
-        setPromptByAgent((current) => {
-          const next = { ...current };
-          if (text) next[request.agentId] = text;
-          else delete next[request.agentId];
-          return next;
-        });
+        setPromptForAgent(request.agentId, text);
         if (request.agentId === activeAgentIdRef.current) {
           setComposerCursor(text.length);
           pendingComposerCaretRef.current = text.length;
@@ -2059,7 +2182,7 @@ export function App() {
     const composer = composerRef.current;
     const box = composerBoxRef.current;
     if (!chatPane || !header || !composer || !box) {
-      const reservedTerminalHeight = terminalOpen ? activeTerminalHeight : 0;
+      const reservedTerminalHeight = terminalRowHeight;
       return Math.max(
         180,
         window.innerHeight -
@@ -2070,7 +2193,7 @@ export function App() {
       );
     }
 
-    const reservedTerminalHeight = terminalOpen ? activeTerminalHeight : 0;
+    const reservedTerminalHeight = terminalRowHeight;
     const composerChrome = Math.max(
       0,
       composer.offsetHeight - box.offsetHeight,
@@ -2122,6 +2245,14 @@ export function App() {
     );
     ensureComposerTailVisible();
   }
+
+  // 待发送轨道高度变化会改变 composer 的 chrome 高度；队列增删后重新 clamp，
+  // 保证大量卡片出现时输入框仍留在可视区域，撤回后也不会保留过高尺寸。
+  useLayoutEffect(() => {
+    const maxHeight = getComposerMaxHeight();
+    setComposerHeight((current) => Math.min(current, maxHeight));
+    setComposerAutoHeight((current) => Math.min(current, maxHeight));
+  }, [activeAgentId, activeQueuedPrompts.length]);
 
   function scrollToBottom() {
     const timeline = timelineRef.current;
@@ -2178,13 +2309,18 @@ export function App() {
       frame = requestAnimationFrame(() => {
         setComposerHeight((current) => clampComposerHeight(current));
         setComposerOffsetHeight(composerRef.current?.offsetHeight ?? 0);
+        setChatLayoutHeight((current) => {
+          const next = chatPaneRef.current?.clientHeight ?? window.innerHeight;
+          return current === next ? current : next;
+        });
       });
     };
 
     const box = composerBoxRef.current;
     const footer = composerRef.current;
+    const chatPane = chatPaneRef.current;
     const observer =
-      (box || footer) &&
+      (box || footer || chatPane) &&
       new ResizeObserver((entries) => {
         const entry = entries[0];
         if (!entry) return;
@@ -2192,6 +2328,7 @@ export function App() {
       });
     if (box) observer?.observe(box);
     if (footer) observer?.observe(footer);
+    if (chatPane) observer?.observe(chatPane);
 
     window.addEventListener("resize", scheduleSync);
     scheduleSync();
@@ -3479,10 +3616,12 @@ export function App() {
           : current,
       );
       setPromptByAgent((current) => {
-        const draft = current[pendingTab.id];
+        const draft = livePromptByAgentRef.current[pendingTab.id] ?? current[pendingTab.id];
         if (draft == null) return current;
         const next = { ...current, [tab.id]: draft };
         delete next[pendingTab.id];
+        livePromptByAgentRef.current[tab.id] = draft;
+        delete livePromptByAgentRef.current[pendingTab.id];
         return next;
       });
       setAttachedImagesByAgent((current) => {
@@ -3530,11 +3669,23 @@ export function App() {
     }
   }
 
+  function applyAgentRuntimeState(agentId: string, incoming: AgentRuntimeState) {
+    const nextState = mergeAgentRuntimeState(
+      runtimeStateByAgentRef.current[agentId],
+      incoming,
+    );
+    runtimeStateByAgentRef.current = {
+      ...runtimeStateByAgentRef.current,
+      [agentId]: nextState,
+    };
+    setRuntimeStateByAgent(runtimeStateByAgentRef.current);
+    return nextState;
+  }
+
   async function refreshRuntimeState(agentId = activeAgentId) {
     if (!agentId || isPendingAgentId(agentId)) return;
     const state = await api.agents.runtimeState(agentId).catch(() => undefined);
-    if (state)
-      setRuntimeStateByAgent((current) => ({ ...current, [agentId]: state }));
+    if (state) applyAgentRuntimeState(agentId, state);
   }
 
   function getProjectFilter(projectId: string) {
@@ -3565,10 +3716,7 @@ export function App() {
   async function cycleModel() {
     if (!activeAgentId || isPendingAgentId(activeAgentId)) return;
     const state = await api.agents.cycleModel(activeAgentId);
-    setRuntimeStateByAgent((current) => ({
-      ...current,
-      [activeAgentId]: state,
-    }));
+    applyAgentRuntimeState(activeAgentId, state);
   }
 
   /** 调整菜单位置避免溢出视口 */
@@ -3642,10 +3790,7 @@ export function App() {
       model.provider,
       model.id,
     );
-    setRuntimeStateByAgent((current) => ({
-      ...current,
-      [activeAgentId]: state,
-    }));
+    applyAgentRuntimeState(activeAgentId, state);
     setModelPickerOpen(false);
   }
 
@@ -3662,10 +3807,7 @@ export function App() {
   async function cycleThinking() {
     if (!activeAgentId || isPendingAgentId(activeAgentId)) return;
     const state = await api.agents.cycleThinking(activeAgentId);
-    setRuntimeStateByAgent((current) => ({
-      ...current,
-      [activeAgentId]: state,
-    }));
+    applyAgentRuntimeState(activeAgentId, state);
   }
 
   async function selectThinking(level: string) {
@@ -3673,10 +3815,7 @@ export function App() {
     try {
       // 使用 setThinking 明确落到用户选择的档位,避免 cycle 模式需要反复点击才能到目标级别。
       const state = await api.agents.setThinking(activeAgentId, level);
-      setRuntimeStateByAgent((current) => ({
-        ...current,
-        [activeAgentId]: state,
-      }));
+      applyAgentRuntimeState(activeAgentId, state);
       setThinkingPickerOpen(false);
       // pi runtime 会按模型能力 clamp thinking level;对比实际状态,避免用户误以为已运行在不支持的档位。
       if (state.thinkingLevel && state.thinkingLevel !== level) {
@@ -3701,10 +3840,7 @@ export function App() {
     setCompacting(true);
     try {
       const state = await api.agents.compact(activeAgentId, compactPrompt);
-      setRuntimeStateByAgent((current) => ({
-        ...current,
-        [activeAgentId]: state,
-      }));
+      applyAgentRuntimeState(activeAgentId, state);
       showToast(t("app.compactDone"));
     } catch (e) {
       showToast(t("app.compactFailed"));
@@ -3721,14 +3857,225 @@ export function App() {
   async function abortAgent(agentId = activeAgentId) {
     if (!agentId || isPendingAgentId(agentId)) return;
     // 立即清除流式状态，让思考气泡和 loading 立刻消失，不等后端 RPC 返回
-    setRuntimeStateByAgent((current) => {
-      const prev = current[agentId];
-      if (!prev) return current;
-      return { ...current, [agentId]: { ...prev, isStreaming: false } };
-    });
+    const previous = runtimeStateByAgentRef.current[agentId];
+    if (previous) {
+      applyAgentRuntimeState(agentId, { ...previous, isStreaming: false });
+    }
     await api.agents.abort(agentId);
     // 不调用 refreshRuntimeState：AgentManager.abort() 会通过 emitState 推送正确状态，
     // 避免后端 get_state 返回过时的 isStreaming: true 覆盖前端立刻设的 false。
+  }
+
+  /**
+   * 队列 ref 是 drain 的同步数据源：React 批量 state 更新期间也能原子 claim，
+   * 避免 tool-end 与 idle 两条状态边沿把同一条消息提交两次。
+   */
+  function updateQueuedPrompts(
+    updater: (current: Record<string, QueuedPrompt[]>) => Record<string, QueuedPrompt[]>,
+  ) {
+    const next = updater(queuedPromptsRef.current);
+    queuedPromptsRef.current = next;
+    setQueuedPrompts(next);
+  }
+
+  function setAgentQueuedPrompts(
+    agentId: string,
+    updater: (current: QueuedPrompt[]) => QueuedPrompt[],
+  ) {
+    updateQueuedPrompts((current) => replaceAgentQueue(current, agentId, updater));
+  }
+
+  /** 入队；满员时返回 false，调用方应保留输入框内容并 toast。 */
+  function enqueueQueuedPrompt(agentId: string, queuedPrompt: QueuedPrompt): boolean {
+    const before = queuedPromptsRef.current[agentId]?.length ?? 0;
+    if (before >= QUEUED_PROMPT_LIMIT) return false;
+    updateQueuedPrompts((current) => enqueuePrompt(current, agentId, queuedPrompt));
+    return (queuedPromptsRef.current[agentId]?.length ?? 0) > before;
+  }
+
+  function appendUnknownQueuedPrompt(
+    agentId: string,
+    queuedPrompt: QueuedPrompt,
+    error?: string,
+  ) {
+    setAgentQueuedPrompts(agentId, (current) => {
+      if (current.length >= QUEUED_PROMPT_LIMIT) return current;
+      return [
+        ...current,
+        { ...queuedPrompt, status: "unknown", error },
+      ];
+    });
+  }
+
+  function retractQueuedPrompt(agentId: string, promptId: string) {
+    updateQueuedPrompts((current) => retractPrompt(current, agentId, promptId));
+  }
+
+  /** 丢弃：pending/failed 走 retract；unknown 仅移除提示（不重发）。sending 不可丢弃。 */
+  function discardQueuedPrompt(agentId: string, promptId: string) {
+    const live = queuedPromptsRef.current[agentId]?.find((item) => item.id === promptId);
+    if (!live || live.status === "sending") return;
+    if (live.status === "unknown") {
+      updateQueuedPrompts((current) =>
+        acknowledgeUnknownPrompt(current, agentId, promptId),
+      );
+      return;
+    }
+    retractQueuedPrompt(agentId, promptId);
+  }
+
+  function retractQueuedPromptForEdit(agentId: string, queuedPrompt: QueuedPrompt) {
+    const livePrompt = queuedPromptsRef.current[agentId]?.find(
+      (promptItem) => promptItem.id === queuedPrompt.id,
+    );
+    if (
+      !livePrompt ||
+      livePrompt.status === "sending" ||
+      livePrompt.status === "unknown"
+    ) return;
+    retractQueuedPrompt(agentId, livePrompt.id);
+    const currentDraft =
+      livePromptByAgentRef.current[agentId] ?? promptByAgent[agentId] ?? "";
+    const restoredPrompt = [livePrompt.displayText, currentDraft]
+      .filter((text) => text.trim())
+      .join("\n\n");
+    setPromptForAgent(agentId, restoredPrompt);
+    if (livePrompt.images?.length) {
+      setAttachedImagesForAgent(agentId, (current) => [
+        ...livePrompt.images!,
+        ...current,
+      ]);
+    }
+    setComposerAgentModeForAgent(agentId, livePrompt.agentMode);
+    if (activeAgentIdRef.current === agentId) {
+      setComposerCursor(restoredPrompt.length);
+      pendingComposerCaretRef.current = restoredPrompt.length;
+      requestAnimationFrame(() => {
+        const editor = composerTextareaRef.current;
+        editor?.focus();
+        if (editor) editor.scrollTop = editor.scrollHeight;
+      });
+    }
+  }
+
+  function isAgentCurrentlyBusy(agentId: string) {
+    const agent = displayAgentsRef.current.find((item) => item.id === agentId);
+    const runtimeState = runtimeStateByAgentRef.current[agentId];
+    return Boolean(
+      agent?.status === "starting" ||
+      agent?.status === "running" ||
+      runtimeState?.isStreaming ||
+      runtimeState?.isExecutingTool,
+    );
+  }
+
+  function canFlushQueuedPrompt(agentId: string) {
+    const agent = displayAgentsRef.current.find((item) => item.id === agentId);
+    return agent?.status === "idle" && !isAgentCurrentlyBusy(agentId);
+  }
+
+  async function flushQueuedSteerPrompts(agentId: string) {
+    if (queueFlushByAgentRef.current.has(agentId) || !isAgentCurrentlyBusy(agentId)) return;
+    queueFlushByAgentRef.current.add(agentId);
+    try {
+      // Keep one lock for the whole ordered batch. Releasing it between items would let a second
+      // tool-end/idle event claim the next snapshot while this loop is still advancing.
+      while (isAgentCurrentlyBusy(agentId)) {
+        const claimed = claimNextSteerPrompt(queuedPromptsRef.current, agentId);
+        if (!claimed.prompt) break;
+        const queuedPrompt = claimed.prompt;
+        queuedPromptsRef.current = claimed.queues;
+        setQueuedPrompts(claimed.queues);
+
+        try {
+          await dispatchPromptSnapshot(
+            agentId,
+            queuedPrompt.message,
+            queuedPrompt.images,
+            "steer",
+            queuedPrompt.agentMode,
+            queuedPrompt.templateDescription,
+          );
+          updateQueuedPrompts((current) =>
+            resolveClaimedPrompt(current, agentId, queuedPrompt.id, {
+              type: "accepted",
+            }),
+          );
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const deliveryUnknown = error instanceof PromptDeliveryUnknownError;
+          updateQueuedPrompts((current) =>
+            resolveClaimedPrompt(current, agentId, queuedPrompt.id, {
+              type: deliveryUnknown ? "unknown" : "failed",
+              error: errorMessage,
+            }),
+          );
+          showToast(
+            deliveryUnknown ? t("app.queuedUnknown") : errorMessage,
+            deliveryUnknown ? 6000 : 4000,
+          );
+          // Explicit failure and unknown delivery are ordering barriers. Later steer snapshots
+          // stay local until the user resolves this entry.
+          break;
+        }
+      }
+    } finally {
+      queueFlushByAgentRef.current.delete(agentId);
+      // agent_settled may arrive while the RPC is in flight. Once the ordered batch unlocks,
+      // continue through the normal serial idle drain rather than leaving the queue stranded.
+      if (canFlushQueuedPrompt(agentId)) {
+        void flushNextQueuedPrompt(agentId);
+      }
+    }
+  }
+
+  /** Paseo 同款串行策略：agent 每次空闲只发送队首，其余消息继续可撤回。 */
+  async function flushNextQueuedPrompt(agentId: string) {
+    if (queueFlushByAgentRef.current.has(agentId) || !canFlushQueuedPrompt(agentId)) return;
+    const claimed = claimIdleHead(queuedPromptsRef.current, agentId);
+    if (!claimed.prompt) return;
+    const queuedPrompt = claimed.prompt;
+
+    queuedPromptsRef.current = claimed.queues;
+    setQueuedPrompts(claimed.queues);
+    queueFlushByAgentRef.current.add(agentId);
+    try {
+      await dispatchPromptSnapshot(
+        agentId,
+        queuedPrompt.message,
+        queuedPrompt.images,
+        queuedPrompt.behavior === "direct" ? undefined : queuedPrompt.behavior,
+        queuedPrompt.agentMode,
+        queuedPrompt.templateDescription,
+      );
+      updateQueuedPrompts((current) =>
+        resolveClaimedPrompt(current, agentId, queuedPrompt.id, {
+          type: "accepted",
+        }),
+      );
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const deliveryUnknown = error instanceof PromptDeliveryUnknownError;
+      updateQueuedPrompts((current) =>
+        resolveClaimedPrompt(current, agentId, queuedPrompt.id, {
+          type: deliveryUnknown ? "unknown" : "failed",
+          error: errorMessage,
+        }),
+      );
+      showToast(
+        deliveryUnknown ? t("app.queuedUnknown") : errorMessage,
+        deliveryUnknown ? 6000 : 4000,
+      );
+    } finally {
+      queueFlushByAgentRef.current.delete(agentId);
+      // 扩展命令可能预检成功后仍保持 idle；等待主进程 running/idle 推送落地后再判断，
+      // 避免 IPC 事件尚未渲染时把多条普通 prompt 一次性并发发送。
+      window.setTimeout(() => {
+        if (canFlushQueuedPrompt(agentId)) {
+          void flushNextQueuedPrompt(agentId);
+        }
+      }, 150);
+    }
   }
 
   async function exportAgentHtml(agentId: string) {
@@ -3783,7 +4130,10 @@ export function App() {
           // 以光标为锚替换触发符..光标这一段,并在下一帧恢复光标到插入项之后。
           const el = event.currentTarget;
           const cursor = getCaretOffsetOf(el);
-          const result = applySuggestion(prompt, cursor, selected.value);
+          const liveComposerPrompt = activeAgentIdRef.current
+            ? (livePromptByAgentRef.current[activeAgentIdRef.current] ?? prompt)
+            : prompt;
+          const result = applySuggestion(liveComposerPrompt, cursor, selected.value);
           // RichInput 的受控同步会基于 value 重渲染并恢复光标,这里同步状态即可。
           setPrompt(result.text);
           setComposerCursor(result.cursor);
@@ -3799,7 +4149,10 @@ export function App() {
         event.preventDefault();
         const el = event.currentTarget;
         const cursor = getCaretOffsetOf(el);
-        const result = clearSuggestionTrigger(prompt, cursor);
+        const liveComposerPrompt = activeAgentIdRef.current
+          ? (livePromptByAgentRef.current[activeAgentIdRef.current] ?? prompt)
+          : prompt;
+        const result = clearSuggestionTrigger(liveComposerPrompt, cursor);
         setPrompt(result.text);
         setComposerCursor(result.cursor);
         pendingComposerCaretRef.current = result.cursor;
@@ -3861,7 +4214,10 @@ export function App() {
     if (event.key === "Escape") {
       const el = event.currentTarget;
       const cursor = getCaretOffsetOf(el);
-      const result = clearSuggestionTrigger(prompt, cursor);
+      const liveComposerPrompt = activeAgentIdRef.current
+        ? (livePromptByAgentRef.current[activeAgentIdRef.current] ?? prompt)
+        : prompt;
+      const result = clearSuggestionTrigger(liveComposerPrompt, cursor);
       setPrompt(result.text);
       setComposerCursor(result.cursor);
       setSuggestionsOpen(false);
@@ -3890,6 +4246,26 @@ export function App() {
     activeAgent &&
     (activeAgent.status === "running" || activeRuntimeState?.isStreaming),
   );
+  const hasComposerContent = Boolean(prompt.trim() || attachedImages.length > 0);
+  const keepBusyDraftControls = Boolean(
+    activeAgentId && hasComposerContent && busyDraftByAgent[activeAgentId],
+  );
+  const showBusySendControls = isAgentBusy || keepBusyDraftControls;
+
+  // 图片附件等非文本输入同样应锁定忙碌草稿控件；内容清空后再释放锁定。
+  useEffect(() => {
+    if (!activeAgentId) return;
+    setBusyDraftByAgent((current) => {
+      if (!hasComposerContent) {
+        if (!current[activeAgentId]) return current;
+        const next = { ...current };
+        delete next[activeAgentId];
+        return next;
+      }
+      if (!isAgentBusy || current[activeAgentId]) return current;
+      return { ...current, [activeAgentId]: true };
+    });
+  }, [activeAgentId, hasComposerContent, isAgentBusy]);
 
   // 已删除内置 goal 自动续接。
   useEffect(() => {
@@ -3924,6 +4300,7 @@ export function App() {
           // 加载失败时 chip 会在下面 else 分支被移除
         }
       }
+
       if (msgs && msgs.length > 0) {
         const ctx = msgs.map((m) => `[${m.role === "user" ? "User" : "Assistant"}]: ${m.content}`).join("\n");
         const refBlock = `<referenced_session name="${sessionName}">\n${ctx}\n</referenced_session>`;
@@ -3935,14 +4312,57 @@ export function App() {
     return resolved;
   }
 
+  // 处理所有 agent 的 idle 队列：隐藏会话也不会因切换选中项而卡住。
+  // tool-end 的 steer 投递直接在 onRuntimeState 原始事件上处理，避免批量 render 漏边沿。
+  useEffect(() => {
+    for (const agentId of Object.keys(queuedPrompts)) {
+      if (canFlushQueuedPrompt(agentId)) {
+        void flushNextQueuedPrompt(agentId);
+      }
+    }
+  }, [agents, runtimeStateByAgent, queuedPrompts]);
+
+  useEffect(() => {
+    return () => {
+      if (sendBehaviorMenuCloseTimerRef.current) {
+        clearTimeout(sendBehaviorMenuCloseTimerRef.current);
+        sendBehaviorMenuCloseTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  function keepSendBehaviorMenuOpen() {
+    if (sendBehaviorMenuCloseTimerRef.current) {
+      clearTimeout(sendBehaviorMenuCloseTimerRef.current);
+      sendBehaviorMenuCloseTimerRef.current = null;
+    }
+    setSendBehaviorMenuOpen(true);
+  }
+
+  function scheduleSendBehaviorMenuClose() {
+    if (sendBehaviorMenuCloseTimerRef.current) {
+      clearTimeout(sendBehaviorMenuCloseTimerRef.current);
+    }
+    sendBehaviorMenuCloseTimerRef.current = setTimeout(() => {
+      setSendBehaviorMenuOpen(false);
+      sendBehaviorMenuCloseTimerRef.current = null;
+    }, 160);
+  }
+
   async function sendPrompt() {
+    const targetAgentId = activeAgentId;
+    const livePrompt = targetAgentId
+      ? (livePromptByAgentRef.current[targetAgentId] ?? prompt)
+      : prompt;
     if (
       isAgentStarting ||
-      !activeAgentId ||
-      (!prompt.trim() && attachedImages.length === 0)
+      !targetAgentId ||
+      (!livePrompt.trim() && attachedImages.length === 0)
     )
       return;
-    const message = prompt;
+    const message = livePrompt;
+    // 在任何 await 之前清掉实时草稿，防止双击/Enter 连发读取同一份消息。
+    delete livePromptByAgentRef.current[targetAgentId];
     const images = attachedImages.length > 0 ? attachedImages : undefined;
 
     const trimmedMessage = message.trim();
@@ -3984,6 +4404,12 @@ export function App() {
     if (scrollTimeline) scrollTimeline.scrollTo({ top: scrollTimeline.scrollHeight, behavior: "instant" });
     setPrompt("");
     setAttachedImages([]);
+    setBusyDraftByAgent((current) => {
+      if (!current[targetAgentId]) return current;
+      const next = { ...current };
+      delete next[targetAgentId];
+      return next;
+    });
     setSuggestionsOpen(false);
     setSendBehaviorMenuOpen(false);
     // 发送后强制重置自动高度：避免粘贴多行内容后 scrollHeight 残留导致 composer 无法恢复默认高度。
@@ -3992,9 +4418,60 @@ export function App() {
     // 让输入框保持固定大小，超出部分滚动显示
     setComposerAutoHeight(COMPOSER_MIN_HEIGHT);
 
-    const resolvedMessage = await resolveSessionRefs(message);
-    const { message: expandedMessage, description: templateDescription } = expandPromptTemplates(resolvedMessage, promptTemplateList);
-    await submitPromptSnapshot(activeAgentId, expandedMessage, images, undefined, currentComposerAgentMode, templateDescription);
+
+    // 在发送前本地展开 prompt template 命令（/name → 完整内容），
+    // 避免依赖 pi 的展开导致用户附加文本丢失以及特殊符号干扰
+    // 同时提取模板的 description 作为元数据发给 pi agent，让其了解本次 prompt 意图
+    const { message: expandedMessage, description: templateDescription } = expandPromptTemplates(message, promptTemplateList);
+
+    const queuedPromptSnapshot: QueuedPrompt = {
+      id: crypto.randomUUID(),
+      message: expandedMessage,
+      displayText: message,
+      images,
+      behavior: "steer",
+      agentMode: currentComposerAgentMode,
+      templateDescription,
+      timestamp: Date.now(),
+    };
+    if (isAgentBusy) {
+      if (!enqueueQueuedPrompt(targetAgentId, queuedPromptSnapshot)) {
+        setPromptForAgent(targetAgentId, (current) =>
+          [message, current].filter((text) => text.trim()).join("\n\n"),
+        );
+        if (images) {
+          setAttachedImagesForAgent(targetAgentId, (current) => [...images, ...current]);
+        }
+        showToast(t("app.queuedFull", { count: QUEUED_PROMPT_LIMIT }), 3000);
+      }
+      return;
+    }
+
+    const accepted = await submitPromptSnapshot(
+      targetAgentId,
+      expandedMessage,
+      images,
+      undefined,
+      currentComposerAgentMode,
+      templateDescription,
+    );
+    if (accepted === "unknown") {
+      appendUnknownQueuedPrompt(targetAgentId, {
+        ...queuedPromptSnapshot,
+        behavior: "direct",
+      });
+      return;
+    }
+    if (!accepted) {
+      livePromptByAgentRef.current[targetAgentId] = message;
+      setPromptForAgent(targetAgentId, (current) =>
+        [message, current].filter((text) => text.trim()).join("\n\n"),
+      );
+      if (images) {
+        setAttachedImagesForAgent(targetAgentId, (current) => [...images, ...current]);
+      }
+      return;
+    }
     // 用 MutationObserver 监听消息列表 DOM 变化，新消息出现时滚动到底部
     const scrollOnNewMessage = () => {
       const timeline = timelineRef.current;
@@ -4013,13 +4490,19 @@ export function App() {
   }
 
   async function sendPromptAsFollowUp() {
+    const targetAgentId = activeAgentId;
+    const livePrompt = targetAgentId
+      ? (livePromptByAgentRef.current[targetAgentId] ?? prompt)
+      : prompt;
     if (
       isAgentStarting ||
-      !activeAgentId ||
-      (!prompt.trim() && attachedImages.length === 0)
+      !targetAgentId ||
+      (!livePrompt.trim() && attachedImages.length === 0)
     )
       return;
-    const message = prompt;
+    const message = livePrompt;
+    // 在任何 await 之前清掉实时草稿，防止双击/Enter 连发读取同一份消息。
+    delete livePromptByAgentRef.current[targetAgentId];
     const images = attachedImages.length > 0 ? attachedImages : undefined;
     setAutoScroll(true);
     autoScrollRef.current = true;
@@ -4027,12 +4510,61 @@ export function App() {
     if (scrollTimeline) scrollTimeline.scrollTo({ top: scrollTimeline.scrollHeight, behavior: "instant" });
     setPrompt("");
     setAttachedImages([]);
+    setBusyDraftByAgent((current) => {
+      if (!current[targetAgentId]) return current;
+      const next = { ...current };
+      delete next[targetAgentId];
+      return next;
+    });
     setSuggestionsOpen(false);
     setSendBehaviorMenuOpen(false);
     setComposerAutoHeight(COMPOSER_MIN_HEIGHT);
-    const resolvedMessage = await resolveSessionRefs(message);
-    await submitPromptSnapshot(activeAgentId, resolvedMessage, images, "followUp", currentComposerAgentMode);
-    // 用 MutationObserver 监听消息列表 DOM 变化，新消息出现时滚动到底部
+
+
+    const queuedPromptSnapshot: QueuedPrompt = {
+      id: crypto.randomUUID(),
+      message,
+      displayText: message,
+      images,
+      behavior: "followUp",
+      agentMode: currentComposerAgentMode,
+      timestamp: Date.now(),
+    };
+    if (isAgentBusy) {
+      if (!enqueueQueuedPrompt(targetAgentId, queuedPromptSnapshot)) {
+        setPromptForAgent(targetAgentId, (current) =>
+          [message, current].filter((text) => text.trim()).join("\n\n"),
+        );
+        if (images) {
+          setAttachedImagesForAgent(targetAgentId, (current) => [...images, ...current]);
+        }
+        showToast(t("app.queuedFull", { count: QUEUED_PROMPT_LIMIT }), 3000);
+      }
+      return;
+    }
+
+    const accepted = await submitPromptSnapshot(
+      targetAgentId,
+      message,
+      images,
+      "followUp",
+      currentComposerAgentMode,
+    );
+    if (accepted === "unknown") {
+      appendUnknownQueuedPrompt(targetAgentId, queuedPromptSnapshot);
+      return;
+    }
+    if (!accepted) {
+      livePromptByAgentRef.current[targetAgentId] = message;
+      setPromptForAgent(targetAgentId, (current) =>
+        [message, current].filter((text) => text.trim()).join("\n\n"),
+      );
+      if (images) {
+        setAttachedImagesForAgent(targetAgentId, (current) => [...images, ...current]);
+      }
+      return;
+    }
+    // 用 MutationObserver 监听消息列表 DOM 变化
     const scrollOnNewMessage = () => {
       const timeline = timelineRef.current;
       if (!timeline) return;
@@ -4050,6 +4582,40 @@ export function App() {
 
   // 已删除内置 /goal 与 startNewGoal 实现。
 
+  async function dispatchPromptSnapshot(
+    agentId: string,
+    message: string,
+    images?: ImageContent[],
+    streamingBehavior?: "steer" | "followUp",
+    agentMode: ComposerAgentMode = "normal",
+    templateDescription?: string,
+  ) {
+    const submission = buildComposerPromptSubmission(message, agentMode);
+    let result: Awaited<ReturnType<typeof api.agents.prompt>>;
+    try {
+      result = await api.agents.prompt({
+        agentId,
+        message: submission.message,
+        images,
+        ...(submission.agentMessage ? { agentMessage: submission.agentMessage } : {}),
+        ...(templateDescription ? { description: templateDescription } : {}),
+        ...(streamingBehavior ? { streamingBehavior } : {}),
+      });
+    } catch (error) {
+      // IPC/fetch 在请求发出后断开时无法判断主进程是否已经提交给 pi；按未知处理，
+      // 绝不能把它降级为可重试失败，否则网络/IPC 抖动会造成重复发送。
+      throw new PromptDeliveryUnknownError(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    if (!result.accepted) {
+      if (result.delivery === "unknown") {
+        throw new PromptDeliveryUnknownError(result.error);
+      }
+      throw new Error(result.error);
+    }
+  }
+
   async function submitPromptSnapshot(
     agentId: string,
     message: string,
@@ -4059,19 +4625,29 @@ export function App() {
     /** prompt 模板匹配到的 description，作为元数据发给 pi agent 标识意图 */
     templateDescription?: string,
   ) {
-    // 这里接收快照参数,让 composer 发送和历史消息"重新发送"共享同一条路径。
-    // Agent 忙碌时显式使用官方 streamingBehavior=steer:消息会进入 pi 的运行中队列,
-    // 而不是留在 desktop 本地等整个 agent idle 后再发送。
-    const behavior = streamingBehavior ?? (isAgentBusy ? "steer" : undefined);
-    const submission = buildComposerPromptSubmission(message, agentMode);
-    await api.agents.prompt({
-      agentId,
-      message: submission.message,
-      images,
-      ...(submission.agentMessage ? { agentMessage: submission.agentMessage } : {}),
-      ...(templateDescription ? { description: templateDescription } : {}),
-      ...(behavior ? { streamingBehavior: behavior } : {}),
-    });
+    // 非队列入口继续保持原有行为：当前选中 agent 忙碌时默认 steer。
+    // 客户端队列 drain 直接调用 dispatchPromptSnapshot，并显式指定其投递语义。
+    const behavior =
+      streamingBehavior ??
+      (agentId === activeAgentId && isAgentBusy ? "steer" : undefined);
+    try {
+      await dispatchPromptSnapshot(
+        agentId,
+        message,
+        images,
+        behavior,
+        agentMode,
+        templateDescription,
+      );
+      return true;
+    } catch (error) {
+      if (error instanceof PromptDeliveryUnknownError) {
+        showToast(t("app.queuedUnknown"), 6000);
+        return "unknown" as const;
+      }
+      showToast(error instanceof Error ? error.message : String(error), 4000);
+      return false;
+    }
   }
 
   /** 重发防重复：通过 messageId 锁避免同一消息多次重发。
@@ -5477,7 +6053,16 @@ export function App() {
                         <button
                           disabled={
                             activeAgent?.status === "starting" ||
-                            restartingAgentId === activeAgentId
+                            restartingAgentId === activeAgentId ||
+                            Boolean(
+                              activeAgentId &&
+                              (queueFlushByAgentRef.current.has(activeAgentId) ||
+                                (queuedPrompts[activeAgentId] ?? []).some(
+                                  (queuedPrompt) =>
+                                    queuedPrompt.status === "sending" ||
+                                    queuedPrompt.status === "unknown",
+                                )),
+                            )
                           }
                           onClick={async () => {
                             if (!activeAgentId || !activeAgent) return;
@@ -5832,6 +6417,103 @@ export function App() {
               </div>
             );
           })()}
+          {activeQueuedPrompts.length > 0 && activeAgentId && (
+            <div
+              ref={queuedTrackRef}
+              className="queued-track"
+              aria-label={t("app.queuedMessagesLabel")}
+            >
+              <div className="queued-panel">
+                <div className="queued-panel-header">
+                  <span>{t("app.queuedMessagesLabel")}</span>
+                  <span className="queued-panel-count">
+                    {activeQueuedPrompts.length}
+                  </span>
+                </div>
+                <div className="queued-list">
+                  {visibleQueuedPrompts.map((queuedPrompt, index) => {
+                    const status = queuedPrompt.status ?? "pending";
+                    const canRetractToInput = canRetractQueuedPromptToInput(status);
+                    const canDiscard = canDiscardQueuedPrompt(status);
+                    const previewText =
+                      queuedPrompt.displayText.trim() ||
+                      t("app.queuedImageMessage");
+                    const rowTitle = [
+                      previewText,
+                      queuedPrompt.error,
+                      status === "unknown" ? t("app.queuedUnknown") : "",
+                    ]
+                      .filter(Boolean)
+                      .join("\n");
+                    return (
+                      <div
+                        key={queuedPrompt.id}
+                        className={`queued-row ${status} queued-behavior-${queuedPrompt.behavior}`}
+                        title={rowTitle}
+                      >
+                        <span className="queued-index" aria-hidden="true">
+                          {index + 1}
+                        </span>
+                        <span className="queued-text">{previewText}</span>
+                        {queuedPrompt.images?.length ? (
+                          <span className="queued-meta">
+                            {t("app.queuedImageCount", {
+                              count: String(queuedPrompt.images.length),
+                            })}
+                          </span>
+                        ) : null}
+                        {status === "sending" ? (
+                          <span className="queued-meta">
+                            {t("app.queuedSending")}
+                          </span>
+                        ) : status === "failed" ? (
+                          <span className="queued-meta failed">
+                            {t("app.queuedFailed")}
+                          </span>
+                        ) : status === "unknown" ? (
+                          <span className="queued-meta unknown">
+                            {t("app.queuedUnknownShort")}
+                          </span>
+                        ) : null}
+                        <div className="queued-actions">
+                          <button
+                            type="button"
+                            className="queued-icon-btn"
+                            disabled={!canRetractToInput}
+                            title={t("app.retractToInput")}
+                            aria-label={t("app.retractToInput")}
+                            onClick={() =>
+                              retractQueuedPromptForEdit(
+                                activeAgentId,
+                                queuedPrompt,
+                              )
+                            }
+                          >
+                            <Pencil size={13} strokeWidth={2} />
+                          </button>
+                          <button
+                            type="button"
+                            className="queued-icon-btn danger"
+                            disabled={!canDiscard}
+                            title={t("app.retractDiscard")}
+                            aria-label={t("app.retractDiscard")}
+                            onClick={() =>
+                              discardQueuedPrompt(
+                                activeAgentId,
+                                queuedPrompt.id,
+                              )
+                            }
+                          >
+                            <X size={13} strokeWidth={2} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
           <div
             ref={composerBoxRef}
             className={`composer-box ${
@@ -5917,9 +6599,25 @@ export function App() {
                 setSuggestionsOpen(detectTrigger(prompt, composerCursor) !== null);
               }}
               onChange={(newValue, cursor) => {
-                setPrompt(newValue);
-                setComposerCursor(cursor);
-                setSuggestionsOpen(detectTrigger(newValue, cursor) !== null);
+                const targetAgentId = activeAgentIdRef.current;
+                if (targetAgentId) setPromptFromNativeInput(targetAgentId, newValue);
+                if (targetAgentId) {
+                  setBusyDraftByAgent((current) => {
+                    if (!newValue.trim()) {
+                      if (!current[targetAgentId]) return current;
+                      const next = { ...current };
+                      delete next[targetAgentId];
+                      return next;
+                    }
+                    if (!isAgentBusy || current[targetAgentId]) return current;
+                    return { ...current, [targetAgentId]: true };
+                  });
+                }
+                if (suggestionsOpen) setComposerCursor(cursor);
+                const nextSuggestionsOpen = detectTrigger(newValue, cursor) !== null;
+                if (nextSuggestionsOpen !== suggestionsOpen) {
+                  setSuggestionsOpen(nextSuggestionsOpen);
+                }
                 // 如果正在历史导航,检测到用户手动编辑内容则退出历史模式
                 if (historyNavigating) {
                   const currentHistoryCommand = commandHistory[historyIndex];
@@ -5931,7 +6629,7 @@ export function App() {
                 }
               }}
               onCursorChange={(cursor) => {
-                setComposerCursor(cursor);
+                if (suggestionsOpen) setComposerCursor(cursor);
               }}
               onKeyDown={handleComposerKeyDown}
               onPaste={handlePaste}
@@ -5958,7 +6656,10 @@ export function App() {
                 onClose={() => {
                   const el = composerTextareaRef.current;
                   const cursor = el ? getCaretOffsetOf(el) : composerCursor;
-                  const result = clearSuggestionTrigger(prompt, cursor);
+                  const liveComposerPrompt = activeAgentIdRef.current
+                    ? (livePromptByAgentRef.current[activeAgentIdRef.current] ?? prompt)
+                    : prompt;
+                  const result = clearSuggestionTrigger(liveComposerPrompt, cursor);
                   setPrompt(result.text);
                   setComposerCursor(result.cursor);
                   pendingComposerCaretRef.current = result.cursor;
@@ -5970,7 +6671,10 @@ export function App() {
                 onPick={(value) => {
                   const el = composerTextareaRef.current;
                   const cursor = el ? getCaretOffsetOf(el) : composerCursor;
-                  const result = applySuggestion(prompt, cursor, value);
+                  const liveComposerPrompt = activeAgentIdRef.current
+                    ? (livePromptByAgentRef.current[activeAgentIdRef.current] ?? prompt)
+                    : prompt;
+                  const result = applySuggestion(liveComposerPrompt, cursor, value);
                   setPrompt(result.text);
                   setComposerCursor(result.cursor);
                   pendingComposerCaretRef.current = result.cursor;
@@ -5986,13 +6690,49 @@ export function App() {
                 <span className="composer-mode-status">{composerStatusText}</span>
               )}
               <div className="footer-actions">
-                <div className="send-behavior-menu-wrap">
+                <div
+                  className="send-behavior-menu-wrap"
+                  onMouseLeave={scheduleSendBehaviorMenuClose}
+                >
+                  {showBusySendControls && hasComposerContent && (
+                      <div className="send-behavior-toggle">
+                        <button
+                          type="button"
+                          className="send-behavior-primary"
+                          title={t("app.sendSteerTitle")}
+                          aria-label={t("app.sendSteerTitle")}
+                          onClick={sendPrompt}
+                        >
+                          <ArrowUp size={15} strokeWidth={2.4} />
+                        </button>
+                        <button
+                          type="button"
+                          className="send-behavior-chevron"
+                          title={t("app.sendBehaviorTitle")}
+                          aria-label={t("app.sendBehaviorTitle")}
+                          aria-haspopup="menu"
+                          aria-expanded={sendBehaviorMenuOpen}
+                          onMouseEnter={keepSendBehaviorMenuOpen}
+                          onFocus={keepSendBehaviorMenuOpen}
+                          onClick={() => setSendBehaviorMenuOpen((open) => !open)}
+                        >
+                          <ChevronDown size={12} strokeWidth={2.2} />
+                        </button>
+                      </div>
+                    )}
                   {isAgentBusy ? (
-                    <button className="btn-circle stop" onClick={() => abortAgent()} title={t("app.stop")}>
+                    <button
+                      type="button"
+                      className="btn-circle stop"
+                      onClick={() => abortAgent()}
+                      title={t("app.stop")}
+                      aria-label={t("app.stop")}
+                    >
                       <Square size={18} strokeWidth={0} fill="currentColor" />
                     </button>
-                  ) : (
+                  ) : !keepBusyDraftControls ? (
                     <button
+                      type="button"
                       disabled={
                         isAgentStarting ||
                         !activeAgentId ||
@@ -6001,29 +6741,25 @@ export function App() {
                       className="btn-circle send"
                       onClick={sendPrompt}
                       title={t("app.send")}
+                      aria-label={t("app.send")}
                     >
                       <ArrowUp size={18} strokeWidth={2.5} />
                     </button>
-                  )}
-                  {isAgentBusy &&
-                    (prompt.trim() || attachedImages.length > 0) && (
-                      <button
-                        className="send-behavior-toggle"
-                        title={t("app.sendBehaviorTitle")}
-                        onClick={() => setSendBehaviorMenuOpen((open) => !open)}
-                      >
-                        <ChevronDown size={14} />
+                  ) : null}
+                  {sendBehaviorMenuOpen && showBusySendControls && hasComposerContent && (
+                    <div
+                      className="send-behavior-menu"
+                      role="menu"
+                      onMouseEnter={keepSendBehaviorMenuOpen}
+                      onMouseLeave={scheduleSendBehaviorMenuClose}
+                    >
+                      <button className="send-behavior-option steer" type="button" role="menuitem" onClick={sendPrompt}>
+                        <span className="send-behavior-option-dot" aria-hidden="true" />
+                        <span>{t("app.sendSteerTitle")}</span>
                       </button>
-                    )}
-                  {sendBehaviorMenuOpen && (
-                    <div className="send-behavior-menu">
-                      <button onClick={sendPrompt}>
-                        <strong>{t("app.sendSteerTitle")}</strong>
-                        <span>{t("app.sendSteerDesc")}</span>
-                      </button>
-                      <button onClick={sendPromptAsFollowUp}>
-                        <strong>{t("app.sendFollowUpTitle")}</strong>
-                        <span>{t("app.sendFollowUpDesc")}</span>
+                      <button className="send-behavior-option follow-up" type="button" role="menuitem" onClick={sendPromptAsFollowUp}>
+                        <span className="send-behavior-option-dot" aria-hidden="true" />
+                        <span>{t("app.sendFollowUpTitle")}</span>
                       </button>
                     </div>
                   )}
@@ -6041,17 +6777,26 @@ export function App() {
             open={terminalDockVisible}
             closing={terminalDockClosing}
             collapsed={terminalCollapsed}
-            height={terminalHeightByAgent[activeAgentId] ?? 220}
+            height={terminalRowHeight}
             terminal={api.terminal}
             onCollapsedChange={(collapsed) =>
               setTerminalCollapsedForAgent(activeAgentId, collapsed)
             }
-            onHeightChange={(height) =>
+            onHeightChange={(height) => {
+              const maxHeight = Math.max(
+                120,
+                chatLayoutHeight -
+                  (chatHeaderRef.current?.offsetHeight ?? 78) -
+                  COMPOSER_MIN_TIMELINE_HEIGHT -
+                  COMPOSER_MIN_HEIGHT -
+                  28 -
+                  queuedChromeBudget,
+              );
               setTerminalHeightByAgent((current) => ({
                 ...current,
-                [activeAgentId]: height,
-              }))
-            }
+                [activeAgentId]: Math.min(height, maxHeight),
+              }));
+            }}
             onClose={() => setTerminalOpenForAgent(activeAgentId, false)}
           />
         )}
