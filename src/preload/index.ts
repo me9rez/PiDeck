@@ -424,6 +424,8 @@ const api = {
 			) as Promise<FeedbackEnvironment>,
 		openExternal: (url: string) =>
 			ipcRenderer.invoke(ipcChannels.appOpenExternal, url) as Promise<void>,
+		onOpenInBrowser: (callback: (url: string) => void) =>
+			subscribe(ipcChannels.appOpenInBrowser, callback),
 		restart: () => ipcRenderer.invoke(ipcChannels.appRestart) as Promise<void>,
 		rendererLog: (
 			level: AppLogLevel,

@@ -110,6 +110,7 @@ export const ipcChannels = {
 	appUpdateProgress: "app:update-progress",
 	appFeedbackEnvironment: "app:feedback-environment",
 	appOpenExternal: "app:open-external",
+	appOpenInBrowser: "app:open-in-browser",
 	appRestart: "app:restart",
 	preloadReady: "preload:ready",
 	preloadError: "preload:error",

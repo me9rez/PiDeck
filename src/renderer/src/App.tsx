@@ -133,7 +133,7 @@ import {
   type SessionModifiedFile,
 } from "./components/app/AppParts";
 import { GitPanel } from "./components/app/GitPanel";
-import { BrowserPanel } from "./components/app/BrowserPanel";
+import { BrowserPanel, navigateTo } from "./components/app/BrowserPanel";
 import {
   groupToolMessages,
   getMultiSelectImageCaptureIds,
@@ -2068,6 +2068,11 @@ export function App() {
     });
     // 直接在原始 runtimeState 事件上识别 tool true→false，避免 React 把很快的
     // tool_start/tool_end 批量成一次 render 后漏掉 steer 的投递窗口。
+    const offOpenInBrowser = api.app.onOpenInBrowser?.((url: string) => {
+      setDrawer("browser");
+      setDrawerCollapsed(false);
+      navigateTo(url);
+    });
     const offRuntimeState = api.agents.onRuntimeState((payload) => {
       const previous = runtimeStateByAgentRef.current[payload.agentId];
       const nextState = applyAgentRuntimeState(payload.agentId, payload.state);
@@ -2170,6 +2175,7 @@ export function App() {
       offLog();
       offSettings();
       offUpdateProgress();
+      offOpenInBrowser?.();
       offRuntimeState();
       offThinking();
       offUiRequest();

@@ -128,7 +128,6 @@ import type { FeishuChatBinding } from "../shared/types";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
-let internalLinkWindow: BrowserWindow | null = null;
 /** 标记是否由用户主动退出（托盘菜单「退出」），区别于窗口关闭隐藏到托盘 */
 let isQuitting = false;
 let projectStore: ProjectStore;
@@ -497,42 +496,20 @@ async function openExternalUrl(url: string) {
 	if (!url.startsWith("http:") && !url.startsWith("https:")) return;
 	const settings = settingsStore.get();
 	if (settings.linkOpenMode === "internal") {
-		openInternalLinkWindow(url);
+		openInternalLinkInBrowserPanel(url);
 		return;
 	}
 	await shell.openExternal(url);
 }
 
-function openInternalLinkWindow(url: string) {
-	// 内部打开使用独立 BrowserWindow，避免外部网页导航污染主工作台，同时保留系统浏览器作为默认选项。
-	if (!internalLinkWindow || internalLinkWindow.isDestroyed()) {
-		internalLinkWindow = new BrowserWindow({
-			width: 1180,
-			height: 820,
-			minWidth: 760,
-			minHeight: 520,
-			title: "PiDeck",
-			parent: mainWindow ?? undefined,
-			webPreferences: {
-				nodeIntegration: false,
-				contextIsolation: true,
-				sandbox: true,
-			},
-		});
-		internalLinkWindow.on("closed", () => {
-			internalLinkWindow = null;
-		});
-		internalLinkWindow.webContents.setWindowOpenHandler(({ url: nextUrl }) => {
-			void openExternalUrl(nextUrl);
-			return { action: "deny" };
-		});
-	}
-	internalLinkWindow.loadURL(url).catch((error) => {
+function openInternalLinkInBrowserPanel(url: string) {
+	// 内部打开：将 URL 发送到渲染进程，由 BrowserPanel 在侧栏/弹框中加载，
+	// 替代之前的独立 BrowserWindow 方案，保持一致的浏览体验。
+	if (!mainWindow || mainWindow.isDestroyed()) {
 		void shell.openExternal(url);
-		console.warn("Failed to load internal link window, falling back to browser:", error);
-	});
-	internalLinkWindow.show();
-	internalLinkWindow.focus();
+		return;
+	}
+	mainWindow.webContents.send(ipcChannels.appOpenInBrowser, url);
 }
 
 function printStartupInfo() {

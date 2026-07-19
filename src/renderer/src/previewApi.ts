@@ -410,6 +410,7 @@ export function createPreviewApi(): PiDesktopApi {
 			}),
 			installUpdate: async () => undefined,
 			onUpdateProgress: () => () => undefined,
+			onOpenInBrowser: () => () => undefined,
 			feedbackEnvironment: async () => ({
 				appVersion: "preview",
 				platform: "win32",
