@@ -84,6 +84,7 @@ export const ipcChannels = {
 	gitRefs: "git:refs",
 	gitBranchCompare: "git:branch-compare",
 	gitCommitDetail: "git:commit-detail",
+	gitCommitFileDiff: "git:commit-file-diff",
 	gitDiffFileBetween: "git:diff-file-between",
 	gitStatus: "git:status",
 	gitStage: "git:stage",

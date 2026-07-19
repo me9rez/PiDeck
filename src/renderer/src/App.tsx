@@ -167,6 +167,8 @@ import type {
   OpenCodeSessionSummary,
   FileTreeNode,
   GitBranchInfo,
+  CommitEntry,
+  GitChangedFile,
   WorktreeEntry,
   ImageContent,
   PiCommand,
@@ -512,6 +514,8 @@ export function App() {
   const [agents, setAgents] = useState<AgentTab[]>([]);
   const [pendingAgents, setPendingAgents] = useState<PendingAgentTab[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string>();
+  const activeProjectIdRef = useRef<string | undefined>(activeProjectId);
+  activeProjectIdRef.current = activeProjectId;
   const [activeAgentId, setActiveAgentId] = useState<string>();
   // 切换 agent（新会话/恢复会话）时刷新设置，使 pi agent 的 hideThinkingBlock 立即生效
   useEffect(() => {
@@ -531,10 +535,6 @@ export function App() {
     Record<string, ChatMessage[]>
   >({});
   const [files, setFiles] = useState<FileTreeNode[]>([]);
-  /** Git 工作区中对比 HEAD 有变更的文件列表（用于右侧面板展示）。 */
-  const [gitChangedFiles, setGitChangedFiles] = useState<
-    { path: string; status: string }[]
-  >([]);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [sessionsByProject, setSessionsByProject] = useState<
     Record<string, SessionSummary[]>
@@ -805,6 +805,12 @@ export function App() {
     mode: "view" | "diff";
     originalContent: string;
     modifiedContent?: string;
+    /** 历史提交 Diff 必须只读，不能把旧快照误保存回当前工作区。 */
+    allowSave: boolean;
+    /** 同一文件在不同提交中可以有多个历史 Diff，使用该 key 避免互相覆盖。 */
+    tabKey?: string;
+    /** 历史 Diff 在标签中追加短 hash，便于区分同一路径的不同提交。 */
+    label?: string;
   }
   const [editorTabs, setEditorTabs] = useState<EditorTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -828,15 +834,23 @@ export function App() {
   );
   /** 打开（或切换到已存在的）编辑器 tab。已打开时跳转；未打开时新增，超过 5 个淘汰最早 tab。 */
   const openEditorTab = useCallback(
-    (path: string, mode: "view" | "diff", originalContent?: string, modifiedContent?: string) => {
+    (
+      path: string,
+      mode: "view" | "diff",
+      originalContent?: string,
+      modifiedContent?: string,
+      allowSave = true,
+      tabKey?: string,
+      label?: string,
+    ) => {
       setEditorTabs((prev) => {
-        const existing = prev.find((t) => t.filePath === path);
+        const existing = prev.find((t) => t.filePath === path && t.tabKey === tabKey);
         if (existing) {
           // 已打开的 tab：更新 mode 和 content（工具 diff 可能和普通查看模式不同）
           setActiveTabId(existing.id);
           return prev.map((t) =>
             t.id === existing.id
-              ? { ...t, mode, originalContent: originalContent ?? "", modifiedContent }
+              ? { ...t, mode, originalContent: originalContent ?? "", modifiedContent, allowSave, tabKey, label }
               : t,
           );
         }
@@ -846,6 +860,9 @@ export function App() {
           mode,
           originalContent: originalContent ?? "",
           modifiedContent,
+          allowSave,
+          tabKey,
+          label,
         };
         const next = [...prev, newTab];
         if (next.length > 5) next.shift();
@@ -2512,13 +2529,9 @@ export function App() {
             ? current
             : next,
         );
-        // 同时刷新 Git 工作区变更文件列表（对比 HEAD）
-        const changed = await api.git.changedFiles(activeProjectId);
-        if (!stopped) setGitChangedFiles(changed);
       } catch {
         if (!stopped) {
           setGitInfo({ current: null, branches: [] });
-          setGitChangedFiles([]);
         }
       }
     };
@@ -2849,17 +2862,6 @@ export function App() {
     if (!silent) showToast(t("app.filesRefreshed"), 1800);
   }
 
-  async function refreshGitChangedFiles(projectId = activeProjectId) {
-    if (!projectId) return;
-    try {
-      const next = await api.git.changedFiles(projectId);
-      setGitChangedFiles(next);
-    } catch {
-      // 非 Git 项目或 git 未安装，静默置空
-      setGitChangedFiles([]);
-    }
-  }
-
   function openFilePath(path: string) {
     // 绝对路径直接打开;相对路径按当前 agent cwd / 项目目录解析后交给系统默认应用。
     const resolvedPath = resolveFileLinkPath(path, activeAgent?.cwd ?? activeProject?.path);
@@ -2888,6 +2890,41 @@ export function App() {
     setEditorMode("modal");
     setDrawer(null);
     openEditorTab(path, "diff", resolvedOriginal, resolvedModified);
+  }
+
+  async function openCommitFileDiff(commit: CommitEntry, file: GitChangedFile) {
+    if (!activeProjectId) return;
+    const projectId = activeProjectId;
+    try {
+      const diff = await api.git.commitFileDiff(
+        projectId,
+        commit.hash,
+        file.path,
+        file.originalPath,
+      );
+      // 用户等待 Git 读取期间可能已切换项目；旧项目结果不能覆盖当前编辑器上下文。
+      if (activeProjectIdRef.current !== projectId) return;
+      if (!diff) {
+        showToast(t("git.fileDiffUnavailable"));
+        return;
+      }
+      // 历史快照由 Git 直接提供两侧内容，复用 Monaco Diff Viewer，但始终以只读弹框展示。
+      setEditorMode("modal");
+      setDrawer(null);
+      openEditorTab(
+        diff.path,
+        "diff",
+        diff.originalContent,
+        diff.modifiedContent,
+        false,
+        `${commit.hash}:${diff.path}`,
+        `${diff.path.split(/[/\\]/).pop() ?? diff.path} (${commit.shortHash})`,
+      );
+    } catch (error) {
+      if (activeProjectIdRef.current === projectId) {
+        showToast(error instanceof Error ? error.message : String(error));
+      }
+    }
   }
 
   async function refreshSessionHistory(projectId = sessionsProjectId) {
@@ -4716,7 +4753,6 @@ ${goalTextRef.current}
     // 打开文件面板时触发一次静默刷新，确保目录结构是最新的，避免上次打开时文件已有变更但未刷新。
     if (panel === "files" && activeProjectId) {
       void refreshFiles(activeProjectId, true);
-      void refreshGitChangedFiles(activeProjectId);
     }
     setDrawer((current) => {
       if (current === panel) return drawerPinned ? current : null;
@@ -4759,6 +4795,13 @@ ${goalTextRef.current}
       if (activeAgentId) saveExpandedDirs(activeAgentId, next);
       return next;
     });
+  }
+
+  function collapseAllDirectories() {
+    const collapsedDirs = new Set<string>();
+    setExpandedDirs(collapsedDirs);
+    // 全部收起同样持久化，避免用户切换会话后又恢复此前展开的目录。
+    if (activeAgentId) saveExpandedDirs(activeAgentId, collapsedDirs);
   }
 
   function startResize(target: "list" | "drawer", event: PointerEvent) {
@@ -6370,7 +6413,7 @@ ${goalTextRef.current}
               onClose={() => { setActiveTabId(null); setEditorTabs([]); setDrawer(null); }}
               readContent={readEditorFileContent}
               readOriginalContent={readEditorOriginalContent}
-              saveContent={saveEditorFileContent}
+              saveContent={activeTab.allowSave ? saveEditorFileContent : undefined}
               theme={document.documentElement.dataset.theme === "dark" ? "dark" : "light"}
               maxFileSizeMB={settings.maxEditorFileSizeMB}
             />
@@ -6398,6 +6441,8 @@ ${goalTextRef.current}
             <GitPanel
               projectId={activeProjectId}
               commitLog={api.git.commitLog}
+              commitDetail={api.git.commitDetail}
+              onOpenCommitFileDiff={openCommitFileDiff}
               branchCompare={api.git.branchCompare}
               getStatus={api.git.status}
               stageFiles={api.git.stage}
@@ -6434,9 +6479,9 @@ ${goalTextRef.current}
                 (s) => !s.parentSessionPath && (sessionSourceFilter[sessionsProjectId]!)!.has(s.source ?? "pi"),
               ).concat(sessions.filter(s => s.parentSessionPath)) : sessions}
               sessionsLoading={sessionHistoryLoading}
-              gitChangedFiles={gitChangedFiles}
               expandedDirs={expandedDirs}
               onToggleDirectory={toggleDirectory}
+              onCollapseAllDirectories={collapseAllDirectories}
               pinned={drawerPinned}
               onTogglePin={toggleDrawerPinned}
               onCollapse={collapseDrawer}
@@ -6444,7 +6489,6 @@ ${goalTextRef.current}
               onFileContextMenu={(node, x, y) => setFileMenu({ node, x, y })}
               onRefreshFiles={() => {
                 refreshFiles(activeProjectId);
-                refreshGitChangedFiles(activeProjectId);
               }}
               onOpenFolder={() => {
                 const p = projects.find((p) => p.id === activeProjectId);
@@ -6472,7 +6516,6 @@ ${goalTextRef.current}
               }
               onExportSession={exportHistorySession}
               onDeleteSession={deleteHistorySession}
-              onDiffFile={diffFilePath}
               onViewFile={viewFilePath}
               onOpenFile={openFilePath}
             />
@@ -7082,7 +7125,7 @@ ${goalTextRef.current}
           onClose={() => { setActiveTabId(null); setEditorTabs([]); }}
           readContent={readEditorFileContent}
           readOriginalContent={readEditorOriginalContent}
-          saveContent={saveEditorFileContent}
+          saveContent={activeTab.allowSave ? saveEditorFileContent : undefined}
           theme={document.documentElement.dataset.theme === "dark" ? "dark" : "light"}
           maxFileSizeMB={settings.maxEditorFileSizeMB}
         />

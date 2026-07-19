@@ -50,8 +50,8 @@ describe("Seti file icon integration", () => {
     assert.match(source, /dangerouslySetInnerHTML=\{\{ __html: svg \}\}/);
     assert.match(source, /aria-hidden="true"/);
     assert.match(source, /file-node-type-label/);
-    assert.match(source, /file-node-git-badge/);
-    assert.match(source, /status: f\.status/);
+    assert.match(source, /file-node-seti-icon/);
+    assert.match(source, /function fileIconElement/);
   });
 
   test("Git panel and file tree share the same vendored Seti lookup and color mapping", () => {

@@ -1638,6 +1638,15 @@ function registerIpc() {
 	);
 
 	ipcMain.handle(
+		ipcChannels.gitCommitFileDiff,
+		async (_event, projectId: string, ref: string, filePath: string, originalPath?: string) => {
+			const project = projectStore.get(projectId);
+			if (!project) return null;
+			return gitService.getCommitFileDiff(project.path, ref, filePath, originalPath);
+		},
+	);
+
+	ipcMain.handle(
 		ipcChannels.gitDiffFileBetween,
 		async (_event, projectId: string, ref1: string, ref2: string, filePath: string) => {
 			const project = projectStore.get(projectId);

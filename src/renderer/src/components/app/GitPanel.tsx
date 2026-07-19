@@ -3,7 +3,9 @@ import { createPortal } from "react-dom";
 import { Check, Loader2, RefreshCw } from "lucide-react";
 import type {
   BranchDiffResult,
+  CommitDetail,
   CommitEntry,
+  GitChangedFile,
   GitFileStatus,
   GitResourceGroups,
 } from "../../../../shared/types";
@@ -14,6 +16,8 @@ import { t } from "../../i18n";
 type GitPanelProps = {
   projectId: string;
   commitLog: (projectId: string, options?: { maxEntries?: number; ref?: string; allBranches?: boolean }) => Promise<CommitEntry[]>;
+  commitDetail: (projectId: string, ref: string) => Promise<CommitDetail | null>;
+  onOpenCommitFileDiff: (commit: CommitEntry, file: GitChangedFile) => void | Promise<void>;
   branchCompare: (projectId: string, base: string, target: string) => Promise<BranchDiffResult>;
   getStatus: (projectId: string) => Promise<GitResourceGroups>;
   stageFiles: (projectId: string, paths: string[]) => Promise<void>;
@@ -735,6 +739,8 @@ export function GitPanel(props: GitPanelProps) {
       <SourceControlGraph
         projectId={props.projectId}
         commitLog={props.commitLog}
+        commitDetail={props.commitDetail}
+        onOpenCommitFileDiff={props.onOpenCommitFileDiff}
         branches={props.branches}
         currentBranch={props.currentBranch}
         open={paneState.open.graph}
@@ -804,17 +810,15 @@ function buildGraphRows(commits: CommitEntry[]): GraphRow[] {
     const output: GraphNode[] = [];
     let firstParentAdded = false;
 
-    if (commit.parents.length > 0) {
-      for (const node of input) {
-        if (node.id === commit.hash) {
-          if (!firstParentAdded) {
-            output.push({ id: commit.parents[0], color: node.color });
-            firstParentAdded = true;
-          }
-          continue;
+    for (const node of input) {
+      if (node.id === commit.hash) {
+        if (commit.parents.length > 0 && !firstParentAdded) {
+          output.push({ id: commit.parents[0], color: node.color });
+          firstParentAdded = true;
         }
-        output.push({ ...node });
+        continue;
       }
+      output.push({ ...node });
     }
 
     for (let index = firstParentAdded ? 1 : 0; index < commit.parents.length; index++) {
@@ -841,7 +845,9 @@ function lastNodeIndex(nodes: GraphNode[], id: string): number {
 function GraphLanes({ row, current }: { row: GraphRow; current: boolean }) {
   const { commit, input, output, nodeIndex } = row;
   const inputIndex = input.findIndex((node) => node.id === commit.hash);
-  const nodeColor = output[nodeIndex]?.color ?? input[nodeIndex]?.color ?? 0;
+  const nodeColor = inputIndex !== -1
+    ? input[inputIndex].color
+    : output[nodeIndex]?.color ?? 0;
   const paths: GraphPath[] = [];
   let outputIndex = 0;
 
@@ -856,7 +862,8 @@ function GraphLanes({ row, current }: { row: GraphRow; current: boolean }) {
           d: `M ${laneX(index)} 0 A ${GRAPH_LANE_WIDTH} ${GRAPH_LANE_WIDTH} 0 0 1 ${GRAPH_LANE_WIDTH * index} ${GRAPH_ROW_HEIGHT / 2} H ${laneX(nodeIndex)}`,
           color: node.color,
         });
-      } else {
+      } else if (commit.parents.length > 0) {
+        // 第一父提交占据当前 lane；root commit 则会删除 lane，后续 lane 需要左移匹配。
         outputIndex += 1;
       }
       continue;
@@ -916,9 +923,154 @@ function primaryRef(refNames: string[]): { label: string; kind: "branch" | "tag"
   return null;
 }
 
+function absoluteTime(ms: number): string {
+  if (!Number.isFinite(ms)) return "";
+  return new Date(ms).toLocaleString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function GraphContinuation({ row }: { row: GraphRow }) {
+  const width = GRAPH_LANE_WIDTH * (Math.min(MAX_VISIBLE_GRAPH_LANES, Math.max(row.output.length, 1)) + 1);
+  return (
+    <span className="git-graph-cell git-graph-continuation" style={{ width }} aria-hidden="true">
+      <svg className="git-graph-svg" width={width} height="26" viewBox={`0 0 ${width} 26`}>
+        {row.output.slice(0, MAX_VISIBLE_GRAPH_LANES).map((node, index) => (
+          <path
+            key={`${node.id}-${index}`}
+            d={`M ${laneX(index)} 0 V 26`}
+            fill="none"
+            stroke={GRAPH_COLORS[node.color % GRAPH_COLORS.length]}
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+        ))}
+      </svg>
+    </span>
+  );
+}
+
+function CommitFileRow(props: {
+  file: GitChangedFile;
+  row: GraphRow;
+  onOpen: () => void | Promise<void>;
+}) {
+  const { file, row } = props;
+  const [opening, setOpening] = useState(false);
+  const name = fileNameOnly(file.path);
+  const description = file.originalPath
+    ? t("git.renamedFrom", { path: file.originalPath })
+    : file.path;
+  return (
+    <button
+      type="button"
+      className={`git-history-file-row ${statusTone(file.status, true)}`}
+      title={file.originalPath ? `${file.originalPath} → ${file.path}` : file.path}
+      aria-label={t("git.openFileDiff", { path: file.path })}
+      aria-busy={opening}
+      disabled={opening}
+      onClick={async (event) => {
+        event.stopPropagation();
+        setOpening(true);
+        try {
+          await props.onOpen();
+        } finally {
+          setOpening(false);
+        }
+      }}
+    >
+      <GraphContinuation row={row} />
+      <span className="git-history-file-content">
+        <FileIcon name={name} />
+        <span className="git-history-file-name">{name}</span>
+        <span className="git-history-file-path">{description}</span>
+      </span>
+      <span className="git-decoration" aria-hidden="true">
+        {opening ? <Loader2 size={13} className="git-spin" /> : compareStatusLetter(file.status)}
+      </span>
+    </button>
+  );
+}
+
+type CommitHoverState = {
+  commit: CommitEntry;
+  anchor: DOMRect;
+};
+
+type CommitDetailState = {
+  detail: CommitDetail | null;
+  loading: boolean;
+  error: string | null;
+};
+
+function CommitHoverCard(props: {
+  hover: CommitHoverState;
+  state: CommitDetailState | undefined;
+}) {
+  const commit = props.state?.detail?.commit ?? props.hover.commit;
+  const shortStat = props.state?.detail?.commit.shortStat;
+  const gap = 8;
+  const margin = 8;
+  const width = Math.min(360, Math.max(0, window.innerWidth - margin * 2));
+  const maxHeight = Math.min(420, Math.max(0, window.innerHeight - margin * 2));
+  let left = props.hover.anchor.right + gap;
+  if (left + width > window.innerWidth - margin) {
+    left = props.hover.anchor.left - width - gap;
+  }
+  left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
+  const top = Math.max(margin, Math.min(props.hover.anchor.top, window.innerHeight - margin - maxHeight));
+  const refs = commit.refNames.flatMap((item) => item.split(",")).map((item) => item.trim()).filter(Boolean);
+  const initial = commit.authorName.trim().slice(0, 1).toLocaleUpperCase() || "?";
+
+  return createPortal(
+    <div
+      id="git-commit-hover"
+      className="git-commit-hover"
+      role="tooltip"
+      style={{ left, top, width }}
+    >
+      <div className="git-commit-hover-author">
+        <span className="git-commit-hover-avatar" aria-hidden="true">{initial}</span>
+        <span className="git-commit-hover-author-text">
+          <strong>{commit.authorName}</strong>
+          {commit.authorEmail && <span>{`<${commit.authorEmail}>`}</span>}
+          <small>{relativeTime(commit.authorDate)} · {absoluteTime(commit.authorDate)}</small>
+        </span>
+      </div>
+      <div className="git-commit-hover-message">{commit.fullMessage || commit.message}</div>
+      <div className="git-commit-hover-identity">
+        <code>{commit.hash}</code>
+        {refs.length > 0 && (
+          <div className="git-commit-hover-refs">
+            {refs.map((item) => <span key={item}>{item}</span>)}
+          </div>
+        )}
+      </div>
+      {props.state?.loading && (
+        <div className="git-commit-hover-status"><Loader2 size={13} className="git-spin" /> {t("git.loadingCommitDetails")}</div>
+      )}
+      {props.state?.error && <div className="git-commit-hover-status error">{props.state.error}</div>}
+      {shortStat && (
+        <div className="git-commit-hover-stat">
+          <span>{t("git.filesChanged", { count: shortStat.files })}</span>
+          <span className="added">+{shortStat.insertions}</span>
+          <span className="deleted">-{shortStat.deletions}</span>
+        </div>
+      )}
+    </div>,
+    document.body,
+  );
+}
+
 function SourceControlGraph(props: {
   projectId: string;
   commitLog: GitPanelProps["commitLog"];
+  commitDetail: GitPanelProps["commitDetail"];
+  onOpenCommitFileDiff: GitPanelProps["onOpenCommitFileDiff"];
   branches: string[];
   currentBranch: string | null;
   open: boolean;
@@ -929,15 +1081,106 @@ function SourceControlGraph(props: {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ref, setRef] = useState("");
+  const [expandedHashes, setExpandedHashes] = useState<Set<string>>(() => new Set());
+  const [detailStates, setDetailStates] = useState<Record<string, CommitDetailState>>({});
+  const [hover, setHover] = useState<CommitHoverState | null>(null);
   const loadSequence = useRef(0);
+  const detailSequence = useRef(0);
+  const detailStateRef = useRef<Record<string, CommitDetailState>>({});
+  const detailRequests = useRef(new Map<string, Promise<CommitDetail | null>>());
+  const hoverTimer = useRef<number | null>(null);
+
+  const clearHoverTimer = useCallback(() => {
+    if (hoverTimer.current !== null) {
+      window.clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+  }, []);
+
+  const resetCommitDetails = useCallback(() => {
+    detailSequence.current += 1;
+    detailRequests.current.clear();
+    detailStateRef.current = {};
+    setDetailStates({});
+    setExpandedHashes(new Set());
+    setHover(null);
+    clearHoverTimer();
+  }, [clearHoverTimer]);
+
+  const updateDetailState = useCallback((hash: string, state: CommitDetailState) => {
+    detailStateRef.current = { ...detailStateRef.current, [hash]: state };
+    setDetailStates(detailStateRef.current);
+  }, []);
+
+  const loadCommitDetail = useCallback((hash: string): Promise<CommitDetail | null> => {
+    const cached = detailStateRef.current[hash];
+    // 成功和失败结果都保留到 Graph 下次刷新；否则不可用的提交会在每次 hover 时重复拉起 Git 子进程。
+    if (cached && !cached.loading) return Promise.resolve(cached.detail);
+    const pending = detailRequests.current.get(hash);
+    if (pending) return pending;
+
+    const requestSequence = detailSequence.current;
+    const projectId = props.projectId;
+    updateDetailState(hash, { detail: null, loading: true, error: null });
+    const request = props.commitDetail(projectId, hash)
+      .then((detail) => {
+        if (requestSequence !== detailSequence.current || projectId !== props.projectId) return null;
+        updateDetailState(hash, detail
+          ? { detail, loading: false, error: null }
+          : { detail: null, loading: false, error: t("git.commitDetailsUnavailable") });
+        return detail;
+      })
+      .catch((caught) => {
+        if (requestSequence === detailSequence.current && projectId === props.projectId) {
+          updateDetailState(hash, { detail: null, loading: false, error: errorMessage(caught) });
+        }
+        return null;
+      })
+      .finally(() => {
+        if (detailRequests.current.get(hash) === request) detailRequests.current.delete(hash);
+      });
+    detailRequests.current.set(hash, request);
+    return request;
+  }, [props.commitDetail, props.projectId, updateDetailState]);
 
   useEffect(() => {
-    // A project can reuse the same branch name, so clear graph selections explicitly.
+    // A project can reuse the same branch name, so all graph-local state must stop at this boundary.
     loadSequence.current += 1;
     setCommits([]);
     setError(null);
+    setLoading(false);
     setRef("");
-  }, [props.projectId]);
+    resetCommitDetails();
+  }, [props.projectId, resetCommitDetails]);
+
+  useEffect(() => {
+    if (!props.open) {
+      setHover(null);
+      clearHoverTimer();
+    }
+  }, [clearHoverTimer, props.open]);
+
+  useEffect(() => {
+    const dismissOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        clearHoverTimer();
+        setHover(null);
+      }
+    };
+    // Hover 使用打开时缓存的 DOMRect；窗口尺寸变化后旧坐标不再可靠，直接关闭等待重新触发。
+    const dismissOnResize = () => {
+      clearHoverTimer();
+      setHover(null);
+    };
+    window.addEventListener("keydown", dismissOnEscape);
+    window.addEventListener("resize", dismissOnResize);
+    return () => {
+      window.removeEventListener("keydown", dismissOnEscape);
+      window.removeEventListener("resize", dismissOnResize);
+      clearHoverTimer();
+      detailSequence.current += 1;
+    };
+  }, [clearHoverTimer]);
 
   const load = useCallback(async () => {
     if (!props.open) return;
@@ -945,6 +1188,7 @@ function SourceControlGraph(props: {
     const projectId = props.projectId;
     setLoading(true);
     setError(null);
+    resetCommitDetails();
     try {
       const next = await props.commitLog(projectId, { maxEntries: 50, ref: ref || undefined, allBranches: !ref });
       if (request === loadSequence.current && projectId === props.projectId) setCommits(next);
@@ -953,10 +1197,36 @@ function SourceControlGraph(props: {
     } finally {
       if (request === loadSequence.current && projectId === props.projectId) setLoading(false);
     }
-  }, [props.commitLog, props.open, props.projectId, ref]);
+  }, [props.commitLog, props.open, props.projectId, ref, resetCommitDetails]);
 
   useEffect(() => { void load(); }, [load]);
   const graphRows = useMemo(() => buildGraphRows(commits), [commits]);
+
+  const toggleCommit = useCallback((hash: string) => {
+    const isOpening = !expandedHashes.has(hash);
+    setExpandedHashes((current) => {
+      const next = new Set(current);
+      if (isOpening) next.add(hash);
+      else next.delete(hash);
+      return next;
+    });
+    if (isOpening && !detailStateRef.current[hash]) void loadCommitDetail(hash);
+  }, [expandedHashes, loadCommitDetail]);
+
+  const scheduleHover = useCallback((commit: CommitEntry, anchor: HTMLElement) => {
+    clearHoverTimer();
+    const anchorRect = anchor.getBoundingClientRect();
+    hoverTimer.current = window.setTimeout(() => {
+      hoverTimer.current = null;
+      setHover({ commit, anchor: anchorRect });
+      void loadCommitDetail(commit.hash);
+    }, 350);
+  }, [clearHoverTimer, loadCommitDetail]);
+
+  const dismissHover = useCallback(() => {
+    clearHoverTimer();
+    setHover(null);
+  }, [clearHoverTimer]);
 
   return (
     <section
@@ -979,28 +1249,70 @@ function SourceControlGraph(props: {
           {error && <div className="git-status-msg error">{error}</div>}
           {!loading && !error && !commits.length && <div className="git-status-msg">{t("git.noCommits")}</div>}
           {commits.length > 0 && (
-            <div className="git-history-list">
+            <div className="git-history-list" role="list" onScroll={dismissHover}>
               {graphRows.map((row) => {
                 const commit = row.commit;
+                const detailState = detailStates[commit.hash];
+                const commitFiles = detailState?.detail?.files ?? [];
+                const expanded = expandedHashes.has(commit.hash);
                 const ref = primaryRef(commit.refNames);
                 const isCurrent = commit.refNames.some((item) => item.includes("HEAD ->"));
                 return (
-                  <div
-                    key={commit.hash}
-                    className={`git-history-row${isCurrent ? " current" : ""}`}
-                    title={`${commit.message}\n${commit.hash}\n${commit.authorName} · ${relativeTime(commit.authorDate)}`}
-                  >
-                    <GraphLanes row={row} current={isCurrent} />
-                    <span className="git-history-label">
-                      <span className="git-history-msg">{commit.message}</span>
-                      <span className="git-history-author">{commit.authorName}</span>
-                    </span>
-                    {ref && <span className={`git-ref git-ref-${ref.kind}`}>{ref.label}</span>}
+                  <div key={commit.hash} className="git-history-item" role="listitem">
+                    <button
+                      type="button"
+                      className={`git-history-row${isCurrent ? " current" : ""}${expanded ? " expanded" : ""}`}
+                      aria-expanded={expanded}
+                      aria-describedby={hover?.commit.hash === commit.hash ? "git-commit-hover" : undefined}
+                      onClick={() => toggleCommit(commit.hash)}
+                      onMouseEnter={(event) => scheduleHover(commit, event.currentTarget)}
+                      onMouseLeave={dismissHover}
+                      onFocus={(event) => scheduleHover(commit, event.currentTarget)}
+                      onBlur={dismissHover}
+                    >
+                      <GraphLanes row={row} current={isCurrent} />
+                      <span className="git-history-label">
+                        <span className="git-history-msg"><Twistie open={expanded} />{commit.message}</span>
+                        <span className="git-history-author">{commit.authorName}</span>
+                      </span>
+                      {ref && <span className={`git-ref git-ref-${ref.kind}`}>{ref.label}</span>}
+                    </button>
+                    {expanded && (
+                      <div className="git-history-children">
+                        {detailState?.loading && (
+                          <div className="git-history-detail-status">
+                            <GraphContinuation row={row} />
+                            <span><Loader2 size={13} className="git-spin" /> {t("git.loadingCommitFiles")}</span>
+                          </div>
+                        )}
+                        {detailState?.error && !detailState.loading && (
+                          <div className="git-history-detail-status error">
+                            <GraphContinuation row={row} />
+                            <span>{detailState.error}</span>
+                          </div>
+                        )}
+                        {detailState?.detail && commitFiles.length === 0 && (
+                          <div className="git-history-detail-status">
+                            <GraphContinuation row={row} />
+                            <span>{t("git.noCommitFiles")}</span>
+                          </div>
+                        )}
+                        {commitFiles.map((file) => (
+                          <CommitFileRow
+                            key={`${file.originalPath ?? ""}-${file.path}`}
+                            file={file}
+                            row={row}
+                            onOpen={() => props.onOpenCommitFileDiff(commit, file)}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
           )}
+          {hover && <CommitHoverCard hover={hover} state={detailStates[hover.commit.hash]} />}
         </div>
       )}
     </section>

@@ -798,6 +798,8 @@ export type GitFileStatus = "modified" | "added" | "deleted" | "renamed";
 export type GitChangedFile = {
 	path: string;
 	status: GitFileStatus;
+	/** 重命名文件在父提交中的原始路径；其他状态不设置。 */
+	originalPath?: string;
 };
 
 /** git worktree --porcelain 输出解析出的单条工作树信息 */
@@ -868,8 +870,24 @@ export type CommitEntry = {
 	refNames: string[];    // 关联的 ref 名称（如 HEAD -> main, origin/main）
 	/** git log --graph 输出的 ASCII 图谱行（等宽字体渲染即得分支图） */
 	graph: string[];
+	/** 完整提交信息；历史列表仍使用 message 作为单行 subject。 */
+	fullMessage?: string;
 	/** 改动的文件统计（仅 getCommitDetail 填充，getCommitLog 不包含） */
 	shortStat?: { files: number; insertions: number; deletions: number };
+};
+
+/** 单个提交的按需详情，对应 VS Code SCM History 的 resolve + changes。 */
+export type CommitDetail = {
+	commit: CommitEntry;
+	files: GitChangedFile[];
+};
+
+/** 提交历史中单个文件相对第一父提交的两侧内容，供 Monaco Diff Viewer 展示。 */
+export type GitCommitFileDiff = {
+	path: string;
+	originalPath?: string;
+	originalContent: string;
+	modifiedContent: string;
 };
 
 /** Git 引用（分支 / 远程分支 / Tag） */
@@ -883,7 +901,7 @@ export type GitRef = {
 /** 两个分支之间的差异概要 */
 export type BranchDiffResult = {
 	/** 变更的文件列表（base...target 三点语法 symmetric difference） */
-	files: { path: string; status: GitFileStatus }[];
+	files: GitChangedFile[];
 	ahead: number;   // target 比 base 多几个 commit
 	behind: number;  // target 比 base 少几个 commit（等于 0 时 base 是 target 的子集）
 };

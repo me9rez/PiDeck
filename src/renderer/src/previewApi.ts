@@ -332,6 +332,7 @@ export function createPreviewApi(): PiDesktopApi {
 				refs: async () => [],
 				branchCompare: async () => ({ files: [], ahead: 0, behind: 0 }),
 				commitDetail: async () => null,
+				commitFileDiff: async () => null,
 				diffFileBetween: async () => "",
 				status: async () => ({ merge: [], index: [], workingTree: [], untracked: [] }),
 				stage: async () => {},

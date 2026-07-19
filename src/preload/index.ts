@@ -44,6 +44,8 @@ import type {
 	FileTreeNode,
 	ForkMessage,
 	GitBranchInfo,
+	CommitDetail,
+	GitCommitFileDiff,
 	CommitEntry,
 	GitRef,
 	BranchDiffResult,
@@ -301,7 +303,16 @@ const api = {
 				ipcChannels.gitCommitDetail,
 				projectId,
 				ref,
-			) as Promise<CommitEntry | null>,
+			) as Promise<CommitDetail | null>,
+		// 提交历史中单个文件相对第一父提交的两侧内容
+		commitFileDiff: (projectId: string, ref: string, filePath: string, originalPath?: string) =>
+			ipcRenderer.invoke(
+				ipcChannels.gitCommitFileDiff,
+				projectId,
+				ref,
+				filePath,
+				originalPath,
+			) as Promise<GitCommitFileDiff | null>,
 		// 两个 ref 间单个文件的 diff
 		diffFileBetween: (projectId: string, ref1: string, ref2: string, filePath: string) =>
 			ipcRenderer.invoke(

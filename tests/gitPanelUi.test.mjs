@@ -20,6 +20,9 @@ const gitKeys = [
   "git.commit",
   "git.resizePanes",
   "git.relativeSeconds",
+  "git.loadingCommitDetails",
+  "git.loadingCommitFiles",
+  "git.renamedFrom",
 ];
 
 describe("Git panel VS Code Source Control contract", () => {
@@ -141,5 +144,56 @@ describe("Git panel VS Code Source Control contract", () => {
     assert.match(styles, /font-size:\s*var\(--font-size-body\)/);
     assert.match(styles, /\.git-pane-header \.git-compact-select\s*\{[\s\S]*?width:\s*160px/);
     assert.match(styles, /min-width:\s*120px/);
+  });
+
+  test("shows delayed commit hovers and lazily expands changed files", () => {
+    assert.match(panel, /function CommitHoverCard/);
+    assert.match(panel, /createPortal\([\s\S]*?document\.body/);
+    assert.match(panel, /window\.setTimeout\([\s\S]*?350/);
+    assert.match(panel, /void loadCommitDetail\(commit\.hash\)/);
+    assert.match(panel, /detailRequests\.current\.get\(hash\)/);
+    assert.match(panel, /role="list"/);
+    assert.match(panel, /role="listitem"/);
+    assert.match(panel, /className=\{`git-history-row/);
+    assert.match(panel, /type="button"/);
+    assert.match(panel, /aria-expanded=\{expanded\}/);
+    assert.doesNotMatch(panel, /role="tree"/);
+    assert.doesNotMatch(panel, /role="treeitem"/);
+    assert.match(panel, /function CommitFileRow/);
+    assert.match(panel, /function GraphContinuation/);
+    assert.match(panel, /getFileIconSeti\(name\)/);
+    assert.doesNotMatch(panel, /title=\{`\$\{commit\.message\}/);
+    assert.match(app, /commitDetail=\{api\.git\.commitDetail\}/);
+    assert.match(preload, /Promise<CommitDetail \| null>/);
+    assert.match(styles, /\.git-commit-hover\s*\{/);
+    assert.match(styles, /\.git-history-file-row/);
+  });
+
+  test("opens committed files as isolated read-only first-parent diffs", () => {
+    assert.match(panel, /onOpenCommitFileDiff/);
+    assert.match(panel, /aria-label=\{t\("git\.openFileDiff"/);
+    assert.match(panel, /props\.onOpenCommitFileDiff\(commit, file\)/);
+    assert.match(app, /api\.git\.commitFileDiff/);
+    assert.match(app, /`\$\{commit\.hash\}:\$\{diff\.path\}`/);
+    assert.match(app, /saveContent=\{activeTab\.allowSave \? saveEditorFileContent : undefined\}/);
+    assert.match(preload, /gitCommitFileDiff/);
+    assert.match(main, /gitCommitFileDiff/);
+    assert.match(gitService, /async getCommitFileDiff/);
+    assert.match(gitService, /detail\.commit\.parents\[0\]/);
+    assert.match(gitService, /4b825dc642cb6eb9a060e54bf8d69288fbee4904/);
+    assert.match(gitService, /file\.originalPath \?\? file\.path/);
+    assert.match(i18n, /"git\.openFileDiff"/);
+    assert.match(styles, /\.git-history-file-row:focus-visible/);
+  });
+
+  test("loads commit files against the first parent and preserves rename origins", () => {
+    assert.match(gitService, /commit\.parents\[0\]/);
+    assert.match(gitService, /\["diff", "--name-status", "-z", "--find-renames", commit\.parents\[0\], commit\.hash\]/);
+    assert.match(gitService, /\["diff-tree", "--root", "--no-commit-id", "--name-status", "-r", "-z", "--find-renames", commit\.hash\]/);
+    assert.match(gitService, /originalPath:\s*originalOrCurrentPath/);
+    assert.match(gitService, /fullMessage:\s*message/);
+    assert.match(i18n, /"git\.loadingCommitDetails"/);
+    assert.match(i18n, /"git\.loadingCommitFiles"/);
+    assert.match(i18n, /"git\.renamedFrom"/);
   });
 });

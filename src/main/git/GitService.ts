@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { GitBranchInfo, CommitEntry, GitRef, BranchDiffResult, GitFileStatus } from "../../shared/types";
+import type { GitBranchInfo, CommitDetail, CommitEntry, GitRef, BranchDiffResult, GitChangedFile, GitFileStatus, GitCommitFileDiff } from "../../shared/types";
 import { GitStatus } from "../../shared/types";
 import type { GitResource, GitResourceGroups } from "../../shared/types";
 
@@ -335,23 +335,94 @@ export class GitService {
 	}
 
 	/**
-	 * 获取单个 commit 的详细信息（含 shortStat 统计）。
-	 * 复刻 VS Code 的 getCommit()——git show -s --shortstat。
+	 * 获取单个 commit 的详细信息和相对第一父提交的文件变更。
+	 * Merge commit 与 VS Code SCM History 一样只比较第一父提交；根提交通过
+	 * diff-tree --root 与空树比较，避免为根提交伪造不存在的 parent ref。
 	 */
 	async getCommitDetail(
 		cwd: string,
 		ref: string,
-	): Promise<CommitEntry | null> {
+	): Promise<CommitDetail | null> {
 		const COMMIT_FORMAT = "%H%n%aN%n%aE%n%at%n%ct%n%P%n%D%n%B";
 		try {
+			// Renderer IPC 可被任意渲染代码调用，不能直接把 ref 放进 git show 的选项区。
+			// `--end-of-options` 将输入严格解析为 commit-ish，再只向后续命令传完整 hash。
+			const { stdout: resolvedRef } = await execFileAsync(
+				"git",
+				["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`],
+				{ cwd },
+			);
+			const commitHash = resolvedRef.trim();
+			if (!/^[0-9a-f]{40}$/i.test(commitHash)) return null;
 			const { stdout } = await execFileAsync(
 				"git",
-				["show", "-s", "--shortstat", `--format=${COMMIT_FORMAT}`, "-z", ref, "--"],
+				["show", "-s", "--shortstat", `--format=${COMMIT_FORMAT}`, "-z", commitHash, "--"],
 				{ cwd, maxBuffer: 32 * 1024 * 1024 },
 			);
 			if (!stdout) return null;
-			const commits = parseCommits(stdout);
-			return commits[0] ?? null;
+
+			const commit = parseCommits(stdout, true)[0];
+			if (!commit) return null;
+
+			const diffArgs = commit.parents[0]
+				? ["diff", "--name-status", "-z", "--find-renames", commit.parents[0], commit.hash]
+				: ["diff-tree", "--root", "--no-commit-id", "--name-status", "-r", "-z", "--find-renames", commit.hash];
+			const { stdout: filesRaw } = await execFileAsync("git", diffArgs, {
+				cwd,
+				maxBuffer: 32 * 1024 * 1024,
+			});
+
+			return { commit, files: parseDiffNameStatus(filesRaw) };
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * 读取提交详情中单个文件相对第一父提交的两侧内容。
+	 * 文件路径必须先命中 getCommitDetail 返回的变更列表，避免调用方读取该提交中的任意路径；
+	 * 根提交使用 Git 空树作为父版本，新增和删除文件缺失的一侧自然返回空内容。
+	 */
+	async getCommitFileDiff(
+		cwd: string,
+		ref: string,
+		filePath: string,
+		originalPath?: string,
+	): Promise<GitCommitFileDiff | null> {
+		try {
+			const detail = await this.getCommitDetail(cwd, ref);
+			if (!detail) return null;
+			const file = detail.files.find(
+				(entry) => entry.path === filePath && entry.originalPath === originalPath,
+			);
+			if (!file) return null;
+
+			const parent = detail.commit.parents[0] ?? "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+			const oldPath = file.originalPath ?? file.path;
+			const readBlob = async (blobRef: string): Promise<string | null> => {
+				try {
+					const { stdout } = await execFileAsync("git", ["show", blobRef], {
+						cwd,
+						maxBuffer: 32 * 1024 * 1024,
+					});
+					return stdout;
+				} catch {
+					return null;
+				}
+			};
+			// 只有 Git 状态明确表示该侧不存在时才返回空字符串。其他读取失败必须
+			// 向上传递为不可用，避免把损坏对象、权限错误或超限文件伪装成空文件。
+			const [originalContent, modifiedContent] = await Promise.all([
+				file.status === "added" ? Promise.resolve("") : readBlob(`${parent}:${oldPath}`),
+				file.status === "deleted" ? Promise.resolve("") : readBlob(`${detail.commit.hash}:${file.path}`),
+			]);
+			if (originalContent === null || modifiedContent === null) return null;
+			return {
+				path: file.path,
+				...(file.originalPath ? { originalPath: file.originalPath } : {}),
+				originalContent,
+				modifiedContent,
+			};
 		} catch {
 			return null;
 		}
@@ -382,7 +453,7 @@ export class GitService {
  */
 const commitRegex = /([0-9a-f]{40})\n(.*)\n(.*)\n(.*)\n(.*)\n(.*)\n(.*)(?:\n([^]*?))?(?:\x00)(?:\n((?:.*)files? changed(?:.*))$)?/gm;
 
-function parseCommits(data: string): CommitEntry[] {
+function parseCommits(data: string, includeFullMessage = false): CommitEntry[] {
 	const commits: CommitEntry[] = [];
 	let match: RegExpExecArray | null;
 
@@ -409,6 +480,7 @@ function parseCommits(data: string): CommitEntry[] {
 				? refNamesRaw.split(",").map((s: string) => s.trim()).filter(Boolean)
 				: [],
 			graph: [],
+			...(includeFullMessage ? { fullMessage: message } : {}),
 			shortStat: shortStatRaw ? parseShortStat(shortStatRaw) : undefined,
 		});
 	} while (true);
@@ -461,23 +533,28 @@ function parseRefs(data: string): GitRef[] {
 	return refs;
 }
 
-function parseDiffNameStatus(raw: string): { path: string; status: GitFileStatus }[] {
-	const files: { path: string; status: GitFileStatus }[] = [];
+function parseDiffNameStatus(raw: string): GitChangedFile[] {
+	const files: GitChangedFile[] = [];
 	const fields = raw.split("\0");
-	for (let i = 0; i < fields.length - 1; ) {
-		const statusToken = fields[i++]!;
-		const statusChar = statusToken[0]!;
-		let currentPath = fields[i++]!;
-		if (statusChar === "R" || statusChar === "C") {
-			currentPath = fields[i++]!;
-		}
+	for (let index = 0; index < fields.length - 1; ) {
+		const statusToken = fields[index++] ?? "";
+		const statusChar = statusToken[0] ?? "";
+		const originalOrCurrentPath = fields[index++] ?? "";
+		const isRenameOrCopy = statusChar === "R" || statusChar === "C";
+		const currentPath = isRenameOrCopy ? fields[index++] ?? "" : originalOrCurrentPath;
 		if (!currentPath) continue;
 		const status: GitFileStatus =
 			statusChar === "A" ? "added"
-			: statusChar === "D" ? "deleted"
-			: statusChar === "R" ? "renamed"
-			: "modified";
-		files.push({ path: currentPath, status });
+				: statusChar === "D" ? "deleted"
+					: statusChar === "R" || statusChar === "C" ? "renamed"
+						: "modified";
+		files.push({
+			path: currentPath,
+			status,
+			...(status === "renamed" && originalOrCurrentPath
+				? { originalPath: originalOrCurrentPath }
+				: {}),
+		});
 	}
 	return files;
 }
