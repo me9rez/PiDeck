@@ -191,6 +191,19 @@ export function BrowserPanel(props: {
 		}
 		applyDeviceUserAgent(wv, moduleState.device);
 
+		const onDomReady = () => {
+			webviewReadyRef.current = true;
+			// 如果有 pending 外部导航，webview 就绪后立即执行
+			if (moduleState.navigateKey > 0) {
+				const activeTab = moduleState.tabs.find((t) => t.id === moduleState.activeTabId);
+				if (activeTab) {
+					applyDeviceUserAgent(wv, moduleState.device);
+					wv.loadURL(activeTab.url);
+				}
+			}
+		};
+		wv.addEventListener("dom-ready", onDomReady);
+
 		const onDidNavigate = (event: Event) => {
 			const nextUrl = (event as unknown as WebviewEvent<"did-navigate">).url;
 			setUrl(nextUrl);
@@ -238,6 +251,7 @@ export function BrowserPanel(props: {
 		wv.addEventListener("new-window", onNewWindow);
 
 		return () => {
+			wv.removeEventListener("dom-ready", onDomReady);
 			wv.removeEventListener("did-navigate", onDidNavigate);
 			wv.removeEventListener("did-navigate-in-page", onDidNavigateInPage);
 			wv.removeEventListener("did-start-loading", onDidStartLoading);
@@ -245,6 +259,7 @@ export function BrowserPanel(props: {
 			wv.removeEventListener("load-progress", onProgress);
 			wv.removeEventListener("page-title-updated", onPageTitleUpdated);
 			wv.removeEventListener("new-window", onNewWindow);
+			webviewReadyRef.current = false;
 		};
 	}, [applyDeviceUserAgent, updateActiveTab, url]);
 
@@ -278,16 +293,13 @@ export function BrowserPanel(props: {
 		loadUrl(DEFAULT_HOME);
 	}, [loadUrl, persistTabs]);
 
-	// 响应外部 navigateTo 调用（来自 App.tsx 的 onOpenInBrowser IPC）
+	// webview 是否已触发 dom-ready，用于延迟外部导航直到 webview 就绪。
+	const webviewReadyRef = useRef(false);
 	const [navigateKey, setNavigateKey] = useState(0);
 	useEffect(() => {
 		if (moduleState.navigateKey === 0) return;
 		setNavigateKey(moduleState.navigateKey);
-		const activeTab = moduleState.tabs.find((t) => t.id === moduleState.activeTabId);
-		if (activeTab) {
-			loadUrl(activeTab.url);
-		}
-	}, [loadUrl, navigateKey]);
+	}, [navigateKey]);
 
 	const closeTab = useCallback(
 		(tabId: string, event: React.MouseEvent) => {
