@@ -32,6 +32,7 @@ import {
   Wrench,
   Minus,
   FolderOpen,
+  FolderCog,
   Globe,
   Pin,
   Pencil,
@@ -5086,6 +5087,25 @@ ${goalTextRef.current}
                     )}
                   </div>
                   <span className="project-row-actions">
+                    {projectIsChat && (
+                      <span
+                        className="project-action"
+                        title={t("app.chatProjectSettings")}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          // 打开系统目录选择器（默认定位当前聊天目录），选中后保存并重新加载该目录下的会话。
+                          void (async () => {
+                            const picked = await api.projects.chooseChatPath();
+                            if (!picked || picked === project.path) return;
+                            await api.projects.setChatPath(picked);
+                            await refreshProjectSessions(project.id);
+                            showToast(t("app.chatProjectPathUpdated"), 1800);
+                          })().catch((err) => console.error("Failed to change chat directory", err));
+                        }}
+                      >
+                        <FolderCog size={14} />
+                      </span>
+                    )}
                     <span
                       className="project-action"
                       title={t("app.projectNewAgent")}

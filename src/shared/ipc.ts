@@ -14,6 +14,10 @@ export const ipcChannels = {
 	projectsListRoot: "projects:list-root",
 	projectsListWorktreeChildren: "projects:list-worktree-children",
 	projectsToggleWorktreeEnabled: "projects:toggle-worktree-enabled",
+	// 选择聊天记录目录（系统文件选择器，默认当前聊天目录）
+	projectsChooseChatPath: "projects:choose-chat-path",
+	// 设置聊天记录目录并持久化
+	projectsSetChatPath: "projects:set-chat-path",
 	editorsList: "editors:list",
 	editorsRedetect: "editors:redetect",
 	editorsUpdate: "editors:update",

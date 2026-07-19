@@ -119,6 +119,12 @@ const api = {
 				ipcChannels.projectsToggleWorktreeEnabled,
 				projectId,
 			) as Promise<Project | null>,
+		// 选择聊天记录目录（系统文件选择器，默认当前目录）
+		chooseChatPath: () =>
+			ipcRenderer.invoke(ipcChannels.projectsChooseChatPath) as Promise<string | null>,
+		// 设置聊天记录目录
+		setChatPath: (path: string) =>
+			ipcRenderer.invoke(ipcChannels.projectsSetChatPath, path) as Promise<Project | null>,
 	},
 	projectResources: {
 		list: (projectId: string) =>

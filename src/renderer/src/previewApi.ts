@@ -226,6 +226,8 @@ export function createPreviewApi(): PiDesktopApi {
 			listRoot: async () => projects,
 			listWorktreeChildren: async () => [],
 			toggleWorktreeEnabled: async () => projects[0],
+			chooseChatPath: async () => null,
+			setChatPath: async () => projects[0],
 		},
 		projectResources: {
 			list: async () => ({ skills: [], extensions: [] }),

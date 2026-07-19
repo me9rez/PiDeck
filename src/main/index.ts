@@ -1247,6 +1247,31 @@ function registerIpc() {
 		},
 	);
 
+	// ── 聊天项目目录设置 ──
+
+	ipcMain.handle(ipcChannels.projectsChooseChatPath, async () => {
+		// 系统文件选择器，默认定位到当前聊天目录，便于用户就地切换。
+		const result = await dialog.showOpenDialog({
+			title: "选择聊天记录目录",
+			defaultPath: projectStore.getChatProjectPath(),
+			properties: ["openDirectory"],
+		});
+		if (result.canceled || result.filePaths.length === 0) return null;
+		return result.filePaths[0];
+	});
+
+	ipcMain.handle(
+		ipcChannels.projectsSetChatPath,
+		async (_event, path: string) => {
+			if (typeof path !== "string" || path.length === 0) throw new Error("Invalid chat path");
+			const project = await projectStore.setChatProjectPath(path);
+			// 路径变更后广播项目列表变化，渲染端据此刷新聊天项目的会话。
+			mainWindow?.webContents.send(ipcChannels.projectsChanged, projectStore.list());
+			void appLogger.info("project", "Chat project path updated", { path });
+			return project;
+		},
+	);
+
 	ipcMain.handle(ipcChannels.filesList, async (_event, projectId: string) => {
 		const project = projectStore.get(projectId);
 		if (!project) throw new Error(`Project not found: ${projectId}`);
