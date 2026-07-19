@@ -949,7 +949,7 @@ export function App() {
       const raw = localStorage.getItem(AGENT_DRAWER_KEY_PREFIX + agentId);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === "object" && (parsed.panel === null || ["files", "sessions", "browser", "editor"].includes(parsed.panel))) {
+        if (parsed && typeof parsed === "object" && (parsed.panel === null || ["files", "sessions", "browser", "editor", "git"].includes(parsed.panel))) {
           return parsed;
         }
       }
@@ -1021,6 +1021,7 @@ export function App() {
     lightBackground: "white",
     language: "system",
     piEnvironmentChecked: false,
+    enableGitManagement: true,
     closeToTray: true,
     enableNotifications: true,
     // showThinking 由 pi agent 的 hideThinkingBlock 控制，启动后从主进程加载的真实值会覆盖此处
@@ -1152,20 +1153,38 @@ export function App() {
     const savedState = loadDrawerState(activeAgentId);
     if (savedState) {
       const panel: DrawerPanel | null = savedState.panel;
-      if (savedState.pinned && panel) {
+      const canRestorePanel = panel !== "git" || settings.enableGitManagement;
+      if (savedState.pinned && panel && canRestorePanel) {
         setDrawerPinnedByAgent((current) => {
           if (current[activeAgentId] === panel) return current;
           return { ...current, [activeAgentId]: panel };
         });
       }
-      if (panel) {
+      if (panel && canRestorePanel) {
         setDrawer(panel);
         setDrawerCollapsed(false);
       }
     }
     const dirs = loadExpandedDirs(activeAgentId);
     setExpandedDirs(dirs);
-  }, [activeAgentId, loadDrawerState, loadExpandedDirs]);
+  }, [activeAgentId, loadDrawerState, loadExpandedDirs, settings.enableGitManagement]);
+
+  useEffect(() => {
+    if (settings.enableGitManagement) return;
+
+    // 关闭功能时同步移除当前 Git 抽屉及钉选状态，避免隐藏入口后留下无法操作的面板。
+    setDrawer((current) => current === "git" ? null : current);
+    setDrawerPinnedByAgent((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([, panel]) => panel !== "git"),
+      );
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+    if (activeAgentId) {
+      const saved = loadDrawerState(activeAgentId);
+      if (saved?.panel === "git") saveDrawerState(activeAgentId, null, false);
+    }
+  }, [activeAgentId, loadDrawerState, saveDrawerState, settings.enableGitManagement]);
 
   // 当活跃 Agent 切换或绑定列表变更时，加载该 Agent 指定的飞书 Bot
   // 绑定变更后同步刷新，确保配置页断开关联后已连接状态正确反映。
@@ -4688,6 +4707,7 @@ ${goalTextRef.current}
   }
 
   function openDrawer(panel: DrawerPanel) {
+    if (panel === "git" && !settings.enableGitManagement) return;
     if (drawerPinned && panel !== drawerPinnedPanel) return;
     if (panel === "sessions" && activeProjectId) {
       setSessionsProjectId(activeProjectId);
@@ -5606,15 +5626,6 @@ ${goalTextRef.current}
                       onCreateBranch={createBranch}
                     />
                   )}
-                  {activeProjectId && (
-                    <button
-                      className={`header-action-btn${drawer === "git" ? " active" : ""}`}
-                      title="Git History & Compare"
-                      onClick={() => openDrawer("git")}
-                    >
-                      <GitGraph size={15} />
-                    </button>
-                  )}
                 </div>
                 <div className="header-action-group session-group">
                   <div className="session-combo" ref={sessionComboRef}>
@@ -6279,6 +6290,19 @@ ${goalTextRef.current}
               },
               icon: <FolderOpen size={17} />,
             }}
+            gitAction={settings.enableGitManagement && activeProjectId && !isChatProject(activeProject) ? {
+              active: drawer === "git",
+              label: t("drawer.sourceControl"),
+              onClick: () => {
+                if (drawer === "git" && !drawerCollapsed) {
+                  setDrawer(null);
+                } else {
+                  openDrawer("git");
+                  setDrawerCollapsed(false);
+                }
+              },
+              icon: <GitGraph size={17} />,
+            } : undefined}
             editorsAction={{
               active: editorsOpen,
               label: t("app.openWithEditor"),
@@ -6358,7 +6382,7 @@ ${goalTextRef.current}
               onToggleFullscreen={() => setBrowserFullscreen(true)}
             />
           </div>
-        ) : drawerContentPanel === "git" && !drawerCollapsed && activeProjectId ? (
+        ) : settings.enableGitManagement && drawerContentPanel === "git" && !drawerCollapsed && activeProjectId ? (
           <div className="drawer-content-frame">
             <div className="drawer-header">
               <strong>{t("drawer.sourceControl")}</strong>

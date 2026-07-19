@@ -299,6 +299,8 @@ export type AppSettings = {
 	/** 界面语言，system 跟随系统语言；pseudo 用于长文案布局压力测试 */
 	language: AppLanguageMode;
 	piEnvironmentChecked: boolean;
+	/** 是否启用会话右侧的 Git 源代码管理入口与面板，默认开启以保持升级前行为。 */
+	enableGitManagement: boolean;
 	/** 关闭窗口时隐藏到系统托盘而不是退出 */
 	closeToTray: boolean;
 	/** 会话结束时发送系统通知 */

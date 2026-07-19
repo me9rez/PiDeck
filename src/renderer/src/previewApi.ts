@@ -126,6 +126,7 @@ let previewSettings: AppSettings = {
 	lightBackground: "white",
 	language: "system",
 	piEnvironmentChecked: true,
+	enableGitManagement: true,
 	closeToTray: true,
 	enableNotifications: true,
 	// showThinking 由 pi agent 的 hideThinkingBlock 控制，运行时从主进程加载

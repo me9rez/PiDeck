@@ -3817,6 +3817,7 @@ export function ConversationOutline(props: {
 	extraAction?: EntryAction;
 	terminalAction?: EntryAction;
 	filesAction?: EntryAction;
+	gitAction?: EntryAction;
 	editorsAction?: EntryAction & { anchorRef?: React.RefObject<HTMLButtonElement | null> };
 	browserAction?: EntryAction;
 }) {
@@ -3948,6 +3949,17 @@ export function ConversationOutline(props: {
 					onClick={props.filesAction.onClick}
 				>
 					{props.filesAction.icon}
+				</button>
+			)}
+			{props.gitAction && (
+				<button
+					type="button"
+					className={`git-entry${props.gitAction.active ? " active" : ""}`}
+					title={props.gitAction.label}
+					aria-label={props.gitAction.label}
+					onClick={props.gitAction.onClick}
+				>
+					{props.gitAction.icon}
 				</button>
 			)}
 			{props.editorsAction && (
