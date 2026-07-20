@@ -466,11 +466,15 @@ export class AgentManager {
 
 		const client = await process.start(input.sessionPath, trustOverride);
 		const t3 = Date.now();
+		const diag = process.getDiagnostics();
 		void this.appLogger?.info("agent", "Pi process spawned", {
 			agentId: id,
 			prepareMs: t1 - t0,
 			trustMs: t2 - t1,
 			spawnCallMs: t3 - t2,
+			command: diag?.command,
+			args: diag?.args?.join(' '),
+			cwd: diag?.cwd,
 		});
 
 		// 启动后先获取状态，get_messages 必须等状态就绪后再发送，
@@ -1150,6 +1154,13 @@ export class AgentManager {
 
 		const process = new PiProcess(project.path, this.settingsStore.get());
 		const client = await process.start(sessionPath);
+		const restartDiag = process.getDiagnostics();
+		void this.appLogger?.info("agent", "Pi process restarted", {
+			agentId,
+			command: restartDiag?.command,
+			args: restartDiag?.args?.join(' '),
+			cwd: restartDiag?.cwd,
+		});
 
 		// 注册事件监听（与 create() 保持一致）
 		process.on("event", (event) => this.handlePiEvent(agentId, event));

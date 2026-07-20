@@ -2135,12 +2135,22 @@ function registerIpc() {
 					throw error;
 				}
 			}
-			// WSL 设置变更时同步更新会话扫描器
+			// WSL 设置变更时同步更新会话扫描器和配置管理器
 			if ("wslEnabled" in patch || "wslDistro" in patch || "wslUser" in patch) {
 				if (settings.wslEnabled && settings.wslDistro && settings.wslUser) {
 					await sessionScanner.configureWsl(settings.wslDistro, settings.wslUser);
+					skillManager.configureWsl(settings.wslDistro, settings.wslUser);
+					promptManager.configureWsl(settings.wslDistro, settings.wslUser);
+					extensionManager.configureWsl(settings.wslDistro, settings.wslUser);
+					if (configManager) configManager.configureWsl(settings.wslDistro, settings.wslUser);
+					if (yaoPromptManager) yaoPromptManager.configureWsl(settings.wslDistro, settings.wslUser);
 				} else {
 					sessionScanner.clearWsl();
+					skillManager.configureWsl(null);
+					promptManager.configureWsl(null);
+					extensionManager.configureWsl(null);
+					if (configManager) configManager.configureWsl(null);
+					if (yaoPromptManager) yaoPromptManager.configureWsl(null);
 				}
 			}
 			return settings;
@@ -2973,37 +2983,56 @@ app.whenReady().then(async () => {
 	await settingsStore.load();
 
 	// 根据已加载的 WSL 设置配置会话扫描器，使其能同时扫描 WSL 中的 pi 会话目录
-	{
+	const syncWslConfig = async () => {
 		const { wslEnabled, wslDistro, wslUser } = settingsStore.get();
 		if (wslEnabled && wslDistro && wslUser) {
 			await sessionScanner.configureWsl(wslDistro, wslUser);
+			skillManager.configureWsl(wslDistro, wslUser);
+			promptManager.configureWsl(wslDistro, wslUser);
+			extensionManager.configureWsl(wslDistro, wslUser);
+				if (configManager) configManager.configureWsl(wslDistro, wslUser);
+			if (yaoPromptManager) yaoPromptManager.configureWsl(wslDistro, wslUser);
 		} else {
 			sessionScanner.clearWsl();
+			skillManager.configureWsl(null);
+			promptManager.configureWsl(null);
+			extensionManager.configureWsl(null);
+			if (configManager) configManager.configureWsl(null);
+			if (yaoPromptManager) yaoPromptManager.configureWsl(null);
 		}
-	}
+	};
+	await syncWslConfig();
 
 	// 自动部署 PiDeck 内置扩展：这些扩展提供桌面端差异预览、提问卡片和 Plan Mode。
-	// 放到 pi 自动发现目录后，新建/重启的 RPC Agent 会自动加载；只在内容变更时覆盖，避免用户目录产生无意义写入。
-	// Read disabled extensions so disabled built-in extensions aren't re-deployed at startup
-	const disabledExtList: string[] = await readFile(join(app.getPath("home"), ".pi", "agent", "settings.json"), "utf-8")
-		.then((raw: string) => JSON.parse(raw).disabledExtensions ?? [])
-		.catch(() => [] as string[]);
-	const disabledBuiltIn = new Set<string>(disabledExtList);
-
-	for (const extensionName of [
-		"pi-deck-ask-question.ts",
-		"pi-deck-plan-mode.ts",
-		"pi-deck-todo.ts",
-	]) {
-		if (disabledBuiltIn.has(extensionName)) {
-			// 已禁用：跳过部署但保留 .ts 文件，方便用户在扩展管理页重新启用老版本
-			// 误删过文件的场景通过 ExtensionManager 中的内置扩展补充列表兜底。
-			continue;
+	// Windows 和 WSL 环境各自部署一份，保证切换 pi 来源后扩展仍然可用。
+	const deployExtensionsTo = async (homeDir: string) => {
+		const extDisabledPath = join(homeDir, ".pi", "agent", "settings.json");
+		const disabledExtList: string[] = await readFile(extDisabledPath, "utf-8")
+			.then((raw: string) => JSON.parse(raw).disabledExtensions ?? [])
+			.catch(() => [] as string[]);
+		const disabledBuiltIn = new Set<string>(disabledExtList);
+		for (const extensionName of ["pi-deck-ask-question.ts", "pi-deck-plan-mode.ts", "pi-deck-todo.ts"]) {
+			if (disabledBuiltIn.has(extensionName)) continue;
+			await ensurePiDeckExtension(extensionName, homeDir).catch((error) => {
+				console.error(`Failed to install ${extensionName}:`, error);
+			});
 		}
-		await ensurePiDeckExtension(extensionName).catch((error) => {
-			console.error(`Failed to install ${extensionName}:`, error);
+	};
+	// 始终部署到 Windows 本地 home
+	await deployExtensionsTo(app.getPath("home"));
+	// WSL 启用时额外部署到 WSL 目录（通过 \\wsl$ UNC）
+	const wslSettings = settingsStore.get();
+	if (wslSettings.wslEnabled && wslSettings.wslDistro && wslSettings.wslUser) {
+		const wslUncHome = `\\\\wsl$\\${wslSettings.wslDistro}\\home\\${wslSettings.wslUser}`;
+		await deployExtensionsTo(wslUncHome).catch(() => {
+			console.warn('[PiDeck] Failed to deploy extensions to WSL, skipping');
 		});
 	}
+
+	// 补齐 pi settings.json 缺失的默认配置项，新安装或精简配置的用户无需手动添加。
+	await ensureAllPiSettingsDefaults().catch((error) => {
+		console.error("Failed to ensure pi settings defaults:", error);
+	});
 
 	// 清理已废弃的 pi-deck-project-trust 扩展：RPC 模式下 pi 的 project_trust 事件 hasUI 恒为 false，
 	// 该扩展无法弹窗，信任确认改由桌面端 AgentManager.ensureProjectTrust 自行处理，删除残留避免用户误解。
@@ -3091,9 +3120,9 @@ app.whenReady().then(async () => {
  * 将 PiDeck 内置的 pi 扩展部署到用户扩展目录，使 pi 自动加载。
  * 仅在目标文件不存在或内容不一致时覆盖写入，避免不必要的磁盘操作。
  */
-async function ensurePiDeckExtension(extensionName: string): Promise<void> {
-	const homedir = app.getPath("home");
-	const extensionsDir = join(homedir, ".pi", "agent", "extensions");
+async function ensurePiDeckExtension(extensionName: string, wslHome?: string): Promise<void> {
+	const home = wslHome ?? app.getPath("home");
+	const extensionsDir = join(home, ".pi", "agent", "extensions");
 	const targetPath = join(extensionsDir, extensionName);
 
 	// 获取源文件路径：开发模式下在 resources/ 目录，打包后通过 process.resourcesPath 访问
@@ -3126,6 +3155,67 @@ async function removeStalePiDeckExtension(extensionName: string): Promise<void> 
 	const targetPath = join(app.getPath("home"), ".pi", "agent", "extensions", extensionName);
 	await rm(targetPath, { force: true });
 	console.log(`[PiDeck] Removed stale extension: ${targetPath}`);
+}
+
+/**
+ * 补齐 pi 全局 settings.json 的推荐默认项。
+ * 仅添加缺失的 key，不覆盖用户已有配置。
+ * 适用于新安装 pi 或配置精简的用户。
+ */
+/** 补齐指定 configDir 下 settings.json 的缺失默认项 */
+async function ensurePiSettingsDefaults(configDir: string, piVersionHint?: string): Promise<void> {
+	const filePath = join(configDir, "settings.json");
+	let current: Record<string, unknown> = {};
+	try {
+		const raw = await readFile(filePath, "utf8");
+		current = JSON.parse(raw) as Record<string, unknown>;
+	} catch { /* 文件不存在或解析失败，使用空对象 */ }
+
+	let changed = false;
+	const defaults: Record<string, unknown> = {
+		theme: "dark",
+		hideThinkingBlock: false,
+		defaultProjectTrust: "ask",
+		compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
+		retry: { enabled: true, maxRetries: 3 },
+	};
+
+	if (piVersionHint && !current.lastChangelogVersion) {
+		current.lastChangelogVersion = piVersionHint;
+		changed = true;
+	}
+
+	for (const [key, defaultValue] of Object.entries(defaults)) {
+		if (!(key in current)) {
+			current[key] = defaultValue;
+			changed = true;
+		}
+	}
+
+	if (changed) {
+		await mkdir(configDir, { recursive: true });
+		await writeFile(filePath, JSON.stringify(current, null, 2), "utf8");
+		console.log('[PiDeck] Ensured pi settings defaults at:', filePath);
+	}
+}
+
+/** 对当前环境和 WSL 环境（如果启用）都补齐 settings.json 默认项 */
+async function ensureAllPiSettingsDefaults(): Promise<void> {
+	const s = settingsStore.get();
+	let piVersion = "";
+	if (piLocator) {
+		piVersion = (await piLocator.check(undefined, s.wslEnabled, s.wslDistro, s.wslUser).catch(() => null))?.version ?? "";
+	}
+
+	// Windows 本地
+	const winDir = join(app.getPath("home"), ".pi", "agent");
+	await ensurePiSettingsDefaults(winDir, piVersion).catch(() => {});
+
+	// WSL（如果已配置）
+	if (s.wslEnabled && s.wslDistro && s.wslUser) {
+		const wslDir = join(`\\\\wsl$\\${s.wslDistro}\\home\\${s.wslUser}`, ".pi", "agent");
+		await ensurePiSettingsDefaults(wslDir, piVersion).catch(() => {});
+	}
 }
 
 app.on("before-quit", () => {

@@ -20,10 +20,26 @@ const BUILT_IN_EXTENSIONS = [
  * 兼容老版本避免 unknown option 错误。
  */
 export class ExtensionManager {
+	/** WSL UNC home 路径（如 \\wsl$\Debian\home\piuser），null 表示使用本地 Windows home */
+	private wslHome: string | null = null;
+
 	constructor(
 		private readonly locator: PiLocator,
 		private readonly getSettings: SettingsProvider,
 	) {}
+
+	/** 配置 WSL 模式（通过 \\wsl$ UNC 访问 WSL 内 ~/.pi/agent/extensions/） */
+	configureWsl(distro: string | null, user?: string) {
+		if (distro && user) {
+			this.wslHome = `\\\\wsl$\\${distro}\\home\\${user}`;
+		} else {
+			this.wslHome = null;
+		}
+	}
+
+	private get homeDir(): string {
+		return this.wslHome ?? homedir();
+	}
 
 	/** 缓存的 pi 版本号，用于条件性传递 --no-approve。 */
 	private piVersion: string | null = null;
@@ -75,7 +91,7 @@ export class ExtensionManager {
 	 * 单文件扩展（.ts 文件）和目录扩展（含 index.ts）都会被识别。
 	 */
 	private async scanLocalExtensions(): Promise<PiExtensionSummary[]> {
-		const extensionsDir = join(homedir(), ".pi", "agent", "extensions");
+		const extensionsDir = join(this.homeDir, ".pi", "agent", "extensions");
 		const result: PiExtensionSummary[] = [];
 
 		let entries: string[];
@@ -308,9 +324,10 @@ export class ExtensionManager {
 		if (await this.noApproveSupported()) {
 			finalArgs.push("--no-approve");
 		}
-		const command = this.locator.resolveCommand(this.getSettings().customPiPath);
+		const settings = this.getSettings();
+		const command = this.locator.resolveCommand(settings.customPiPath, settings.wslEnabled, settings.wslDistro, settings.wslUser);
 		const invocation = this.locator.createInvocation(command, finalArgs);
-		const env = this.locator.createProcessEnv(this.getSettings(), invocation.pathPrefix);
+		const env = this.locator.createProcessEnv(settings, invocation.pathPrefix, invocation.wsl);
 		// list/remove/install 使用离线模式避免配置页被网络和包管理器输出拖慢；update 必须允许联网，
 		// 否则 pi 只会返回简化的 Updated packages，无法真正走 npm 更新流程。
 		if (options.offline !== false) env.PI_OFFLINE = "1";

@@ -111,10 +111,22 @@ export class PiProcess extends EventEmitter {
     const invocation = this.locator.createInvocation(command, args);
 
     // WSL 模式：spawn 的 cwd 必须是 Windows 路径（wsl.exe 会将其转为 WSL 初始目录），
-    // 不能用 Linux 路径否则 spawn ENOENT。session 参数传 WSL Linux 路径（pi 在 WSL 内读取）。
-    const spawnCwd = this.cwd;
-    // 诊断用 WSL Linux 路径，表示 pi 在 WSL 内看到的工作目录
-    const diagnosticCwd = invocation.wsl ? PiLocator.windowsPathToWslPath(this.cwd) : this.cwd;
+    // 不能用 Linux 路径否则 spawn ENOENT。
+    // 项目路径可能是 WSL Linux 格式（/mnt/d/...），需要转回 Windows 盘符路径。
+    let spawnCwd = this.cwd;
+    let diagnosticCwd = this.cwd;
+    if (invocation.wsl) {
+      // /mnt/d/tmp → D:\tmp
+      const mntMatch = spawnCwd.match(/^\/mnt\/([a-z])\/(.*)/);
+      if (mntMatch) {
+        spawnCwd = `${mntMatch[1].toUpperCase()}:\\${mntMatch[2].replace(/\//g, '\\')}`;
+      } else if (spawnCwd.startsWith("/")) {
+        // WSL 内部路径（/home/piuser/...）：Windows 无法作为 CWD，回退到 Windows home
+        spawnCwd = process.env.USERPROFILE || "C:\\Users\\Default";
+      }
+      // 诊断用保持 Linux 路径
+      diagnosticCwd = spawnCwd !== this.cwd ? this.cwd : PiLocator.windowsPathToWslPath(this.cwd);
+    }
     // 如果 args 中携带了 --session，也需要把 Windows 路径转为 WSL 路径。
     const sessionIndex = invocation.args.indexOf("--session");
     const finalArgs = sessionIndex >= 0 && invocation.wsl
@@ -139,7 +151,9 @@ export class PiProcess extends EventEmitter {
       void this.ensureVersionCheck(command);
     }
 
-    console.log('[PiProcess] spawn:', JSON.stringify({ command: invocation.command, wslShell: invocation.shell, cwd: spawnCwd, args: finalArgs.slice(0, 6) }));
+    // 打印等效命令行，方便在终端重现排查
+    console.log('[PiProcess] spawn等效命令:', [invocation.command, ...finalArgs].map(a => a.includes(' ') ? `"${a}"` : a).join(' '));
+    console.log('[PiProcess] spawn参数:', JSON.stringify({ command: invocation.command, shell: invocation.shell, cwd: spawnCwd, wslCwd: diagnosticCwd, argsCount: finalArgs.length }));
 
     // 每个 agent 绑定独立 cwd，确保 pi 自己发现项目级 AGENTS.md、settings 和 session 分组。
     // 打包后的 Electron 不一定继承用户终端 PATH；这里补齐跨平台 Node 工具链常见 bin 目录，尽量让已安装 pi 的用户开箱即用。

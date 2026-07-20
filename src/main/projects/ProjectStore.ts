@@ -84,7 +84,16 @@ export class ProjectStore {
     });
 
     if (result.canceled || result.filePaths.length === 0) return null;
-    return this.add(result.filePaths[0], undefined, environment);
+    let projectPath = result.filePaths[0];
+
+    // WSL 模式：将 Windows 路径（如 C:\Users\14012\project）转为 WSL 格式（/mnt/c/Users/14012/project）
+    if (environment === "wsl") {
+      projectPath = projectPath
+        .replace(/^([A-Za-z]):\\/, (_: string, d: string) => `/mnt/${d.toLowerCase()}/`)
+        .replace(/\\/g, '/');
+    }
+
+    return this.add(projectPath, undefined, environment);
   }
 
   /** 添加项目，可指定所属环境（缺省 windows） */
@@ -259,12 +268,21 @@ export class ProjectStore {
   }
 
   private normalizeProjectPath(path: string) {
+    // WSL Linux 路径（/mnt/d/xxx、/home/user/...）不能走 Windows path.resolve/normalize，
+    // 否则 /mnt/d/xxx 会被解析为 D:\mnt\d\xxx。仅去除尾部斜杠。
+    if (process.platform === "win32" && path.startsWith("/")) {
+      return path.replace(/\/+$/, "");
+    }
     return normalize(resolve(path));
   }
 
   private sameProjectPath(a: string, b: string) {
     const left = this.normalizeProjectPath(a);
     const right = this.normalizeProjectPath(b);
+    // WSL 路径保留原始大小写（Linux 文件系统区分大小写）
+    if (process.platform === "win32" && a.startsWith("/") && b.startsWith("/")) {
+      return left === right;
+    }
     return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
   }
 

@@ -110,9 +110,11 @@ export class PiLocator {
       if (!parsed) return { command, args, shell: false };
       const { distro, user, piCommand } = parsed;
       const wslExe = this.resolveWslExe();
+      const wslArgs = ["-d", distro, "-u", user, piCommand, ...args];
+      console.log('[PiLocator] WSL invocation:', wslExe.command, wslArgs.join(' '), 'shell:', wslExe.shell);
       return {
         command: wslExe.command,
-        args: ["-d", distro, "-u", user, piCommand, ...args],
+        args: wslArgs,
         shell: wslExe.shell,
         wsl: { distro, user, piCommand },
       };
