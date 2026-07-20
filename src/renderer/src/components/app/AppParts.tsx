@@ -2585,18 +2585,40 @@ export const TurnRow = memo(function TurnRow(props: {
 		: null;
 	const hasFinalThinking = Boolean(finalThinking && props.showThinking);
 
-	// 统计：把最终回答的思考也计入执行过程
-	const totalThinkingCount = thinkingCount + (hasFinalThinking ? 1 : 0);
+	// 将最终消息的思考插入执行过程（放在工具之前），确保时序正确：思考→工具→文本
+	const executionItemsWithFinalThinking = useMemo(() => {
+		const items = [...executionItems];
+		if (hasFinalThinking && finalThinking && props.showThinking) {
+			const thinkingItem: ThinkingGroupItem = {
+				kind: "thinking-group",
+				id: `final-thinking-${finalMessageItem?.message.id ?? run.id}`,
+				messages: finalMessageItem?.message ? [finalMessageItem.message] : [],
+				text: finalThinking,
+				startedAt: run.startedAt,
+				endedAt: finalMessageItem?.message.timestamp ?? run.endedAt,
+			};
+			// 插到 executionItems 的 lastAssistantIndex 位置，保持与原 run.items 一致的时序
+			const insertIndex = Math.min(lastAssistantIndex, items.length);
+			items.splice(insertIndex, 0, thinkingItem);
+		}
+		return items;
+	}, [executionItems, hasFinalThinking, finalThinking, props.showThinking, finalMessageItem, run.id, run.startedAt, run.endedAt]);
+
+	// 统计
+	const totalThinkingCount = executionItemsWithFinalThinking.filter((i) => i.kind === "thinking-group").length;
+	const totalToolCount = executionItemsWithFinalThinking.filter((i) => i.kind === "tool-group").length;
+	const totalInterReplyCount = executionItemsWithFinalThinking.filter(
+		(i) => i.kind === "message" && i.message.role === "assistant",
+	).length;
 	/** 将统计拼成概要文本。 */
 	const summaryParts: string[] = [];
-	if (toolCount > 0) summaryParts.push(`${toolCount}个工具`);
+	if (totalToolCount > 0) summaryParts.push(`${totalToolCount}个工具`);
 	if (totalThinkingCount > 0) summaryParts.push(`${totalThinkingCount}次思考`);
-	if (interReplyCount > 0) summaryParts.push(`${interReplyCount}次回答`);
+	if (totalInterReplyCount > 0) summaryParts.push(`${totalInterReplyCount}次回答`);
 	const summaryText = summaryParts.length > 0 ? `执行过程: ${summaryParts.join(" ")}` : "";
 
-	// 是否有任何需要折叠的内容（非最终回答条目 + 最终回答的思考）
-	// 当没有 assistant 消息时，只要有工具/思考也需要折叠（如 ask_question 场景）
-	const hasFoldableContent = lastAssistantIndex > 0 || hasFinalThinking || run.items.some((i) => i.kind !== "message");
+	// 是否有任何需要折叠的内容
+	const hasFoldableContent = executionItemsWithFinalThinking.length > 0 || run.items.some((i) => i.kind !== "message");
 
 	// 没有助手指令消息的情况：整轮只含工具/思考，用执行过程折叠渲染
 	if (lastAssistantIndex === -1) {
@@ -2629,7 +2651,7 @@ export const TurnRow = memo(function TurnRow(props: {
 							</button>
 							{executionExpanded && (
 								<div className="execution-summary-details">
-									{executionItems.map(renderExecutionItem)}
+									{executionItemsWithFinalThinking.map(renderExecutionItem)}
 								</div>
 							)}
 						</div>
@@ -2668,21 +2690,12 @@ export const TurnRow = memo(function TurnRow(props: {
 						</button>
 						{executionExpanded && (
 							<div className="execution-summary-details">
-								{executionItems.map(renderExecutionItem)}
-								{/* 最终回答的思考也纳入折叠区 */}
-								{hasFinalThinking && (
-									<ThinkingBlock
-										text={finalThinking!}
-										startedAt={run.startedAt}
-										endedAt={finalMessageItem!.message.timestamp > run.startedAt ? finalMessageItem!.message.timestamp : run.endedAt}
-										showThinking={props.showThinking}
-									/>
-								)}
+								{executionItemsWithFinalThinking.map(renderExecutionItem)}
 							</div>
 						)}
 					</div>
 				)}
-				{/* 最终回答（始终可见）；其中的思考已归入执行过程折叠区 */}
+				{/* 最终回答（始终可见）；最终思考已融入执行过程折叠区 */}
 				{finalMessageItem && (
 					<Fragment key={finalMessageItem.message.id}>
 						{editing ? (

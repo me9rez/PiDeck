@@ -825,6 +825,16 @@ export class AgentManager {
 		runtime.tab.status = "running";
 		this.emitState();
 
+		// 乐观更新：在等待 RPC 返回前先把用户消息写入会话，让用户立即看到自己的消息。
+		// 如果后续 RPC 失败，再追加错误消息；用户消息本身仍保留在聊天中（用户确已发送）。
+		this.addMessage(
+			input.agentId,
+			"user",
+			trimmed || "[图片]",
+			promptDeliveryBehavior ? { streamingBehavior: promptDeliveryBehavior } : undefined,
+			input.images,
+		);
+
 		// streamingBehavior 只在 agent 忙碌时需要；UI 可以显式传 steer/followUp 以复用 pi 队列语义。
 		// 当前端排队 flush 连续发送多条消息时，第一条会触发 agent_start 使 agent 变忙碌，
 		// 后续消息必须带 streamingBehavior 否则 pi 直接返回 error。这里自动兜底。
@@ -849,23 +859,13 @@ export class AgentManager {
 			);
 			if (!response.success) {
 				// pi RPC 会把不支持图片、忙碌队列参数缺失等前置错误作为 success:false 返回；
-				// 必须显式显示出来，否则 UI 会停在“已发送但无响应”的状态。
+				// 必须显式显示出来，否则 UI 会停在"已发送但无响应"的状态。
 				const errorMessage = response.error ?? "图片消息发送失败";
 				runtime.tab.status = statusBeforePrompt === "running" ? "running" : "idle";
 				this.addMessage(input.agentId, "error", errorMessage);
 				this.emitState();
 				return { accepted: false, error: errorMessage };
 			}
-
-			// 只有 pi prompt 预检成功后才把 user bubble 落入时间线。失败时 renderer 会保留
-			// 本地待发送卡片，避免同一条消息同时显示为“已发送”和“发送失败待重试”。
-			this.addMessage(
-				input.agentId,
-				"user",
-				trimmed || "[图片]",
-				promptDeliveryBehavior ? { streamingBehavior: promptDeliveryBehavior } : undefined,
-				input.images,
-			);
 
 			if (promptIsExtensionCommand) {
 				// 机制：Pi 扩展命令可在 prompt 阶段直接执行并返回，不进入 agent run。
@@ -1027,6 +1027,15 @@ export class AgentManager {
 			}
 			this.pendingUIRequests.delete(agentId);
 		}
+		// abort 时必须清除所有流式状态，防止后续 pi 的延迟事件（text_delta、thinking_delta、tool_execution_* 等）
+		// 修改上次会话的旧消息，导致新会话消息混入被中止的旧输出。
+		this.activeAssistantMessageIds.delete(agentId);
+		this.streamingThinking.delete(agentId);
+		this.toolMessageIds.delete(agentId);
+		this.activeToolCallsByAgent.delete(agentId);
+		this.toolExecutingByAgent.set(agentId, null);
+		this.emitThinking(agentId, "");
+
 		runtime.tab.status = "idle";
 		this.addMessage(agentId, "system", "已请求停止当前响应", { i18nKey: "app.abortRequested" });
 		this.emitState();
