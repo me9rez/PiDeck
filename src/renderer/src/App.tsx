@@ -555,6 +555,8 @@ export function App() {
   }, [activeAgentId]);
   const activeAgentIdRef = useRef<string | undefined>(activeAgentId);
   activeAgentIdRef.current = activeAgentId;
+  const agentsRef = useRef<AgentTab[]>(agents);
+  agentsRef.current = agents;
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(
     new Set(),
   );
@@ -1036,20 +1038,35 @@ export function App() {
   const [compacting, setCompacting] = useState(false);
   const [drawer, setDrawer] = useState<DrawerPanel | null>(null);
 
-  // ── 每个 Agent 的抽屉面板状态持久化（localStorage） ──
-  // 用户切换会话时自动恢复上次的文件面板状态和展开目录，避免每次进来都要重新点开。
-  const AGENT_DRAWER_KEY_PREFIX = "pid:agent-drawer:";
-  const AGENT_EXPANDED_DIRS_KEY_PREFIX = "pid:agent-expanded-dirs:";
+  // ── 按项目目录持久化抽屉面板状态和展开目录（localStorage） ──
+  // 文件侧边栏属于项目目录，所有在该项目下运行的 agent 共享同一套展开与面板状态。
+  const PROJECT_DRAWER_KEY_PREFIX = "pid:project-drawer:";
+  const PROJECT_EXPANDED_DIRS_KEY_PREFIX = "pid:project-expanded-dirs:";
 
-  const saveDrawerState = useCallback((agentId: string, panel: DrawerPanel | null, pinned: boolean) => {
+  const saveDrawerState = useCallback((projectId: string, panel: DrawerPanel | null, pinned: boolean) => {
     try {
-      localStorage.setItem(AGENT_DRAWER_KEY_PREFIX + agentId, JSON.stringify({ panel, pinned }));
+      localStorage.setItem(PROJECT_DRAWER_KEY_PREFIX + projectId, JSON.stringify({ panel, pinned }));
     } catch { /* localStorage 不可用时静默忽略 */ }
   }, []);
 
-  const loadDrawerState = useCallback((agentId: string): { panel: DrawerPanel | null; pinned: boolean } | null => {
+  const loadDrawerState = useCallback((projectId: string): { panel: DrawerPanel | null; pinned: boolean } | null => {
     try {
-      const raw = localStorage.getItem(AGENT_DRAWER_KEY_PREFIX + agentId);
+      const key = PROJECT_DRAWER_KEY_PREFIX + projectId;
+      let raw = localStorage.getItem(key);
+      if (!raw) {
+        // 兼容旧版按 agent 保存的数据：尝试从该项目的任意 agent 读取并迁移到项目级
+        const legacyAgents = agentsRef.current.filter((a) => a.projectId === projectId).map((a) => a.id);
+        for (const agentId of legacyAgents) {
+          const oldKey = `pid:agent-drawer:${agentId}`;
+          const value = localStorage.getItem(oldKey);
+          if (value) {
+            if (!localStorage.getItem(key)) localStorage.setItem(key, value);
+            localStorage.removeItem(oldKey);
+            raw = value;
+            break;
+          }
+        }
+      }
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === "object" && (parsed.panel === null || ["files", "sessions", "browser", "editor", "git"].includes(parsed.panel))) {
@@ -1060,15 +1077,29 @@ export function App() {
     return null;
   }, []);
 
-  const saveExpandedDirs = useCallback((agentId: string, dirs: Set<string>) => {
+  const saveExpandedDirs = useCallback((projectId: string, dirs: Set<string>) => {
     try {
-      localStorage.setItem(AGENT_EXPANDED_DIRS_KEY_PREFIX + agentId, JSON.stringify([...dirs]));
+      localStorage.setItem(PROJECT_EXPANDED_DIRS_KEY_PREFIX + projectId, JSON.stringify([...dirs]));
     } catch { /* ignore */ }
   }, []);
 
-  const loadExpandedDirs = useCallback((agentId: string): Set<string> => {
+  const loadExpandedDirs = useCallback((projectId: string): Set<string> => {
     try {
-      const raw = localStorage.getItem(AGENT_EXPANDED_DIRS_KEY_PREFIX + agentId);
+      const key = PROJECT_EXPANDED_DIRS_KEY_PREFIX + projectId;
+      let raw = localStorage.getItem(key);
+      if (!raw) {
+        const legacyAgents = agentsRef.current.filter((a) => a.projectId === projectId).map((a) => a.id);
+        for (const agentId of legacyAgents) {
+          const oldKey = `pid:agent-expanded-dirs:${agentId}`;
+          const value = localStorage.getItem(oldKey);
+          if (value) {
+            if (!localStorage.getItem(key)) localStorage.setItem(key, value);
+            localStorage.removeItem(oldKey);
+            raw = value;
+            break;
+          }
+        }
+      }
       if (raw) {
         const arr = JSON.parse(raw);
         if (Array.isArray(arr)) return new Set(arr);
@@ -1230,7 +1261,7 @@ export function App() {
   const [listHoverRevealSuppressed, setListHoverRevealSuppressed] =
     useState(false);
   const [drawerCollapsed, setDrawerCollapsed] = useState(false);
-  const [drawerPinnedByAgent, setDrawerPinnedByAgent] = useState<
+  const [drawerPinnedByProject, setDrawerPinnedByProject] = useState<
     Record<string, DrawerPanel>
   >({});
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
@@ -1252,45 +1283,67 @@ export function App() {
   const feishu = useFeishuBridge();
   const scratchPad = useScratchPad();
 
-  // 当活跃 Agent 切换时，从 localStorage 恢复该 Agent 的抽屉面板状态和展开目录
-  // 使得用户切换会话后文件面板和展开目录保持之前的状态。
+  // 当活跃项目切换时，从 localStorage 恢复该项目的抽屉面板状态和展开目录。
+  // 文件侧边栏属于项目目录，因此按 projectId 持久化，同一项目下的不同 agent 共享状态。
   useEffect(() => {
-    if (!activeAgentId) return;
-    const savedState = loadDrawerState(activeAgentId);
+    if (!activeProjectId) {
+      setDrawer(null);
+      setDrawerPinnedByProject((current) => current);
+      setExpandedDirs(new Set());
+      return;
+    }
+    const projectId = activeProjectId;
+    const savedState = loadDrawerState(projectId);
     if (savedState) {
       const panel: DrawerPanel | null = savedState.panel;
       const canRestorePanel = panel !== "git" || settings.enableGitManagement;
       if (savedState.pinned && panel && canRestorePanel) {
-        setDrawerPinnedByAgent((current) => {
-          if (current[activeAgentId] === panel) return current;
-          return { ...current, [activeAgentId]: panel };
+        setDrawerPinnedByProject((current) => {
+          if (current[projectId] === panel) return current;
+          return { ...current, [projectId]: panel };
+        });
+      } else {
+        setDrawerPinnedByProject((current) => {
+          const next = { ...current };
+          delete next[projectId];
+          return next;
         });
       }
       if (panel && canRestorePanel) {
         setDrawer(panel);
         setDrawerCollapsed(false);
+      } else {
+        setDrawer(null);
       }
+    } else {
+      // 该项目没有持久化记录时，明确关闭抽屉并清除钉选，避免上一项目的状态泄漏。
+      setDrawer(null);
+      setDrawerPinnedByProject((current) => {
+        const next = { ...current };
+        delete next[projectId];
+        return next;
+      });
     }
-    const dirs = loadExpandedDirs(activeAgentId);
+    const dirs = loadExpandedDirs(projectId);
     setExpandedDirs(dirs);
-  }, [activeAgentId, loadDrawerState, loadExpandedDirs, settings.enableGitManagement]);
+  }, [activeProjectId, loadDrawerState, loadExpandedDirs, settings.enableGitManagement]);
 
   useEffect(() => {
     if (settings.enableGitManagement) return;
 
-    // 关闭功能时同步移除当前 Git 抽屉及钉选状态，避免隐藏入口后留下无法操作的面板。
+    // 关闭功能时同步移除当前项目的 Git 抽屉及钉选状态，避免隐藏入口后留下无法操作的面板。
     setDrawer((current) => current === "git" ? null : current);
-    setDrawerPinnedByAgent((current) => {
+    setDrawerPinnedByProject((current) => {
       const next = Object.fromEntries(
         Object.entries(current).filter(([, panel]) => panel !== "git"),
       );
       return Object.keys(next).length === Object.keys(current).length ? current : next;
     });
-    if (activeAgentId) {
-      const saved = loadDrawerState(activeAgentId);
-      if (saved?.panel === "git") saveDrawerState(activeAgentId, null, false);
+    if (activeProjectId) {
+      const saved = loadDrawerState(activeProjectId);
+      if (saved?.panel === "git") saveDrawerState(activeProjectId, null, false);
     }
-  }, [activeAgentId, loadDrawerState, saveDrawerState, settings.enableGitManagement]);
+  }, [activeProjectId, loadDrawerState, saveDrawerState, settings.enableGitManagement]);
 
   // 当活跃 Agent 切换或绑定列表变更时，加载该 Agent 指定的飞书 Bot
   // 绑定变更后同步刷新，确保配置页断开关联后已连接状态正确反映。
@@ -1451,8 +1504,8 @@ export function App() {
     };
   }, [activeAgentId, terminalDockAgentId, terminalDockMounted, terminalOpen]);
 
-  const drawerPinnedPanel = activeAgentId
-    ? drawerPinnedByAgent[activeAgentId]
+  const drawerPinnedPanel = activeProjectId
+    ? drawerPinnedByProject[activeProjectId]
     : undefined;
   const drawerPinned = Boolean(drawerPinnedPanel);
   const activeMessages = activeAgentId
@@ -1979,7 +2032,8 @@ export function App() {
         if (replacement) return replacement.id;
         return pendingAgent ? current : undefined;
       });
-      const activeIds = new Set(nextAgents.map((agent) => agent.id));
+    const activeIds = new Set(nextAgents.map((agent) => agent.id));
+      const activeProjectIds = new Set(nextAgents.map((agent) => agent.projectId));
       const draftIds = new Set([
         ...nextAgents.map((agent) => agent.id),
         ...remainingPendingAgents.map((agent) => agent.id),
@@ -1992,9 +2046,9 @@ export function App() {
           Object.entries(current).filter(([agentId]) => activeIds.has(agentId)),
         ),
       );
-      setDrawerPinnedByAgent((current) =>
+      setDrawerPinnedByProject((current) =>
         Object.fromEntries(
-          Object.entries(current).filter(([agentId]) => activeIds.has(agentId)),
+          Object.entries(current).filter(([projectId]) => activeProjectIds.has(projectId)),
         ),
       );
       setPromptByAgent((current) => {
@@ -3708,7 +3762,6 @@ export function App() {
     if (existing) {
       setActiveProjectId(existing.projectId);
       setActiveAgentId(existing.id);
-      setDrawer(null);
       setAutoScroll(true);
       autoScrollRef.current = true;
       return existing;
@@ -3737,8 +3790,7 @@ export function App() {
       title,
       pendingAgentId: pendingTab.id,
     });
-    // 立即关闭抽屉,避免等待 agent 加载期间列表仍然显示
-    setDrawer(null);
+    // 创建 agent 时不改变抽屉状态，避免打断用户已有的文件浏览。
     try {
       const tab = await withTimeout<AgentTab>(
         api.agents.create({ projectId, sessionPath, title }),
@@ -5221,14 +5273,15 @@ export function App() {
     }
     setDrawer((current) => {
       if (current === panel) return drawerPinned ? current : null;
-      // 持久化当前 Agent 的抽屉面板状态
-      if (activeAgentId) saveDrawerState(activeAgentId, panel, drawerPinned);
+      // 持久化当前项目的抽屉面板状态
+      if (activeProjectId) saveDrawerState(activeProjectId, panel, drawerPinned);
       return panel;
     });
   }
 
   function closeDrawer() {
     if (drawerPinned) return;
+    if (activeProjectId) saveDrawerState(activeProjectId, null, false);
     setDrawer(null);
   }
 
@@ -5238,16 +5291,16 @@ export function App() {
   }
 
   function toggleDrawerPinned() {
-    if (!activeAgentId || !drawer) return;
+    if (!activeProjectId || !drawer) return;
     const willPin = !drawerPinned;
-    setDrawerPinnedByAgent((current) => {
+    setDrawerPinnedByProject((current) => {
       const next = { ...current };
-      if (next[activeAgentId]) delete next[activeAgentId];
-      else next[activeAgentId] = drawer;
+      if (next[activeProjectId]) delete next[activeProjectId];
+      else next[activeProjectId] = drawer;
       return next;
     });
     // 持久化钉选状态
-    saveDrawerState(activeAgentId, drawer, willPin);
+    saveDrawerState(activeProjectId, drawer, willPin);
   }
 
   function toggleDirectory(path: string) {
@@ -5256,8 +5309,8 @@ export function App() {
       const next = new Set(current);
       if (next.has(path)) next.delete(path);
       else next.add(path);
-      // 持久化展开状态到 localStorage，切换回此会话时恢复
-      if (activeAgentId) saveExpandedDirs(activeAgentId, next);
+      // 持久化展开状态到 localStorage，切换回此项目时恢复
+      if (activeProjectId) saveExpandedDirs(activeProjectId, next);
       return next;
     });
   }
@@ -5265,8 +5318,8 @@ export function App() {
   function collapseAllDirectories() {
     const collapsedDirs = new Set<string>();
     setExpandedDirs(collapsedDirs);
-    // 全部收起同样持久化，避免用户切换会话后又恢复此前展开的目录。
-    if (activeAgentId) saveExpandedDirs(activeAgentId, collapsedDirs);
+    // 全部收起同样持久化，避免用户切换项目后又恢复此前展开的目录。
+    if (activeProjectId) saveExpandedDirs(activeProjectId, collapsedDirs);
   }
 
   function startResize(target: "list" | "drawer", event: PointerEvent) {
@@ -6983,6 +7036,7 @@ export function App() {
               label: t("app.files"),
               onClick: () => {
                 if (drawer === "files" && !drawerCollapsed) {
+                  if (activeProjectId) saveDrawerState(activeProjectId, null, false);
                   setDrawer(null);
                 } else {
                   openDrawer("files");
@@ -6996,6 +7050,7 @@ export function App() {
               label: t("drawer.sourceControl"),
               onClick: () => {
                 if (drawer === "git" && !drawerCollapsed) {
+                  if (activeProjectId) saveDrawerState(activeProjectId, null, false);
                   setDrawer(null);
                 } else {
                   openDrawer("git");
@@ -7028,6 +7083,7 @@ export function App() {
               label: t("app.browser"),
               onClick: () => {
                 if (drawer === "browser" && !drawerCollapsed) {
+                  if (activeProjectId) saveDrawerState(activeProjectId, null, false);
                   setDrawer(null);
                 } else {
                   setDrawer("browser");
