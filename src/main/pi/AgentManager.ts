@@ -237,25 +237,34 @@ export class AgentManager {
 					rpcAlreadyHasSummary,
 					archivedMessageCounts: [...archiveData.archivedMessagesByCompactionId.entries()].map(([id, msgs]) => ({ compactionId: id, count: msgs.length })),
 				});
-				// 仅当 RPC 未返回摘要时才从文件补回
+
+				const last = archiveData.compactions[archiveData.compactions.length - 1];
+				const archivedMessages = archiveData.archivedMessagesByCompactionId.get(last.id) ?? [];
+
 				if (!rpcAlreadyHasSummary) {
-					const last = archiveData.compactions[archiveData.compactions.length - 1];
-					const archivedMessages = archiveData.archivedMessagesByCompactionId.get(last.id);
+					// RPC 未返回摘要 → 我们自己创建压缩卡片
 					compactionSummaryRaw = {
 						role: "compactionSummary",
-						// convertAgentMessages 读取 typed.summary 作为摘要正文，而非 content 数组
 						summary: last.summary || "[摘要]",
-						// 时间戳需要是数字；会话文件里是 ISO 字符串，这里转成毫秒
 						timestamp: last.timestamp ? Date.parse(last.timestamp) : Date.now(),
 						meta: {
 							compactionId: last.id || null,
 							compactionCount: archiveData.compactions.length,
 							firstKeptEntryId: last.firstKeptEntryId,
 							tokensBefore: last.tokensBefore,
-							// 归档消息：展开时内联渲染压缩前的完整对话
-							archivedMessages: archivedMessages ?? [],
+							archivedMessages,
 						},
 					};
+				} else {
+					// RPC 已返回摘要 → 找到它并注入 archivedMessages（pi 的摘要不带归档消息）
+					for (const msg of trimmed) {
+						const m = msg as Record<string, unknown>;
+						if (m.role === "compactionSummary") {
+							m.meta = (m.meta as Record<string, unknown> | null) ?? {};
+							(m.meta as Record<string, unknown>).archivedMessages = archivedMessages;
+							break;
+						}
+					}
 				}
 				// 把压缩次数写回 tab，供前端（会话头/标签）展示"已压缩 N 次"。
 				if (runtime.tab.compactionCount !== archiveData.compactions.length) {
