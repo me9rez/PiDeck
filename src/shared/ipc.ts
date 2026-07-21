@@ -71,6 +71,10 @@ export const ipcChannels = {
 	skillStoreSearch: "skill-store:search",
 	skillStoreGet: "skill-store:get",
 	skillStoreImport: "skill-store:import",
+	// SkillHub（api.skillhub.cn）
+	skillHubSearch: "skill-hub:search",
+	skillHubDetail: "skill-hub:detail",
+	skillHubInstall: "skill-hub:install",
 	extensionsList: "extensions:list",
 	extensionsUninstall: "extensions:uninstall",
 	extensionsInstall: "extensions:install",

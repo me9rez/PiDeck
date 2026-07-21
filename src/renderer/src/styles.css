@@ -10890,6 +10890,317 @@ body.is-composer-resizing .composer-resize-handle::after {
   font-size: var(--font-size-control);
 }
 
+/* ── SkillHub 商店模态框 ─────────────────────────────── */
+.skillhub-modal {
+  width: min(900px, calc(100vw - 48px));
+  height: min(700px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  background: var(--color-bg-panel);
+}
+.skillhub-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: var(--space-4);
+  gap: var(--space-3);
+}
+.skillhub-search-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.skillhub-search-input-wrap {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.skillhub-search-input-wrap input {
+  flex: 1;
+  height: 34px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-muted);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-control);
+  outline: none;
+}
+.skillhub-search-input-wrap input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+.skillhub-search-icon {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+}
+.skillhub-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.skillhub-suggestion-chip {
+  padding: 2px 10px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-muted);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-caption);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.skillhub-suggestion-chip:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+/* 搜索结果列表 */
+.skillhub-results {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-right: var(--space-2);
+}
+.skillhub-result-count {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-caption);
+}
+.skillhub-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.skillhub-card:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-default);
+}
+.skillhub-card:active {
+  background: var(--color-bg-active);
+}
+.skillhub-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.skillhub-card-icon--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-muted);
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-border-subtle);
+}
+.skillhub-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.skillhub-card-title {
+  font-size: var(--font-size-control);
+  color: var(--color-text-primary);
+}
+.skillhub-card-desc {
+  font-size: var(--font-size-caption);
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skillhub-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-caption);
+  color: var(--color-text-tertiary);
+}
+.skillhub-card-category {
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-muted);
+  font-size: var(--font-size-caption);
+}
+.skillhub-card-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.skillhub-card-install-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-panel);
+  color: var(--color-accent);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.skillhub-card-install-btn:hover {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+/* 详情视图 */
+.skillhub-detail-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+.skillhub-detail-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.skillhub-install-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-control);
+  margin-bottom: var(--space-2);
+}
+.skillhub-install-result.success {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+.skillhub-install-result.error {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
+}
+.skillhub-detail {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-right: var(--space-2);
+}
+.skillhub-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.skillhub-detail-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.skillhub-detail-icon--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-muted);
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-border-subtle);
+}
+.skillhub-detail-header h2 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
+}
+.skillhub-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-control);
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+.skillhub-detail-badge {
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: var(--font-size-caption);
+}
+.skillhub-detail-stats {
+  display: flex;
+  gap: 16px;
+  font-size: var(--font-size-caption);
+}
+.skillhub-detail-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-text-secondary);
+}
+.skillhub-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.skillhub-tag {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-muted);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-caption);
+}
+.skillhub-tag--sub {
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  color: var(--color-accent);
+}
+.skillhub-detail-section h4 {
+  margin: 0 0 4px;
+  font-size: var(--font-size-control);
+  color: var(--color-text-secondary);
+}
+.skillhub-detail-section p {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+}
+.skillhub-detail-version {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.skillhub-detail-version code {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-caption);
+  color: var(--color-text-primary);
+  background: var(--color-bg-muted);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+.skillhub-detail-changelog {
+  font-size: var(--font-size-caption);
+  color: var(--color-text-tertiary);
+}
+.skillhub-security-report {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-caption);
+}
+.skillhub-security-status {
+  color: var(--color-accent);
+}
+
 .config-empty-sm {
   text-align: center;
   color: var(--color-text-tertiary);

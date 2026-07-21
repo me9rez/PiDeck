@@ -2479,6 +2479,94 @@ function registerIpc() {
 		}
 	});
 
+	// ── SkillHub（api.skillhub.cn） ──────────────────────────────────
+	/** 搜索 SkillHub（api.skillhub.cn）的 skill */
+	ipcMain.handle(ipcChannels.skillHubSearch, async (_event, query: string, page: number = 1) => {
+		try {
+			const url = `https://api.skillhub.cn/api/skills?keyword=${encodeURIComponent(query)}&page=${page}&pageSize=24&sortBy=score&order=desc`;
+			const response = await fetch(url, {
+				signal: AbortSignal.timeout(10_000),
+				headers: { "User-Agent": "PiDeck/0.6.5" },
+			});
+			if (!response.ok) throw new Error(`SkillHub API 返回 ${response.status}`);
+			const raw = (await response.json()) as {
+				code: number;
+				data: {
+					skills: Array<Record<string, unknown>>;
+					total: number;
+				};
+			};
+			if (raw.code !== 0) throw new Error(`SkillHub API 错误: code=${raw.code}`);
+
+			const items = raw.data.skills.map((s) => ({
+				slug: s.slug as string,
+				name: (s.displayName ?? s.name ?? s.slug) as string,
+				description: ((s.description_zh as string) || (s.description as string) || "") as string,
+				description_zh: s.description_zh as string | undefined,
+				iconUrl: s.iconUrl as string | undefined,
+				stars: (s.stars as number) ?? 0,
+				downloads: (s.downloads as number) ?? 0,
+				installs: (s.installs as number) ?? 0,
+				category: s.category as string,
+				subCategories: s.subCategories as Array<{ key: string; name: string }> | undefined,
+				version: s.version as string,
+				ownerName: s.ownerName as string,
+				namespace: s.namespace as { canonicalName: string; displayName: string; publicSlug: string } | undefined,
+				labels: s.labels as Record<string, string> | undefined,
+				tags: s.tags as Record<string, string> | undefined,
+				source: s.source as string | undefined,
+				verified: s.verified as boolean | undefined,
+				updatedAt: s.updated_at as number | undefined,
+			}));
+			return { query, total: raw.data.total, items };
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			throw new Error(`搜索 SkillHub 失败: ${message}`);
+		}
+	});
+
+	/** 获取 SkillHub skill 详情 */
+	ipcMain.handle(ipcChannels.skillHubDetail, async (_event, slug: string) => {
+		try {
+			const url = `https://api.skillhub.cn/api/v1/skills/${encodeURIComponent(slug)}`;
+			const response = await fetch(url, {
+				signal: AbortSignal.timeout(10_000),
+				headers: { "User-Agent": "PiDeck/0.6.5" },
+			});
+			if (!response.ok) return null;
+			const raw = await response.json() as Record<string, unknown>;
+			return raw as unknown as import("../shared/types").SkillHubDetail;
+		} catch (err) {
+			return null;
+		}
+	});
+
+	/** 安装 SkillHub skill 到 pi agent skills 目录 */
+	ipcMain.handle(ipcChannels.skillHubInstall, async (_event, slug: string, _installDir: string) => {
+		const homedir = (await import("node:os")).homedir();
+		const targetDir = join(homedir, ".pi", "agent", "skills");
+		try {
+			const { execSync } = await import("node:child_process");
+			const cliPath = require.resolve("@astron-team/skillhub/dist/index.js");
+			const cmd = `node "${cliPath}" install "${slug}" --dir "${targetDir}" --json`;
+			const output = execSync(cmd, {
+				encoding: "utf8",
+				timeout: 30_000,
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+			const result = JSON.parse(output);
+			if (result.ok) {
+				void appLogger.info("skill-hub", "Installed skill", { slug, targetDir });
+				return { success: true, slug, installDir: targetDir };
+			}
+			throw new Error(result.message || "安装失败");
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			void appLogger.warn("skill-hub", "Install failed", { slug, error: message });
+			return { success: false, slug, installDir: targetDir, error: message };
+		}
+	});
+
 	// ── Yao Open Prompts（中文提示词精选） ─────────────────────────────
 	ipcMain.handle(ipcChannels.yaoPromptsList, async () => {
 		try {

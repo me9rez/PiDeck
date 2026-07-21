@@ -521,6 +521,14 @@ const api = {
 		import: (item: PromptStoreItem, locationId?: string) =>
 			ipcRenderer.invoke(ipcChannels.skillStoreImport, item, locationId) as Promise<PiSkillSummary>,
 	},
+	skillHub: {
+		search: (query: string, page?: number) =>
+			ipcRenderer.invoke(ipcChannels.skillHubSearch, query, page ?? 1) as Promise<import("../shared/types").SkillHubSearchResult>,
+		detail: (slug: string) =>
+			ipcRenderer.invoke(ipcChannels.skillHubDetail, slug) as Promise<import("../shared/types").SkillHubDetail | null>,
+		install: (slug: string, installDir: string) =>
+			ipcRenderer.invoke(ipcChannels.skillHubInstall, slug, installDir) as Promise<import("../shared/types").SkillHubInstallResult>,
+	},
 	yaoPrompts: {
 		list: () =>
 			ipcRenderer.invoke(ipcChannels.yaoPromptsList) as Promise<YaoPromptListResult>,

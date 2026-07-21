@@ -46,12 +46,14 @@ import {
   GitGraph,
   Minimize2,
   RefreshCw,
+  Package,
   X,
 } from "lucide-react";
 import { subscribeToNotice, showNotice } from "./utils/notice";
 import { createPreviewApi } from "./previewApi";
 import { createBrowserApi } from "./browserApi";
 const ConfigModal = lazy(() => import("./ConfigModal").then((m) => ({ default: m.ConfigModal })));
+const SkillHubModal = lazy(() => import("./components/app/SkillHubModal").then((m) => ({ default: m.SkillHubModal })));
 import { TrustConfirmModal } from "./components/app/TrustConfirmModal";
 import { TerminalDock } from "./components/terminal/TerminalDock";
 import { FeishuLinkIndicator } from "./components/feishu/FeishuLinkIndicator";
@@ -1047,6 +1049,7 @@ export function App() {
   const [sessionsProjectId, setSessionsProjectId] = useState<string>();
   const [sessionHistoryLoading, setSessionHistoryLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [skillHubOpen, setSkillHubOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
@@ -6071,6 +6074,13 @@ export function App() {
                 <MessageSquare size={17} />
               </button>
               <button
+                className="icon-button skillhub-icon"
+                title={t("config.tabs.skillHub")}
+                onClick={() => setSkillHubOpen(true)}
+              >
+                <Package size={17} />
+              </button>
+              <button
                 className="icon-button homepage-icon"
                 title={t("app.homepage")}
                 onClick={() => api.app.openExternal("https://ayuayue.github.io/PiDeck/")}
@@ -7891,6 +7901,14 @@ export function App() {
         }}
       />
       </Suspense>
+
+      {skillHubOpen && (
+        <Suspense fallback={null}>
+          <SkillHubModal
+            onClose={() => setSkillHubOpen(false)}
+          />
+        </Suspense>
+      )}
 
       {confirmDialog && (
         <ConfirmDialog

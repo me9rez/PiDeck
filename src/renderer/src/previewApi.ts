@@ -600,6 +600,11 @@ export function createPreviewApi(): PiDesktopApi {
 				type: "directory",
 			}),
 		},
+		skillHub: {
+			search: async () => ({ query: "", total: 0, items: [] }),
+			detail: async () => null,
+			install: async (slug) => ({ success: true, slug, installDir: "", message: "Preview install" }),
+		},
 		settings: {
 			get: async (): Promise<AppSettings> => ({ ...previewSettings }),
 			update: async (patch): Promise<AppSettings> => {
