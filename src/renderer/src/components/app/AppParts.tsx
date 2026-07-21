@@ -2255,15 +2255,16 @@ export const ThinkingBlock = memo(function ThinkingBlock(props: {
 
 
 /**
- * 流式状态指示器（三点脉动动画 + 状态文案），在 agent 运行时始终显示。
+ * 流式响应指示器（三点脉动动画 + 状态文案），在 agent 运行/流式期间显示。
  *
- * 状态优先级（与 AI 回复流并行展示）：
+ * 状态优先级：
  *  1. 工具执行中 → "正在工具调用"（琥珀色）
- *  2. 思考中（有可见思考文本）→ "正在思考"（默认强调色）
- *  3. 流式回答中 → "正在回应"（更低透明度）
- *  4. 过渡等待 → 只显示三点动画，无标签
+ *  2. 有思考文本 / 流式回答中 → "正在回应"
+ *  3. 过渡等待 → 只显示三点动画，无标签
+ *
+ * 注意：原来的 "正在思考" 状态已合并到 "正在回应"，不再单独展示。
  */
-export function ThinkingIndicator(props: {
+export function RespondingIndicator(props: {
 	thinking?: string;
 	showThinking?: boolean;
 	isExecutingTool?: boolean;
@@ -2271,19 +2272,14 @@ export function ThinkingIndicator(props: {
 }) {
 	const { isExecutingTool, isStreaming, thinking, showThinking } = props;
 
-	let kind: "executing" | "thinking" | "responding" | "waiting";
+	let kind: "executing" | "responding" | "waiting";
 	let label: string;
 
 	if (isExecutingTool) {
-		// 工具执行中：琥珀色变体，不区分具体工具名
 		kind = "executing";
 		label = t("thinking.executing");
-	} else if (showThinking && thinking && thinking.length > 0) {
-		// 思考中：有可见思考文本
-		kind = "thinking";
-		label = t("thinking.streaming");
-	} else if (isStreaming) {
-		// 流式回答中：与 AI 回复文本并行展示
+	} else if ((showThinking && thinking && thinking.length > 0) || isStreaming) {
+		// 有思考文本或流式回答中统一显示“正在回应”
 		kind = "responding";
 		label = t("thinking.responding");
 	} else {
@@ -2293,14 +2289,14 @@ export function ThinkingIndicator(props: {
 	}
 
 	return (
-		<div className="thinking-indicator" data-kind={kind}>
-			<span className="thinking-indicator-dots" aria-hidden="true">
+		<div className="responding-indicator" data-kind={kind}>
+			<span className="responding-indicator-dots" aria-hidden="true">
 				<span />
 				<span />
 				<span />
 			</span>
 			{kind !== "waiting" && (
-				<span className="thinking-indicator-label">{label}</span>
+				<span className="responding-indicator-label">{label}</span>
 			)}
 		</div>
 	);

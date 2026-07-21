@@ -4559,60 +4559,10 @@ body.is-terminal-resizing .terminal-resize-handle::before {
   overflow: auto;
 }
 /* 流式思考卡片：实时展示推理过程 */
-.thinking-card.streaming {
-  border-top: 0;
-  border-color: transparent;
-  /* 与工具调用 running 状态一致的背景微色，让用户习惯性感知活跃状态 */
-  background: color-mix(in srgb, var(--color-accent) 6%, var(--color-bg-muted));
-  /* 呼吸脉冲：卡片边框在高亮与柔和之间平滑过渡，即使文本静止也能感知活跃 */
-  animation: thinking-border-pulse 1.8s ease-in-out infinite;
-}
-.thinking-card.streaming .thinking-card-content {
-  max-height: 120px;
-  background: color-mix(in srgb, var(--color-accent) 4%, var(--color-bg));
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-}
-/* 闪烁光标：表示推理仍在进行中 */
-.thinking-card.streaming .thinking-card-content::after {
-  content: "█";
-  animation: thinking-cursor-blink 1s step-end infinite;
-  color: var(--color-accent);
-  margin-left: 2px;
-}
-@keyframes thinking-cursor-blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
-}
-/* 呼吸脉冲：幅度更大，确保即使余光扫过也能感知活跃 */
-@keyframes thinking-border-pulse {
-  0%,
-  100% {
-    background: color-mix(
-      in srgb,
-      var(--color-accent) 6%,
-      var(--color-bg-muted)
-    );
-    box-shadow: 0 0 10px
-      color-mix(in srgb, var(--color-accent) 22%, transparent);
-  }
-  50% {
-    background: color-mix(
-      in srgb,
-      var(--color-accent) 10%,
-      var(--color-bg-muted)
-    );
-    box-shadow: 0 0 14px
-      color-mix(in srgb, var(--color-accent) 35%, transparent);
-  }
-}
 
-/* ---------- 流式等待：ThinkingIndicator ---------- */
-.thinking-indicator {
+
+/* ---------- 流式响应指示器：RespondingIndicator ---------- */
+.responding-indicator {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -4624,25 +4574,25 @@ body.is-terminal-resizing .terminal-resize-handle::before {
   color: var(--color-text-secondary);
   font-size: var(--font-size-control);
 }
-.thinking-indicator-dots {
+.responding-indicator-dots {
   display: inline-flex;
   gap: 4px;
   align-items: center;
 }
-.thinking-indicator-dots span {
+.responding-indicator-dots span {
   width: 6px;
   height: 6px;
   border-radius: var(--radius-pill);
   background: var(--color-accent);
-  animation: thinkingDots 1.2s infinite ease-in-out;
+  animation: respondingDots 1.2s infinite ease-in-out;
 }
-.thinking-indicator-dots span:nth-child(2) {
+.responding-indicator-dots span:nth-child(2) {
   animation-delay: 0.18s;
 }
-.thinking-indicator-dots span:nth-child(3) {
+.responding-indicator-dots span:nth-child(3) {
   animation-delay: 0.36s;
 }
-@keyframes thinkingDots {
+@keyframes respondingDots {
   0%,
   100% {
     opacity: 0.3;
@@ -4653,38 +4603,24 @@ body.is-terminal-resizing .terminal-resize-handle::before {
     transform: translateY(-2px);
   }
 }
-.thinking-indicator-label {
+.responding-indicator-label {
   font-family: var(--font-family-base);
 }
-/* 工具执行中变体：琥珀色区分于思考/响应的强调色 */
-.thinking-indicator[data-kind="executing"] {
+/* 工具执行中变体：琥珀色区分于响应的强调色 */
+.responding-indicator[data-kind="executing"] {
   border-color: var(--color-warning, #d97706);
 }
-.thinking-indicator[data-kind="executing"] .thinking-indicator-dots span {
+.responding-indicator[data-kind="executing"] .responding-indicator-dots span {
   background: var(--color-warning, #d97706);
 }
-/* 回答中变体：比 thinking 和 executing 更低调，带文字 */
-.thinking-indicator[data-kind="responding"] {
-  border-color: transparent;
-  background: transparent;
-  padding: 4px 0;
-  margin: var(--space-4) 0 0 0;
-}
-.thinking-indicator[data-kind="responding"] .thinking-indicator-dots span {
-  background: var(--color-text-tertiary, var(--color-text-secondary));
-  opacity: 0.4;
-}
-.thinking-indicator[data-kind="responding"] .thinking-indicator-label {
-  color: var(--color-text-tertiary);
-}
 /* 过渡等待变体：只显示三点动画，无标签文本 */
-.thinking-indicator[data-kind="waiting"] {
+.responding-indicator[data-kind="waiting"] {
   border-color: transparent;
   background: transparent;
   padding: 4px 0;
   margin: var(--space-4) 0 0 0;
 }
-.thinking-indicator[data-kind="waiting"] .thinking-indicator-dots span {
+.responding-indicator[data-kind="waiting"] .responding-indicator-dots span {
   background: var(--color-text-tertiary, var(--color-text-secondary));
   opacity: 0.4;
 }

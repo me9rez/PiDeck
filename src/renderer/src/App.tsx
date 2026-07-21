@@ -101,7 +101,6 @@ import {
   AgentContextMenu,
   BranchSelector,
   ComposerToolbar,
-  ThinkingIndicator,
   CompactionCard,
   ConversationOutline,
   DiagnosticMessageCard,
@@ -119,6 +118,7 @@ import {
   PromptSuggestions,
   SessionContextMenu,
   SessionManagerModal,
+  RespondingIndicator,
   SessionStatus,
 
   ComposerModePicker,
@@ -6444,7 +6444,7 @@ export function App() {
               {isAwaitingAssistant && (
                 <>
                   {settings.showThinking && activeThinking && (
-                    <section className="thinking-card streaming">
+                    <section className="thinking-card">
                       <div className="thinking-card-content">{activeThinking}</div>
                     </section>
                   )}
@@ -6468,10 +6468,10 @@ export function App() {
                   )}
                 </>
               )}
-              {/* 状态指示器：agent 运行或流式期间始终与回复并行展示 */}
+              {/* 响应指示器：agent 运行或流式期间显示三点动画 */}
               {activeAgent && !cancellingUi &&
                 (activeAgent.status === "running" || activeRuntimeState?.isStreaming) && (
-                <ThinkingIndicator
+                <RespondingIndicator
                   thinking={activeThinking}
                   showThinking={settings.showThinking}
                   isExecutingTool={activeRuntimeState?.isExecutingTool}
