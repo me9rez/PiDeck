@@ -7330,6 +7330,11 @@ export function App() {
               void refreshProjectSessions(pid);
             }
           }}
+          onCopyProjectPath={() => {
+            void navigator.clipboard.writeText(projectMenu.project.path);
+            showToast(t("common.copied"));
+            setProjectMenu(null);
+          }}
           onFilterSessions={() => {
             setSessionFilterOpen({
               ...adjustMenuPos(projectMenu.x, projectMenu.y + 20, 180, 250),
@@ -7415,6 +7420,14 @@ export function App() {
             void window.piDesktop.rpcLogs.openFile(agentMenu.agent.id);
             setAgentMenu(null);
           }}
+          onCopySessionFilePath={() => {
+            const path = agentMenu.agent.sessionPath;
+            if (path) {
+              void navigator.clipboard.writeText(path);
+              showToast(t("common.copied"));
+            }
+            setAgentMenu(null);
+          }}
           onOpenSessionFile={() => {
             const path = agentMenu.agent.sessionPath;
             if (path) void api.files.open(path);
@@ -7444,6 +7457,11 @@ export function App() {
           }}
           onCopySession={() => {
             void copySidebarSession(sessionMenu.projectId, sessionMenu.session);
+          }}
+          onCopySessionFilePath={() => {
+            void navigator.clipboard.writeText(sessionMenu.session.filePath);
+            showToast(t("common.copied"));
+            setSessionMenu(null);
           }}
           // 历史会话的 RPC 日志在 agent 启动后再通过右键菜单开启记录
           onOpenSessionFile={() => {

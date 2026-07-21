@@ -5200,6 +5200,7 @@ export function ProjectContextMenu(props: {
 	onFilterSessions: () => void;
 	onToggleWorktree: () => void;
 	onRefreshProject: () => void;
+	onCopyProjectPath: () => void;
 	onRemoveProject: () => void;
 }) {
 	const isWorktreeEnabled = props.menu.project.worktreeEnabled ?? false;
@@ -5233,6 +5234,8 @@ export function ProjectContextMenu(props: {
 					{isWorktreeEnabled ? t("menu.disableWorktree") : t("menu.enableWorktree")}
 				</button>
 				<hr className="context-separator" />
+				<button onClick={props.onCopyProjectPath}>{t("menu.copyProjectPath")}</button>
+				<hr className="context-separator" />
 				<button onClick={props.onRefreshProject}>{t("app.projectRefresh")}</button>
 				<hr className="context-separator" />
 				<button onClick={props.onRemoveProject}>{t("menu.removeProject")}</button>
@@ -5248,6 +5251,7 @@ export function AgentContextMenu(props: {
 	onRename: () => void;
 	onExport: () => void;
 	onCopySession: () => void;
+	onCopySessionFilePath: () => void;
 	onToggleRpcLogging?: () => void;
 	isRpcLogging?: boolean;
 	onOpenLogFile?: () => void;
@@ -5273,9 +5277,14 @@ export function AgentContextMenu(props: {
 					{props.actionLoading === "export" ? t("menu.exporting") : t("menu.exportHtml")}
 				</button>
 				{props.menu.agent.sessionPath && (
-					<button disabled={Boolean(props.actionLoading)} onClick={props.onOpenSessionFile}>
-						{t("menu.openAgentSessionFile")}
-					</button>
+					<>
+						<button disabled={Boolean(props.actionLoading)} onClick={props.onCopySessionFilePath}>
+							{t("menu.copySessionFilePath")}
+						</button>
+						<button disabled={Boolean(props.actionLoading)} onClick={props.onOpenSessionFile}>
+							{t("menu.openAgentSessionFile")}
+						</button>
+					</>
 				)}
 				<button disabled={Boolean(props.actionLoading)} onClick={props.onToggleRpcLogging}>
 					{props.isRpcLogging ? `✓ ${t("menu.rpcLoggingOn")}` : t("menu.rpcLogging")}
@@ -5298,6 +5307,7 @@ export function SessionContextMenu(props: {
 	onRename: () => void;
 	onExport: () => void;
 	onCopySession: () => void;
+	onCopySessionFilePath: () => void;
 	onOpenSessionFile?: () => void;
 	onShowLogs?: () => void;
 	onDeleteSession: () => void;
@@ -5319,6 +5329,9 @@ export function SessionContextMenu(props: {
 				<button disabled={Boolean(props.actionLoading)} onClick={props.onExport}>
 					{props.actionLoading === "export" && <span className="mini-loader" />}
 					{props.actionLoading === "export" ? t("menu.exporting") : t("menu.exportHtml")}
+				</button>
+				<button disabled={Boolean(props.actionLoading)} onClick={props.onCopySessionFilePath}>
+					{t("menu.copySessionFilePath")}
 				</button>
 				<button disabled={Boolean(props.actionLoading)} onClick={props.onOpenSessionFile}>
 					{t("menu.openSessionFile")}
