@@ -2866,6 +2866,7 @@ body.is-terminal-resizing {
     opacity: 1;
     transform: translateY(0);
   }
+
 }
 .file-action-menu button,
 .session-combo-menu button {
@@ -6517,7 +6518,11 @@ body.ask-dialog-open .ask-question-card.pending {
   min-width: 148px;
   height: 46px;
   border: none;
-  background: var(--color-accent-soft);
+  background: color-mix(
+    in srgb,
+    var(--color-accent-soft) 75%,
+    var(--color-accent)
+  );
   box-shadow: 0 6px 16px color-mix(in srgb, var(--color-accent) 18%, transparent);
   color: var(--color-accent-strong);
   font-family: var(--font-family-base);

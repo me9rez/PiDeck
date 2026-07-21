@@ -484,6 +484,7 @@ function ConfigModalContent(props: ConfigModalProps) {
 		} catch {
 			// 获取 agent 列表失败时静默忽略，模型配置已保存，下次启动 agent 生效
 		}
+
 	};
 
 	const saveAndReload = async (

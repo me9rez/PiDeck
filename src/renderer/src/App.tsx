@@ -4501,6 +4501,7 @@ export function App() {
     }, 160);
   }
 
+  /** 解析消息中的 & 会话引用，将 chip 替换为引用上下文 */
   async function sendPrompt() {
     const targetAgentId = activeAgentId;
     const livePrompt = targetAgentId
@@ -4583,6 +4584,7 @@ export function App() {
       agentMode: currentComposerAgentMode,
       templateDescription,
       timestamp: Date.now(),
+
     };
     if (isAgentBusy) {
       if (!enqueueQueuedPrompt(targetAgentId, queuedPromptSnapshot)) {
@@ -4708,6 +4710,7 @@ export function App() {
       return;
     }
     // 用 MutationObserver 监听消息列表 DOM 变化
+
     const scrollOnNewMessage = () => {
       const timeline = timelineRef.current;
       if (!timeline) return;
