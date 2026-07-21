@@ -2363,8 +2363,7 @@ body.is-terminal-resizing {
 .chat-pane[style*="--content-max-width"] .composer-box,
 .chat-pane[style*="--content-max-width"] .image-preview-area,
 .chat-pane[style*="--content-max-width"] .extension-widgets-container,
-.chat-pane[style*="--content-max-width"] .queued-track,
-.chat-pane[style*="--content-max-width"] .composer-footer {
+.chat-pane[style*="--content-max-width"] .queued-track {
   width: min(100%, var(--content-max-width));
   max-width: var(--content-max-width);
   margin-inline: auto;
@@ -6510,7 +6509,7 @@ body.ask-dialog-open .ask-question-card.pending {
   min-height: 112px;
   min-width: 0;
   display: grid;
-  grid-template-rows: auto minmax(48px, 1fr) auto;
+  grid-template-rows: auto 1fr;
   border: 1px solid var(--color-border-subtle);
   background: #ffffff;
   border-radius: 14px;
@@ -6527,7 +6526,7 @@ body.ask-dialog-open .ask-question-card.pending {
   position: absolute;
   left: -1px;
   top: 36px;
-  bottom: 37px;
+  bottom: 12px;
   width: 3px;
   border-radius: 0 999px 999px 0;
   opacity: 0;
@@ -6922,16 +6921,18 @@ body.is-composer-resizing .composer-resize-handle::after {
   font-weight: 700;
 }
 .composer-footer {
+  /* 浮动在 composer-box 底部，不参与 grid 行布局，不会遮挡 textarea 的点击区域 */
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   gap: 10px;
-  padding: 6px 12px 12px 12px;
   color: var(--color-text-tertiary);
   font-size: var(--font-size-caption);
-  grid-row: 3;
-  min-width: 0;
-  /* 防止 footer 的透明区域拦截 textarea 的点击事件 */
+  /* 透明区域不拦截点击，仅交互子元素可点击 */
   pointer-events: none;
 }
 /* footer 内的交互元素需要恢复点击能力 */
@@ -6946,7 +6947,10 @@ body.is-composer-resizing .composer-resize-handle::after {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
+}
+/* plan mode 状态文字靠左，配合 justify-content: flex-end 使按钮靠右 */
+.composer-footer .composer-mode-status {
+  margin-right: auto;
 }
 .composer-footer > span {
   flex: 1 1 auto;
