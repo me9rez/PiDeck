@@ -216,8 +216,21 @@ export class AgentManager {
 				|| (m as { role?: unknown })?.role === "branchSummary",
 		);
 		if (runtime.tab.sessionPath) {
-			const archiveData = await this.parseSessionArchives(runtime.tab.sessionPath, agentId).catch(() => null);
+			const archiveData = await this.parseSessionArchives(runtime.tab.sessionPath, agentId).catch((err) => {
+			void this.appLogger?.warn("agent", "Failed to parse session archives", {
+				agentId,
+				sessionPath: runtime.tab.sessionPath,
+				error: err instanceof Error ? err.message : String(err),
+			});
+			return null;
+		});
 			if (archiveData && archiveData.compactions.length > 0) {
+				void this.appLogger?.info("agent", "Session archives parsed", {
+					agentId,
+					compactionCount: archiveData.compactions.length,
+					rpcAlreadyHasSummary,
+					archivedMessageCounts: [...archiveData.archivedMessagesByCompactionId.entries()].map(([id, msgs]) => ({ compactionId: id, count: msgs.length })),
+				});
 				// 仅当 RPC 未返回摘要时才从文件补回
 				if (!rpcAlreadyHasSummary) {
 					const last = archiveData.compactions[archiveData.compactions.length - 1];
@@ -475,11 +488,20 @@ export class AgentManager {
 			if (rawMessages.length > 0) {
 				// 反转消息顺序（回溯得到的是从新到旧，需反转为从旧到新）
 				rawMessages.reverse();
-				// 转换为 ChatMessage 格式
+			// 转换为 ChatMessage 格式
+			try {
 				const chatMessages = this.convertAgentMessages(agentId, rawMessages);
 				if (chatMessages.length > 0) {
 					archivedMessagesByCompactionId.set(compEntry.id, chatMessages);
 				}
+			} catch (err) {
+				void this.appLogger?.warn("agent", "Failed to convert archived messages", {
+					agentId,
+					compactionId: compEntry.id,
+					rawCount: rawMessages.length,
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
 			}
 		}
 
@@ -3521,6 +3543,10 @@ export class AgentManager {
 						...(isCompaction && typed.meta?.compactionCount != null
 							? { compactionCount: typed.meta.compactionCount }
 							: {}),
+					// 透传归档消息（从会话文件解析的压缩前历史）
+					...(typed.meta?.archivedMessages != null
+						? { archivedMessages: typed.meta.archivedMessages }
+						: {})
 						},
 					}];
 				}
