@@ -2831,15 +2831,41 @@ body.is-terminal-resizing {
   width: max-content;
   max-width: min(360px, calc(100vw - 32px));
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border-subtle);
+  /* 微蒙层底 + accent 圆点：比纯卡片醒目、比暗色药丸安静 */
+  background: color-mix(in srgb, var(--color-text-primary) 6%, var(--color-bg-panel));
   border-radius: var(--radius-md);
-  background: var(--color-bg-panel);
-  box-shadow: var(--shadow-popover);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07), 0 4px 16px rgba(0,0,0,0.05);
   color: var(--color-text-primary);
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-body);
   line-height: var(--line-height-control);
   white-space: pre-wrap;
   pointer-events: none;
+  animation: notice-in 0.25s ease-out;
+}
+
+/* accent 小圆点 + 文字间距 */
+.app-notice::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  margin-right: 8px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+
+@keyframes notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .file-action-menu button,
 .session-combo-menu button {
