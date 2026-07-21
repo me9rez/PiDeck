@@ -3776,6 +3776,9 @@ export function App() {
       // 全新创建的会话需要刷新历史列表以显示新文件；从已有历史会话打开的 agent 跳过刷新，避免文件 mtime 被不必要地读/写导致排序提前
       if (!sessionPath) {
         void refreshProjectSessions(projectId).catch(() => undefined);
+        showToast(t("app.agentCreated"), 2000);
+      } else {
+        showToast(t("app.sessionOpened"), 2000);
       }
       void refreshRuntimeState(tab.id);
       void api.app.rendererLog("info", "renderer", "Agent create completed", {
@@ -3859,6 +3862,7 @@ export function App() {
     if (!activeAgentId || isPendingAgentId(activeAgentId)) return;
     const state = await api.agents.cycleModel(activeAgentId);
     applyAgentRuntimeState(activeAgentId, state);
+    showToast(t("app.modelCycled", { name: state.modelName ?? state.modelId }), 2000);
   }
 
   /** 调整菜单位置避免溢出视口 */
@@ -3934,16 +3938,22 @@ export function App() {
     );
     applyAgentRuntimeState(activeAgentId, state);
     setModelPickerOpen(false);
+    showToast(t("app.modelSwitched", { name: model.name ?? model.id }), 2000);
   }
 
   /** 切换模型的收藏状态，收藏的模型在选模型列表中置顶显示 */
   function toggleFavoriteModel(provider: string, modelId: string) {
     const key = `${provider}/${modelId}`;
     const current = settings.favoriteModels ?? [];
-    const next = current.includes(key)
-      ? current.filter((id) => id !== key)
-      : [...current, key];
+    const isNowFavorite = !current.includes(key);
+    const next = isNowFavorite
+      ? [...current, key]
+      : current.filter((id) => id !== key);
     void updateSettings({ favoriteModels: next });
+    showToast(
+      isNowFavorite ? t("app.modelFavorited", { name: modelId }) : t("app.modelUnfavorited", { name: modelId }),
+      1500,
+    );
   }
 
   async function cycleThinking() {
@@ -6253,6 +6263,7 @@ export function App() {
                                   : current,
                               );
                               void refreshRuntimeState(tab.id);
+                              showToast(t("app.agentRestarted"), 2000);
                             } catch (error) {
                               // 重启失败时保留原 Agent 卡片并标记错误，避免用户当前上下文被兜底切走。
                               pendingAgentsRef.current = pendingAgentsRef.current.map(
@@ -7213,6 +7224,7 @@ export function App() {
           onCopyPath={() => {
             void navigator.clipboard.writeText(fileMenu.node.path);
             setFileMenu(null);
+            showToast(t("app.pathCopied"), 1200);
           }}
           onRename={() => {
             const node = fileMenu.node;
@@ -7235,6 +7247,7 @@ export function App() {
                 try {
                   await api.files.delete(node.path, true);
                   void refreshFiles();
+                  showToast(t("app.fileDeleted"), 2000);
                 } catch (e) {
                   console.error("[File] 删除失败:", e);
                 }
@@ -7908,6 +7921,7 @@ export function App() {
                       void api.files.rename(path, newName).then(() => {
                         void refreshFiles();
                         setRenamingFile(null);
+                        showToast(t("app.fileRenamed"), 2000);
                       }).catch((err) => console.error("[File] 重命名失败:", err));
                     } else {
                       setRenamingFile(null);
@@ -7930,6 +7944,7 @@ export function App() {
                     void api.files.rename(path, newName).then(() => {
                       void refreshFiles();
                       setRenamingFile(null);
+                      showToast(t("app.fileRenamed"), 2000);
                     }).catch((err) => console.error("[File] 重命名失败:", err));
                   } else {
                     setRenamingFile(null);

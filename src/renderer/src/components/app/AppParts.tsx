@@ -1510,9 +1510,11 @@ function CopyMenu(props: {
 			if (kind === "image" && props.targetRef.current) await copyElementAsPng(props.targetRef.current);
 			setCopied(kind);
 			setOpen(false);
+			showNotice(t("copy.success"), 1200);
 			window.setTimeout(() => setCopied(null), 1800);
 		} catch {
 			setCopied(null);
+			showNotice(t("copy.failed"), 2000);
 		}
 	};
 	const toggleOpen = () => {
@@ -1541,7 +1543,7 @@ function CopyMenu(props: {
 				aria-expanded={open}
 				title={t("common.copy")}
 			>
-				{copied ? <><Check size={14} /> ✓</> : <Copy size={14} />}
+				{copied ? <Check size={14} /> : <Copy size={14} />}
 			</button>
 			{open && (
 				<div className="copy-menu-popover" style={menuStyle}>
@@ -1764,6 +1766,7 @@ const statusLabel =
 	const handleCopy = () => {
 		navigator.clipboard.writeText(detailText);
 		setCopied(true);
+		showNotice(t("app.codeCopied"), 1200);
 		setTimeout(() => setCopied(false), 2000);
 	};
 	return (
@@ -2396,7 +2399,7 @@ function StreamingCodeBlock(props: React.HTMLAttributes<HTMLPreElement>) {
 	const text = extractText(codeProps?.children ?? props.children);
 	return (
 		<div className="code-block-wrap">
-			<button className="code-copy" onClick={() => navigator.clipboard.writeText(text)}>
+			<button className="code-copy" onClick={() => { navigator.clipboard.writeText(text); showNotice(t("app.codeCopied"), 1200); }}>
 				{t("code.copy")}
 			</button>
 			<pre {...props}>{props.children}</pre>
@@ -3188,6 +3191,7 @@ function MathSpan(props: React.HTMLAttributes<HTMLSpanElement>) {
 		const annotation = ref.current?.querySelector('annotation[encoding="application/x-tex"]');
 		const source = annotation?.textContent || extractText(children);
 		void navigator.clipboard.writeText(`$$\n${source}\n$$`);
+		showNotice(t("app.latexCopied"), 1200);
 	};
 	return (
 		<span className="math-copy-wrap">
@@ -3211,7 +3215,7 @@ function CodeBlock(props: React.HTMLAttributes<HTMLPreElement>) {
 		<div className="code-block-wrap">
 			<button
 				className="code-copy"
-				onClick={() => navigator.clipboard.writeText(text)}
+				onClick={() => { navigator.clipboard.writeText(text); showNotice(t("app.codeCopied"), 1200); }}
 			>
 				{t("code.copy")}
 			</button>
@@ -3274,7 +3278,7 @@ function MermaidDiagram(props: { chart: string }) {
 			) : (
 				<>
 					<div className="mermaid-toolbar" aria-label="Mermaid diagram controls">
-						<button type="button" onClick={() => navigator.clipboard.writeText(`\`\`\`mermaid\n${props.chart}\n\`\`\``)}>{t("common.copy")}</button>
+						<button type="button" onClick={() => { navigator.clipboard.writeText(`\`\`\`mermaid\n${props.chart}\n\`\`\``); showNotice(t("app.mermaidCopied"), 1200); }}>{t("common.copy")}</button>
 						<button type="button" onClick={() => setZoom((value) => Math.max(0.5, value - 0.1))}>−</button>
 						<span>{Math.round(zoom * 100)}%</span>
 						<button type="button" onClick={() => setZoom((value) => Math.min(2.5, value + 0.1))}>＋</button>
@@ -3299,7 +3303,7 @@ function MermaidMarkdownFallback(props: { chart: string; error: string }) {
 		<div className="code-block-wrap mermaid-fallback">
 			<button
 				className="code-copy"
-				onClick={() => navigator.clipboard.writeText(markdown)}
+				onClick={() => { navigator.clipboard.writeText(markdown); showNotice(t("app.codeCopied"), 1200); }}
 			>
 				{t("code.copy")}
 			</button>
