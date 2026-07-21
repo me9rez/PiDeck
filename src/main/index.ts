@@ -2728,6 +2728,10 @@ function registerIpc() {
 			return result;
 		},
 	);
+	ipcMain.handle(ipcChannels.agentsRefreshModels, async (_event, agentId: string) => {
+		void appLogger.info("agent", "Agent model refresh requested", { agentId });
+		return agentManager.refreshModels(agentId);
+	});
 	ipcMain.handle(ipcChannels.agentsCycleThinking, (_event, agentId: string) =>
 		agentManager.cycleThinking(agentId),
 	);
@@ -2972,6 +2976,7 @@ app.whenReady().then(async () => {
 		cycleModel: (agentId) => agentManager.cycleModel(agentId),
 		availableModels: (agentId) => agentManager.getAvailableModels(agentId),
 		setModel: (agentId, provider, modelId) => agentManager.setModel(agentId, provider, modelId),
+		refreshModels: (agentId) => agentManager.refreshModels(agentId),
 		cycleThinking: (agentId) => agentManager.cycleThinking(agentId),
 		setThinking: (agentId, level) => agentManager.setThinking(agentId, level),
 	});

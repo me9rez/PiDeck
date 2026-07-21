@@ -190,6 +190,13 @@ export function createBrowserApi(): PiDesktopApi {
 				);
 				return result.state;
 			},
+			refreshModels: async (agentId) => {
+				const result = await request<{ state: Awaited<ReturnType<PiDesktopApi["agents"]["refreshModels"]>> }>(
+					`/api/agents/${encodeURIComponent(agentId)}/refresh-models`,
+					{ method: "POST", body: "{}" },
+				);
+				return result.state;
+			},
 			cycleThinking: async (agentId) => {
 				const result = await request<{ state: Awaited<ReturnType<PiDesktopApi["agents"]["cycleThinking"]>> }>(
 					`/api/agents/${encodeURIComponent(agentId)}/cycle-thinking`,

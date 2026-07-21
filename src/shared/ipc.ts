@@ -158,6 +158,8 @@ export const ipcChannels = {
 	agentsCycleModel: "agents:cycle-model",
 	agentsAvailableModels: "agents:available-models",
 	agentsSetModel: "agents:set-model",
+	/** 刷新模型配置：通知运行中的 agent 重新加载 models.json，无需重启 */
+	agentsRefreshModels: "agents:refresh-models",
 	agentsCycleThinking: "agents:cycle-thinking",
 	agentsSetThinking: "agents:set-thinking",
 	agentsState: "agents:state",

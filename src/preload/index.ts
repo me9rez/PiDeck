@@ -729,6 +729,12 @@ const api = {
 				provider,
 				modelId,
 			) as Promise<AgentRuntimeState>,
+		/** 刷新模型配置，让运行中的 agent 重新加载 models.json */
+		refreshModels: (agentId: string) =>
+			ipcRenderer.invoke(
+				ipcChannels.agentsRefreshModels,
+				agentId,
+			) as Promise<AgentRuntimeState>,
 		cycleThinking: (agentId: string) =>
 			ipcRenderer.invoke(
 				ipcChannels.agentsCycleThinking,

@@ -711,6 +711,10 @@ export function createPreviewApi(): PiDesktopApi {
 				modelName: "Preview GPT",
 				thinkingLevel: "low",
 			}),
+			refreshModels: async () => ({
+				modelName: "Preview GPT",
+				thinkingLevel: "low",
+			}),
 			cycleThinking: async () => ({
 				modelName: "Preview GPT",
 				thinkingLevel: "medium",

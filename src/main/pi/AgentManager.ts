@@ -101,6 +101,8 @@ export class AgentManager {
 	 * 用户随后发送的新消息可能撞上 Pi 内部 compaction，表现为“会话中断”。
 	 */
 	private readonly rpcCompactingAgents = new Set<string>();
+	/** 正在执行模型配置刷新的 agent，用于退出处理器中忽略进程退出事件 */
+	private readonly modelRefreshingAgents = new Set<string>();
 	/** 用户主动停止的 agent，用于退出处理器中跳过自动重连 */
 	private readonly userInitiatedStop = new Set<string>();
 	/** 已尝试过自动重连的 agent（防止无限循环），重连成功后清除 */
@@ -539,6 +541,8 @@ export class AgentManager {
 			}
 		});
 		process.on("exit", (payload: { code: number | null; signal: string | null }) => {
+			// 模型配置刷新期间的进程退出由 refreshModels() 负责重连，此处静默忽略
+			if (this.modelRefreshingAgents.has(id)) return;
 			// 用户主动停止 → 不自动重连
 			if (this.userInitiatedStop.has(id)) {
 				this.userInitiatedStop.delete(id);
@@ -1200,6 +1204,8 @@ export class AgentManager {
 			this.emit(ipcChannels.agentsRpcLog, logEntry);
 		});
 		process.on("exit", (payload: { code: number | null; signal: string | null }) => {
+			// 模型配置刷新期间的进程退出由 refreshModels() 负责重连，此处静默忽略
+			if (this.modelRefreshingAgents.has(agentId)) return;
 			if (this.userInitiatedStop.has(agentId)) {
 				this.userInitiatedStop.delete(agentId);
 				runtime.tab.status = "closed";
@@ -1497,6 +1503,76 @@ export class AgentManager {
 			{ type: "set_model", provider, modelId },
 			60_000,
 		);
+		return this.getRuntimeState(agentId);
+	}
+
+	/**
+	 * 刷新模型配置：让运行中的 agent 重新加载 models.json，无需完全重启。
+	 * 
+	 * 当前仅支持轻量级 reload_config RPC（策略 1）。
+	 * 策略 2（进程重启）已注释，等待 pi 官方支持 reload_config RPC 后再考虑：
+	 *   - 运行中的 Agent 重启进程会打断正在进行的对话/工具执行
+	 *   - 进程重启涉及 exit 事件竞态、模型恢复等复杂边界条件
+	 * 
+	 * RPC 提案：https://github.com/earendil-works/pi/issues/6890
+	 * pi 合并 reload_config 后，本方法将自动生效，无需任何修改。
+	 */
+	async refreshModels(agentId: string): Promise<AgentRuntimeState> {
+		const runtime = this.requireRuntime(agentId);
+		const startTime = Date.now();
+
+		void this.appLogger?.info("agent", "Model refresh requested", { agentId });
+
+		// 策略 1：尝试 reload_config RPC（轻量级，无需重启进程）
+		// 该命令在 pi model-runtime 中已实现为 reloadConfig()，会重新读取 models.json
+		// 并重建所有 provider。当前 pi 0.80.10 的 RPC 协议尚未暴露此命令，
+		// 待 pi 合并 https://github.com/earendil-works/pi/issues/6890 后自动生效。
+		try {
+			const response = await runtime.process.client.request(
+				{ type: "reload_config" },
+				8_000,
+			);
+			if (response.success) {
+				await this.loadMessages(agentId).catch(() => undefined);
+				void this.appLogger?.info("agent", "Model refresh succeeded via reload_config RPC", {
+					agentId,
+					elapsedMs: Date.now() - startTime,
+				});
+				this.emitState();
+				return this.getRuntimeState(agentId);
+			}
+		} catch {
+			// reload_config 尚不支持，当前 pi 版本无轻量级刷新路径
+		}
+
+		// 策略 2（已注释）：进程重启方案。
+		// 原因：运行中重启会打断用户对话、工具执行，且涉及 exit 事件竞态。
+		// 等 pi 官方支持 reload_config RPC 后，策略 1 自动生效，无需回退到策略 2。
+		//
+		// const sessionPath = runtime.tab.sessionPath;
+		// if (!sessionPath) {
+		// 	throw new Error("Cannot refresh models: agent has no session path");
+		// }
+		// this.modelRefreshingAgents.add(agentId);
+		// try {
+		// 	const previousState = await this.getRuntimeState(agentId).catch(() => null);
+		// 	runtime.process.stop();
+		// 	await new Promise<void>((resolve) => setTimeout(resolve, 600));
+		// 	await this.reattachProcess(agentId, sessionPath);
+		// 	if (previousState?.provider && previousState?.modelId) {
+		// 		try { await this.setModel(agentId, previousState.provider, previousState.modelId); } catch {}
+		// 	}
+		// 	runtime.tab.status = "idle";
+		// 	await this.loadMessages(agentId).catch(() => undefined);
+		// } finally {
+		// 	this.modelRefreshingAgents.delete(agentId);
+		// }
+
+		void this.appLogger?.info("agent", "Model refresh: reload_config not supported by current pi version, skipping", {
+			agentId,
+			elapsedMs: Date.now() - startTime,
+		});
+		this.emitState();
 		return this.getRuntimeState(agentId);
 	}
 

@@ -621,6 +621,9 @@ const zhCN = {
   "config.saveFailed": "保存失败",
   "config.saved": "配置已保存",
   "config.modelsSavedRestartHint": "模型配置已保存，请重启激活的 Agent 会话以应用新配置",
+  "config.modelsSaved": "模型配置已保存",
+  "config.modelsRefreshed": "已刷新 {count} 个 Agent 的模型配置",
+  "config.modelsRefreshedPartial": "已刷新 {refreshed} 个 Agent，{failed} 个刷新失败",
   "config.skillCreatedToast": "Skill 已创建，重启 agent 后生效",
   "config.skillDeletedToast": "Skill 已删除，重启 agent 后生效",
   "config.skillRenamedToast": "Skill 已重命名，重启 agent 后生效",
@@ -2103,6 +2106,9 @@ const enUS: Record<TranslationKey, string> = {
   "config.saveFailed": "Save failed",
   "config.saved": "Configuration saved",
   "config.modelsSavedRestartHint": "Model configuration saved. Please restart active Agent sessions to apply the new configuration.",
+  "config.modelsSaved": "Model configuration saved",
+  "config.modelsRefreshed": "Refreshed model config for {count} Agent(s)",
+  "config.modelsRefreshedPartial": "Refreshed {refreshed} Agent(s), {failed} failed",
   "config.skillCreatedToast":
     "Skill created. Restart agents for it to take effect.",
   "config.skillDeletedToast":

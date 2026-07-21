@@ -33,6 +33,7 @@ type WebServiceDependencies = {
 	cycleModel: (agentId: string) => Promise<AgentRuntimeState>;
 	availableModels: (agentId: string) => Promise<AvailableModel[]>;
 	setModel: (agentId: string, provider: string, modelId: string) => Promise<AgentRuntimeState>;
+	refreshModels: (agentId: string) => Promise<AgentRuntimeState>;
 	cycleThinking: (agentId: string) => Promise<AgentRuntimeState>;
 	setThinking: (agentId: string, level: string) => Promise<AgentRuntimeState>;
 };
@@ -184,6 +185,12 @@ export class WebServiceManager {
 					body.provider ?? "",
 					body.modelId ?? "",
 				);
+				this.sendJson(response, { state });
+				return;
+			}
+			const refreshModelsMatch = url.pathname.match(/^\/api\/agents\/([^/]+)\/refresh-models$/);
+			if (refreshModelsMatch && request.method === "POST") {
+				const state = await this.deps.refreshModels(decodeURIComponent(refreshModelsMatch[1]));
 				this.sendJson(response, { state });
 				return;
 			}
