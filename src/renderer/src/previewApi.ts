@@ -170,6 +170,7 @@ let previewSettings: AppSettings = {
 	fontFamilyBaseCustom: "",
 	fontFamilyMono: "commit-mono",
 	fontFamilyMonoCustom: "",
+	disableUpdateCheck: false,
 };
 
 export function createPreviewApi(): PiDesktopApi {

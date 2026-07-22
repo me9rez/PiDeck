@@ -5869,12 +5869,28 @@ export function SettingsModal(props: {
 											</small>
 										)}
 									</div>
-									<div className="setting-row">
+									<SettingSwitch
+									title={t("settings.disableUpdateCheck")}
+									description={t("settings.disableUpdateCheckDesc")}
+									checked={props.settings.disableUpdateCheck}
+									onChange={(checked) =>
+										props.onChange({ disableUpdateCheck: checked })
+									}
+								/>
+								<div className="setting-row">
 										<div>
 											<strong>{t("settings.currentVersion")}</strong>
 											<small>v{props.appInfo.version}</small>
 										</div>
-										<Button onClick={props.onCheckUpdate} loading={props.updateChecking}>{t("settings.checkUpdate")}</Button>
+										<Button
+											onClick={props.onCheckUpdate}
+											loading={props.updateChecking}
+											disabled={props.settings.disableUpdateCheck}
+										>
+											{props.settings.disableUpdateCheck
+												? t("settings.updateCheckDisabled")
+												: t("settings.checkUpdate")}
+										</Button>
 									</div>
 									<div className="setting-row">
 										<div>
@@ -5888,8 +5904,14 @@ export function SettingsModal(props: {
 											</small>
 										</div>
 										<div className="setting-inline-actions">
-											<Button onClick={props.onCheckPiUpdate} loading={props.piUpdateChecking}>{t("settings.checkPiUpdate")}</Button>
-											<Button onClick={props.onUpdatePi} loading={props.piUpdating} disabled={!props.piUpdateCheck?.hasUpdate}>{t("settings.updatePi")}</Button>
+											<Button onClick={props.onCheckPiUpdate} loading={props.piUpdateChecking} disabled={props.settings.disableUpdateCheck}>
+												{props.settings.disableUpdateCheck
+													? t("settings.updateCheckDisabled")
+													: t("settings.checkPiUpdate")}
+											</Button>
+											<Button onClick={props.onUpdatePi} loading={props.piUpdating} disabled={props.settings.disableUpdateCheck || !props.piUpdateCheck?.hasUpdate}>
+												{t("settings.updatePi")}
+											</Button>
 										</div>
 									</div>
 									{props.piUpdateResult && (

@@ -1129,6 +1129,7 @@ export function App() {
     fontFamilyBaseCustom: "",
     fontFamilyMono: "commit-mono",
     fontFamilyMonoCustom: "",
+    disableUpdateCheck: false,
   });
   /* settingsNotice 已改用 showToast (app-notice) 实现 */
   const [piProxyNotice, setPiProxyNotice] = useState("");
@@ -1908,7 +1909,9 @@ export function App() {
         // 首次检测延后一帧启动,先让主界面完成绘制,避免 packaged app 打开时出现几秒白屏。
         window.setTimeout(() => void checkPiInstall("startup"), 300);
       }
-      window.setTimeout(() => void checkPiCliUpdateOnStartup(), 1200);
+      if (!next.disableUpdateCheck) {
+        window.setTimeout(() => void checkPiCliUpdateOnStartup(), 1200);
+      }
     });
 
     // 加载历史命令
@@ -2231,13 +2234,15 @@ export function App() {
   }, [projectIdsKey]);
 
   useEffect(() => {
+    // 当禁用版本检测时，不启动定时和启动后的自动检测
+    if (settings.disableUpdateCheck) return;
     const timer = window.setInterval(
       () => void checkAppUpdate("auto"),
       1000 * 60 * 60 * 6,
     );
     window.setTimeout(() => void checkAppUpdate("auto"), 5000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [settings.disableUpdateCheck]);
 
   useEffect(() => {
     if (activeAgentId && !isPendingAgentId(activeAgentId))
@@ -2883,6 +2888,7 @@ export function App() {
   }
 
   async function checkPiCliUpdateOnStartup() {
+    if (settings.disableUpdateCheck) return;
     try {
       const result = await api.pi.checkUpdate();
       setPiUpdateCheck(result);
@@ -2897,6 +2903,7 @@ export function App() {
   }
 
   async function checkPiCliUpdate() {
+    if (settings.disableUpdateCheck) return;
     setPiUpdateChecking(true);
     try {
       const result = await api.pi.checkUpdate();
@@ -2926,6 +2933,7 @@ export function App() {
 
   async function checkAppUpdate(source: "auto" | "manual" = "manual") {
     if (updateChecking) return;
+    if (source === "auto" && settings.disableUpdateCheck) return;
     setUpdateChecking(true);
     try {
       const next = await api.app.checkUpdate();
