@@ -2306,10 +2306,19 @@ body:not(.is-list-resizing)
   color: var(--color-text-tertiary);
 }
 .project-session-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   margin: 4px 8px 2px 40px;
   color: var(--color-text-tertiary);
   font-size: var(--font-size-caption);
   line-height: var(--line-height-caption);
+}
+.project-session-loading .loader {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+  flex-shrink: 0;
 }
 .session-more-row {
   margin-left: 8px;

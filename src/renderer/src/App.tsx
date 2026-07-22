@@ -65,7 +65,6 @@ import {
 import {
   getAgentForSessionPath,
   getProjectAgentSessionDisplay,
-  getSessionViewerHandoffState,
   isSameSessionPath,
   isSidebarSessionRowActive,
 } from "./agentListDisplay";
@@ -560,22 +559,6 @@ export function App() {
   const [restartingAgentId, setRestartingAgentId] = useState<string | null>(null);
   /** 用户点击 ask_question 取消/abort 后的过渡标记，立即隐藏运行指示器。 */
   const [cancellingUi, setCancellingUi] = useState(false);
-  /** 会话查看器：点 session 先展示消息但不启动 Agent，发首条消息时才创建 Agent。 */
-  const [sessionViewer, setSessionViewer] = useState<{
-    messages: ChatMessage[];
-    session: SessionSummary;
-    projectId: string;
-    /** 会话文件中的模型信息（来自 model_change 条目） */
-    sessionModel?: { provider: string; modelId: string };
-    /** 会话文件中的思考级别（来自 thinking_level_change 条目） */
-    sessionThinking?: string;
-  } | null>(null);
-  const sessionViewerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Viewer 读盘请求序号：新建/切换会话时让旧请求失效，避免慢响应重新抢占聊天区。 */
-  const sessionViewerRequestRef = useRef(0);
-  /** Viewer 首条消息交接锁：同步 ref 防止重复创建，state 仅控制发送按钮。 */
-  const viewerSendPendingRef = useRef(false);
-  const [viewerSendPending, setViewerSendPending] = useState(false);
   const [attachedImagesByAgent, setAttachedImagesByAgent] = useState<
     Record<string, ImageContent[]>
   >({});
@@ -646,39 +629,18 @@ export function App() {
   /** 输入框发送模式：normal 直接交给 agent，plan 通过隐藏标记触发 PiDeck Plan Mode 扩展。 */
   const [composerAgentModes, setComposerAgentModes] = useState<Record<string, ComposerAgentMode>>({});
   /** 查看器模式的发送模式（仅在无 agent 时使用） */
-  const [viewerComposerAgentMode, setViewerComposerAgentMode] = useState<ComposerAgentMode>("normal");
-  const activeAgentForViewerHandoff = activeAgentId
-    ? [...agents, ...pendingAgents].find((agent) => agent.id === activeAgentId)
+  // 侧栏选中态：当前活跃 Agent 对应的 session 路径（activeAgent 在后面定义，这里用函数式）
+  const displayedSidebarSessionPath = activeAgentId
+    ? [...agents, ...pendingAgents].find((agent) => agent.id === activeAgentId)?.sessionPath
     : undefined;
-  const {
-    isViewerActive: isSessionViewerActive,
-    canBridgeMessages: canBridgeSessionViewerMessages,
-  } = getSessionViewerHandoffState({
-    viewerSessionPath: sessionViewer?.session.filePath,
-    activeAgentId,
-    activeAgentSessionPath: activeAgentForViewerHandoff?.sessionPath,
-    activeAgentPending: isPendingAgentId(activeAgentId),
-  });
-  // 侧栏选中态只表达“会话窗口当前正在展示哪个 session”。展开父会话或 Agent 的运行状态都不应让其他行显色。
-  const displayedSidebarSessionPath = isSessionViewerActive
-    ? sessionViewer?.session.filePath
-    : activeAgentForViewerHandoff?.sessionPath;
   const activeAgentComposerMode = activeAgentId
     ? composerAgentModes[activeAgentId]
     : undefined;
-  const currentComposerAgentMode = canBridgeSessionViewerMessages && (
-    isSessionViewerActive || activeAgentComposerMode === undefined
-  )
-    ? viewerComposerAgentMode
-    : (activeAgentComposerMode ?? "normal");
+  const currentComposerAgentMode = activeAgentComposerMode ?? "normal";
   const setComposerAgentModeForAgent = (agentId: string, mode: ComposerAgentMode) => {
     setComposerAgentModes((prev) => ({ ...prev, [agentId]: mode }));
   };
   const setCurrentComposerAgentMode = (mode: ComposerAgentMode) => {
-    if (isSessionViewerActive) {
-      setViewerComposerAgentMode(mode);
-      return;
-    }
     const targetAgentId = activeAgentIdRef.current;
     if (!targetAgentId) return;
     setComposerAgentModeForAgent(targetAgentId, mode);
@@ -1448,42 +1410,20 @@ export function App() {
     setHistoryNavigating(false);
     setSavedPrompt("");
   }, [activeAgentId]);
-  // 切到真实 Agent 时延迟清除 viewer（30s 内点回 session 可取消清除）
-  useEffect(() => {
-    if (activeAgentId && activeAgentId !== "_viewer" && sessionViewer) {
-      scheduleSessionViewerCleanup();
-    }
-  }, [activeAgentId]);
-  // 切到不同项目时清除 viewer
-  useEffect(() => {
-    if (sessionViewer && activeProjectId && activeProjectId !== sessionViewer.projectId) {
-      clearSessionViewerNow();
-    }
-  }, [activeProjectId]);
-  // 查看器模式下构造伪 Agent，使聊天面板和输入框正常渲染，但不在侧栏显示。
-  const activeAgent = sessionViewer && isSessionViewerActive
-    ? ({
-        id: "_viewer",
-        projectId: sessionViewer.projectId,
-        cwd: "",
-        title: sessionViewer.session.name || t("common.untitled"),
-        status: "idle" as AgentTab["status"],
-        createdAt: 0,
-      } as AgentTab)
-    : displayAgents.find((agent) => agent.id === activeAgentId);
+  // 查看器已移除：activeAgent 直接从 displayAgents / pendingAgents 取，不再有伪 Agent。
+  const activeAgent = activeAgentId
+    ? [...displayAgents, ...pendingAgents].find((agent) => agent.id === activeAgentId)
+    : undefined;
   // prompt 文本：优先从 live ref 读取（始终保持最新），promptByAgent 仅在 chips 变化时更新作为兜底。
   // 不建立 state 依赖——普通按键不会触发 App 重渲染，仅靠 hasComposerContent / composerBangMode
   // 等布尔状态在真正翻转时驱动 UI 刷新。建议框打开时由 composerCursor 变化驱动重渲染。
-  const promptAgentKey = isSessionViewerActive ? "_viewer" : (activeAgentId ?? "");
+  const promptAgentKey = activeAgentId ?? "";
   const prompt = promptAgentKey
     ? (livePromptByAgentRef.current[promptAgentKey] ?? promptByAgent[promptAgentKey] ?? "")
     : "";
-  const viewerAttachedImages = attachedImagesByAgent["_viewer"] ?? [];
-  const attachedImages = isSessionViewerActive
-    ? viewerAttachedImages
-    : activeAgentId
-      ? (attachedImagesByAgent[activeAgentId] ?? [])
-      : [];
+  const attachedImages = activeAgentId
+    ? (attachedImagesByAgent[activeAgentId] ?? [])
+    : [];
 
   function setPromptForAgent(
     agentId: string,
@@ -1552,10 +1492,6 @@ export function App() {
   }
 
   function setPrompt(value: string | ((current: string) => string)) {
-    if (isSessionViewerActive) {
-      setPromptForAgent("_viewer", value);
-      return;
-    }
     const targetAgentId = activeAgentIdRef.current;
     if (targetAgentId) setPromptForAgent(targetAgentId, value);
   }
@@ -1577,10 +1513,6 @@ export function App() {
   function setAttachedImages(
     value: ImageContent[] | ((current: ImageContent[]) => ImageContent[]),
   ) {
-    if (isSessionViewerActive) {
-      setAttachedImagesForAgent("_viewer", value);
-      return;
-    }
     const targetAgentId = activeAgentIdRef.current;
     if (targetAgentId) setAttachedImagesForAgent(targetAgentId, value);
   }
@@ -1632,29 +1564,13 @@ export function App() {
     ? drawerPinnedByProject[activeProjectId]
     : undefined;
   const drawerPinned = Boolean(drawerPinnedPanel);
-  const activeMessages = (() => {
-    if (sessionViewer && isSessionViewerActive) return sessionViewer.messages;
-    if (activeAgentId) {
-      const agentMsgs = messagesByAgent[activeAgentId];
-      if (agentMsgs && agentMsgs.length > 0) return agentMsgs;
-      // 只允许恢复同一历史会话的 Agent 在消息载入前借用 Viewer 时间线；
-      // 全新或其他 Agent 必须保持自己的空时间线，不能显示旧会话内容。
-      if (sessionViewer && canBridgeSessionViewerMessages) {
-        return sessionViewer.messages;
-      }
-    }
-    return [];
-  })();
+  const activeMessages = activeAgentId
+    ? (messagesByAgent[activeAgentId] ?? [])
+    : [];
   const agentRuntimeState = activeAgentId
     ? runtimeStateByAgent[activeAgentId]
     : undefined;
-  const activeRuntimeState = sessionViewer && isSessionViewerActive
-    ? ({
-        provider: sessionViewer.sessionModel?.provider,
-        modelName: sessionViewer.sessionModel?.modelId,
-        thinkingLevel: sessionViewer.sessionThinking,
-      } as AgentRuntimeState)
-    : agentRuntimeState;
+  const activeRuntimeState = agentRuntimeState;
   const activeProjectHasBusyAgent = Boolean(
     activeProjectId && displayAgents.some((agent) =>
       agent.projectId === activeProjectId && (
@@ -3563,7 +3479,7 @@ export function App() {
       autoScrollRef.current = true;
       return;
     }
-    return openSessionViewer(projectId, session);
+    return createAgent(projectId, session.filePath, session.name);
   }
 
   async function copySidebarSession(
@@ -3978,9 +3894,6 @@ export function App() {
     if (!projectId) return;
     const project = projects.find((item) => item.id === projectId);
     if (!project) return;
-    // 新建全新会话必须立即退出旧 Viewer；恢复历史会话则保留 Viewer，
-    // 让相同 sessionPath 的 Agent 启动期间继续显示原时间线而不闪空。
-    if (!sessionPath) clearSessionViewerNow();
     const existing = sessionPath
       ? [...displayAgents, ...pendingAgentsRef.current].find(
           (agent) =>
@@ -4101,79 +4014,6 @@ export function App() {
       // 创建失败或超时时回退乐观占位，避免停留在不存在的 pending agent。
       return undefined;
     }
-  }
-
-  /** 打开会话查看器：读盘展示消息但不启动 Agent。发送首条消息时才创建 Agent。 */
-  async function openSessionViewer(projectId: string, session: SessionSummary) {
-    // 清除旧 viewer 和定时器；请求序号保证连续点击或新建会话后，慢读盘结果不会重新抢占界面。
-    clearSessionViewerNow();
-    const requestId = ++sessionViewerRequestRef.current;
-
-    // 切到目标项目
-    setActiveProjectId(projectId);
-
-    try {
-      // 并行获取消息和会话元信息（模型/思考级别）
-      const [rawMessages, meta] = await Promise.all([
-        api.sessions.readChatMessages(session.filePath),
-        api.sessions.readSessionMeta(session.filePath),
-      ]);
-      if (requestId !== sessionViewerRequestRef.current) return;
-      setSessionViewer({
-        messages: rawMessages,
-        session,
-        projectId,
-        sessionModel: meta.provider && meta.modelId
-          ? { provider: meta.provider, modelId: meta.modelId }
-          : undefined,
-        sessionThinking: meta.thinkingLevel,
-      });
-      // 切走当前激活的 Agent（若有），使聊天区展示 viewer 消息
-      setActiveAgentId(undefined);
-      // 后台预拉取模型列表，加速首次点击模型选择器
-      if (!cachedModelsRef.current) {
-        api.projects.listModels(projectId).then((models) => {
-          if (models.length > 0) cachedModelsRef.current = models;
-        }).catch(() => undefined);
-      }
-    } catch {
-      if (requestId === sessionViewerRequestRef.current) {
-        showToast(t("app.sessionReadFailed"), 3000);
-      }
-    }
-  }
-
-  /** 立即清除 viewer（切到 Agent / 发送消息时调用）。 */
-  function clearSessionViewerNow() {
-    sessionViewerRequestRef.current += 1;
-    if (sessionViewerTimerRef.current) {
-      clearTimeout(sessionViewerTimerRef.current);
-      sessionViewerTimerRef.current = null;
-    }
-    setSessionViewer(null);
-    // 清理 viewer 的输入草稿
-    delete livePromptByAgentRef.current["_viewer"];
-    setPromptByAgent((current) => {
-      if (!("_viewer" in current)) return current;
-      const next = { ...current };
-      delete next["_viewer"];
-      return next;
-    });
-    setAttachedImagesByAgent((current) => {
-      if (!("_viewer" in current)) return current;
-      const next = { ...current };
-      delete next["_viewer"];
-      return next;
-    });
-  }
-
-  /** 延迟清除 viewer（切走时调用，给用户 60s 窗口可以点回来）。 */
-  function scheduleSessionViewerCleanup() {
-    if (sessionViewerTimerRef.current) clearTimeout(sessionViewerTimerRef.current);
-    sessionViewerTimerRef.current = setTimeout(() => {
-      sessionViewerTimerRef.current = null;
-      clearSessionViewerNow();
-    }, 60_000);
   }
 
   function applyAgentRuntimeState(agentId: string, incoming: AgentRuntimeState) {
@@ -4319,13 +4159,6 @@ export function App() {
       setModelPickerOpen(false);
       return;
     }
-    // 查看器模式 → 暂存到 viewer 状态，工具栏立即反映
-    if (sessionViewer) {
-      setSessionViewer((prev) => prev ? {
-        ...prev,
-        sessionModel: { provider: model.provider, modelId: model.id },
-      } : null);
-    }
     setModelPickerOpen(false);
     showToast(t("app.modelSwitched", { name: model.name ?? model.id }), 2000);
   }
@@ -4373,9 +4206,7 @@ export function App() {
         }),
       );
     }
-    } else if (sessionViewer) {
-      // 查看器模式 → 暂存到 viewer 状态
-      setSessionViewer((prev) => prev ? { ...prev, sessionThinking: level } : null);
+    } else {
       setThinkingPickerOpen(false);
     }
   }
@@ -4794,14 +4625,7 @@ export function App() {
     }
   }
 
-  /** Viewer 恢复同一旧会话时 pending Agent 在后台启动，不改变时间线和输入框外观。 */
-  const isViewerAgentStarting = Boolean(
-    isSessionViewerActive && isPendingAgentId(activeAgentId),
-  );
-  const isViewerHandoffPending = Boolean(
-    canBridgeSessionViewerMessages && viewerSendPending,
-  );
-  const isAgentStarting = !isViewerAgentStarting && activeAgent?.status === "starting";
+  const isAgentStarting = activeAgent?.status === "starting";
   const composerDisabled = !activeAgent || isAgentStarting;
   const isAgentBusy = Boolean(
     activeAgent &&
@@ -4918,71 +4742,12 @@ export function App() {
     images: ImageContent[];
     agentMode: ComposerAgentMode;
   }) {
-    if (!override && viewerSendPendingRef.current) return;
-    if (!override && sessionViewer && !activeAgentId) {
-      const viewer = sessionViewer;
-      const draft = prompt;
-      const images = attachedImages;
-      const agentMode = viewerComposerAgentMode;
-      if (!draft.trim() && images.length === 0) return;
-
-      viewerSendPendingRef.current = true;
-      setViewerSendPending(true);
-      setPromptForAgent("_viewer", "");
-      setAttachedImagesForAgent("_viewer", []);
-      try {
-        const newAgent = await createAgent(
-          viewer.projectId,
-          viewer.session.filePath,
-          viewer.session.name || t("common.untitled"),
-        );
-        if (!newAgent) {
-          setPromptForAgent("_viewer", (current) =>
-            [draft, current].filter((text) => text.trim()).join("\n\n"),
-          );
-          setAttachedImagesForAgent("_viewer", (current) => [...images, ...current]);
-          return;
-        }
-
-        // pending 阶段用户可以继续撰写第二条消息；真实 Agent ID 就绪后迁移草稿。
-        const nextDraft = livePromptByAgentRef.current[newAgent.id]
-          ?? livePromptByAgentRef.current["_viewer"]
-          ?? "";
-        const nextImages = attachedImagesByAgentRef.current[newAgent.id]
-          ?? attachedImagesByAgentRef.current["_viewer"]
-          ?? [];
-        setPromptForAgent(newAgent.id, nextDraft);
-        setAttachedImagesForAgent(newAgent.id, nextImages);
-        setPromptForAgent("_viewer", "");
-        setAttachedImagesForAgent("_viewer", []);
-
-        // Viewer 只负责首发交接；显示层、压缩卡片和消息分组全部继续走 dev 的 Agent 消息链路。
-        if (viewer.sessionModel) {
-          await api.agents.setModel(
-            newAgent.id,
-            viewer.sessionModel.provider,
-            viewer.sessionModel.modelId,
-          ).catch(() => undefined);
-        }
-        if (viewer.sessionThinking) {
-          await api.agents.setThinking(newAgent.id, viewer.sessionThinking).catch(() => undefined);
-        }
-        setComposerAgentModeForAgent(newAgent.id, agentMode);
-
-        await sendPrompt({
-          agentId: newAgent.id,
-          message: draft,
-          images,
-          agentMode,
-        });
-      } finally {
-        viewerSendPendingRef.current = false;
-        setViewerSendPending(false);
-      }
-      return;
-    }
-
     const targetAgentId = override?.agentId ?? activeAgentId;
+    // 发送前从 DOM 直读文本，避免 contentEditable 的 IME 组合期间 handleInput 被锁导致 ref 落后于 DOM
+    if (!override && targetAgentId) {
+      const domText = (composerTextareaRef.current?.textContent ?? "").replace(/\u200B/g, "");
+      if (domText) livePromptByAgentRef.current[targetAgentId] = domText;
+    }
     const livePrompt = override?.message ?? (targetAgentId
       ? (livePromptByAgentRef.current[targetAgentId] ?? prompt)
       : prompt);
@@ -5117,7 +4882,6 @@ export function App() {
   }
 
   async function sendPromptAsFollowUp() {
-    if (viewerSendPendingRef.current) return;
     const targetAgentId = activeAgentId;
     const livePrompt = targetAgentId
       ? (livePromptByAgentRef.current[targetAgentId] ?? prompt)
@@ -6392,7 +6156,8 @@ export function App() {
                   })}
                 {!isCollapsed && projectSessionsLoading && (
                   <div className="project-session-loading">
-                    {t("app.projectSessionsLoading")}
+                    <div className="loader" />
+                    <span>{t("app.projectSessionsLoading")}</span>
                   </div>
                 )}
                 {!isCollapsed && projectDisplay.hiddenChildCount > 0 && (
@@ -6924,8 +6689,8 @@ export function App() {
             </div>
           )}
 
-          {/* 只在不来自查看器过渡时显示启动骨架，查看器过渡保持原消息可见 */}
-          {activeAgent?.status === "starting" && !sessionViewer && (
+          {/* Agent 启动时显示骨架屏；消息尚未到达时继续展示，避免闪空 */}
+          {(activeAgent?.status === "starting" || (Boolean(activeAgent) && activeMessages.length === 0 && !isPendingAgentId(activeAgent!.id))) ? (
             <div className="history-loading">
               <div className="history-loading-placeholder">
                 <div className="skeleton-bubble" />
@@ -6944,14 +6709,14 @@ export function App() {
               </div>
               <span style={{ paddingTop: "16px", alignSelf: "center", fontSize: "var(--font-size-small)" }}>{t("app.agentStarting")}</span>
             </div>
-          )}
-          {!activeAgent && !sessionViewer && (
+          ) : null}
+          {!activeAgent && (
             <EmptyState
               hasProject={Boolean(activeProjectId)}
               onCreate={() => createAgent()}
             />
           )}
-          {(activeAgent && activeAgent.status !== "starting") || sessionViewer ? (
+          {(activeAgent && activeAgent.status !== "starting" && activeMessages.length > 0) ? (
             <div className="message-list">
               {/* 使用 groupToolMessages 渲染：user/error/system 独立条目，
                   assistant + tool 聚合为 agnet-run（TurnRow 自带操作栏） */}
@@ -7299,7 +7064,7 @@ export function App() {
             <ComposerToolbar
               state={activeRuntimeState}
               compacting={compacting}
-              disabled={isAgentBusy || isAgentStarting || isViewerHandoffPending}
+              disabled={isAgentBusy || isAgentStarting}
               onPickModel={openModelPicker}
               onPickThinking={() => setThinkingPickerOpen(true)}
               onPickPromptTemplate={openPromptTemplatePicker}
@@ -7344,7 +7109,7 @@ export function App() {
               validSessionRefs={validSessionRefs}
               caretRef={pendingComposerCaretRef}
               placeholder={
-                isAgentStarting && !isSessionViewerActive
+                isAgentStarting
                   ? t("app.agentStartingPlaceholder")
                   : !activeAgent
                     ? t("app.composerNoAgentPlaceholder")
@@ -7364,12 +7129,10 @@ export function App() {
               }}
               onChange={(newValue, cursor) => {
                 const targetAgentId = activeAgentIdRef.current;
-                if (isSessionViewerActive) {
-                  setPromptFromNativeInput("_viewer", newValue);
-                } else if (targetAgentId) {
+                if (targetAgentId) {
                   setPromptFromNativeInput(targetAgentId, newValue);
                 }
-                if (targetAgentId && !isSessionViewerActive) {
+                if (targetAgentId) {
                   setBusyDraftByAgent((current) => {
                     if (!newValue.trim()) {
                       if (!current[targetAgentId]) return current;
@@ -7504,8 +7267,7 @@ export function App() {
                       type="button"
                       disabled={
                         isAgentStarting ||
-                        isViewerHandoffPending ||
-                        (!activeAgentId && !sessionViewer) ||
+                        (!activeAgentId) ||
                         (!prompt.trim() && attachedImages.length === 0)
                       }
                       className="btn-circle send"
@@ -7802,9 +7564,10 @@ export function App() {
                 refreshSessions(sessionsProjectId ?? activeProjectId)
               }
               onOpenSession={(session) =>
-                openSessionViewer(
-                  sessionsProjectId ?? activeProjectId ?? sessionViewer?.projectId ?? "",
-                  session,
+                createAgent(
+                  sessionsProjectId ?? activeProjectId ?? "",
+                  session.filePath,
+                  session.name,
                 )
               }
               onRenameSession={async (filePath, newName) => {
