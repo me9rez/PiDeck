@@ -822,30 +822,34 @@ export function SettingsModal(props: {
 						{activeTab === "dev" && (
 							<>
 								<SettingsSection title={t("settings.environment")}>
-									<div className="setting-row">
-										<div>
-											<strong>{t("settings.piEnvironment")}</strong>
-											<small>
-												{props.piStatus
-													? props.piStatus.installed
-														? t("settings.foundPi", {
-																version: props.piStatus.version ?? "pi",
-															})
-														: t("settings.piMissing")
-													: t("settings.piCliAvailable")}
-											</small>
-											{piPath && (
-												<small className="setting-path">
-													{t("settings.currentPath", { path: piPath })}
-												</small>
-											)}
-											{props.piStatus && !props.piStatus.installed && props.piStatus.error && (
-												<small className="setting-status error setting-error-detail">
-													{t("settings.detectFailed", {
-														error: props.piStatus.error,
-													})}
-												</small>
-											)}
+									{/* Pi CLI 状态：安装检测 + 路径信息 + 重新检测 */}
+									<div className="setting-pi-status">
+										<div className="setting-pi-status-indicator">
+											<span
+												className={"pi-status-dot " + (props.piStatus?.installed ? "online" : "offline")}
+											/>
+											<div className="setting-pi-status-text">
+												<strong>Pi CLI</strong>
+												<span>
+													{props.piStatus
+														? props.piStatus.installed
+															? t("settings.foundPi", {
+																	version: props.piStatus.version ?? "pi",
+																})
+															: t("settings.piMissing")
+														: t("settings.piCliAvailable")}
+												</span>
+												{piPath && (
+													<span className="setting-path">
+														{piPath}
+													</span>
+												)}
+												{props.piStatus && !props.piStatus.installed && props.piStatus.error && (
+													<span className="setting-status error">
+														{props.piStatus.error}
+													</span>
+												)}
+											</div>
 										</div>
 										<div className="setting-inline-actions">
 											<Button onClick={props.onCheckPi} disabled={props.piChecking}>
@@ -863,6 +867,109 @@ export function SettingsModal(props: {
 											)}
 										</div>
 									</div>
+
+									<hr className="setting-divider" />
+
+									{/* Pi 来源：Windows 原生 / WSL（仅 Windows 可见） */}
+									{props.appInfo.platform === "win32" && (
+									<div className="setting-pi-source-block">
+										<div className="setting-pi-source-row">
+											<span>{t("settings.piSource.label")}</span>
+											<SelectField
+												value={draftSettings.wslEnabled ? "wsl" : "windows"}
+												options={[
+													{ value: "windows", label: t("settings.piSource.windows") },
+													{ value: "wsl", label: t("settings.piSource.wsl") },
+												]}
+												onChange={(value) => {
+													updateDraft({ wslEnabled: value === "wsl" });
+													setWslValidation(null);
+												}}
+											/>
+										</div>
+										{draftSettings.wslEnabled && (
+											<div className="setting-pi-wsl-config">
+												<div className="setting-wsl-fields">
+													{wslDistros.length > 0 ? (
+														<SelectField
+															className="setting-field"
+															label={t("settings.wsl.distro")}
+															value={draftSettings.wslDistro}
+															options={distroOptions}
+															onChange={(value) => {
+																updateDraft({ wslDistro: value });
+																setWslValidation(null);
+															}}
+														/>
+													) : (
+														<TextField
+															className="setting-field"
+															label={t("settings.wsl.distro")}
+															value={draftSettings.wslDistro}
+															onChange={(value) => {
+																updateDraft({ wslDistro: value });
+																setWslValidation(null);
+															}}
+															placeholder="Ubuntu"
+														/>
+													)}
+													{wslDistrosLoading && (
+														<small className="setting-status info">{t("settings.wsl.detectingDistros")}</small>
+													)}
+													<div className="setting-wsl-user-row">
+														<TextField
+															className="setting-field"
+															label={t("settings.wsl.user")}
+															value={wslUserInput}
+															onChange={(value) => {
+																setWslUserInput(value);
+																setWslValidation(null);
+															}}
+															placeholder="root"
+														/>
+														<Button
+															buttonSize="sm"
+															disabled={!wslUserInput.trim() || wslValidating}
+															loading={wslValidating}
+															onClick={handleValidateWslUser}
+														>
+															{t("settings.wsl.validateUser")}
+														</Button>
+													</div>
+												</div>
+												{wslValidation && (
+													<div className={`setting-wsl-validation ${wslValidation.ok ? "success" : "error"}`}>
+														{wslValidation.ok ? (
+															<>
+																<small className="setting-status success">
+																	{t("settings.wsl.validationOk", {
+																		user: wslValidation.whoami,
+																		distro: draftSettings.wslDistro,
+																	})}
+																</small>
+																{wslValidation.piVersion ? (
+																	<small className="setting-status success">
+																		{t("settings.wsl.piDetected", { version: wslValidation.piVersion })}
+																	</small>
+																) : (
+																	<small className="setting-status warning">
+																		{wslValidation.error || t("settings.wsl.piNotInstalled")}
+																	</small>
+																)}
+															</>
+														) : (
+															<small className="setting-status error">{wslValidation.error}</small>
+														)}
+													</div>
+												)}
+											</div>
+										)}
+									</div>
+									)}
+
+									<hr className="setting-divider" />
+
+									{/* 自定义 Pi 路径 */}
 									<div className="setting-pi-path-panel">
 										<TextField
 											className="setting-field"
@@ -909,163 +1016,75 @@ export function SettingsModal(props: {
 											</small>
 										)}
 									</div>
-								{/* WSL pi 来源配置：仅 Windows 可见，使用全局 draft */}
-								{props.appInfo.platform === "win32" && (
-								<div className="setting-pi-wsl-panel">
-									<SelectField
-										className="setting-field"
-										label={t("settings.piSource.label")}
-										description={t("settings.piSource.desc")}
-										value={draftSettings.wslEnabled ? "wsl" : "windows"}
-										options={[
-											{ value: "windows", label: t("settings.piSource.windows") },
-											{ value: "wsl", label: t("settings.piSource.wsl") },
-										]}
-										onChange={(value) => {
-											updateDraft({ wslEnabled: value === "wsl" });
-											setWslValidation(null);
-										}}
-									/>
-									{draftSettings.wslEnabled && (
-										<>
-											<div className="setting-wsl-fields">
-												{wslDistros.length > 0 ? (
-													<SelectField
-														className="setting-field"
-														label={t("settings.wsl.distro")}
-														value={draftSettings.wslDistro}
-														options={distroOptions}
-														onChange={(value) => {
-															updateDraft({ wslDistro: value });
-															setWslValidation(null);
-														}}
-													/>
+
+									<hr className="setting-divider" />
+
+									{/* 版本与更新 */}
+									<div className="setting-row">
+										<div>
+											<strong>{t("settings.piUpdate")}</strong>
+											<span style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", color: "var(--color-text-tertiary)", fontSize: "var(--font-size-caption)" }}>
+												<span>v{props.appInfo.version}</span>
+												{props.piUpdateCheck?.currentVersion || props.piStatus?.version ? (
+													<span>
+														{t("settings.piUpdateVersions", {
+															current: props.piUpdateCheck?.currentVersion ?? props.piStatus?.version ?? "-",
+															latest: props.piUpdateCheck?.latestVersion ?? "-",
+														})}
+													</span>
 												) : (
-													<TextField
-														className="setting-field"
-														label={t("settings.wsl.distro")}
-														value={draftSettings.wslDistro}
-														onChange={(value) => {
-															updateDraft({ wslDistro: value });
-															setWslValidation(null);
-														}}
-														placeholder="Ubuntu"
-													/>
+													<span>{t("settings.piUpdateDesc")}</span>
 												)}
-												{wslDistrosLoading && (
-													<small className="setting-status info">{t("settings.wsl.detectingDistros")}</small>
-												)}
-												<div className="setting-wsl-user-row">
-													<TextField
-														className="setting-field"
-														label={t("settings.wsl.user")}
-														value={wslUserInput}
-														onChange={(value) => {
-															setWslUserInput(value);
-															setWslValidation(null);
-														}}
-														placeholder="root"
-													/>
-													<Button
-														buttonSize="sm"
-														disabled={!wslUserInput.trim() || wslValidating}
-														loading={wslValidating}
-														onClick={handleValidateWslUser}
-													>
-														{t("settings.wsl.validateUser")}
-													</Button>
-												</div>
-											</div>
-											{wslValidation && (
-												<div className={`setting-wsl-validation ${wslValidation.ok ? "success" : "error"}`}>
-													{wslValidation.ok ? (
-														<>
-															<small className="setting-status success">
-																{t("settings.wsl.validationOk", {
-																	user: wslValidation.whoami,
-																	distro: draftSettings.wslDistro,
-																})}
-															</small>
-															{wslValidation.piVersion ? (
-																<small className="setting-status success">
-																	{t("settings.wsl.piDetected", { version: wslValidation.piVersion })}
-																</small>
-															) : (
-																<small className="setting-status warning">
-																	{wslValidation.error || t("settings.wsl.piNotInstalled")}
-																</small>
-															)}
-														</>
-													) : (
-														<small className="setting-status error">{wslValidation.error}</small>
-													)}
-												</div>
-											)}
-										</>
+											</span>
+										</div>
+										<div className="setting-inline-actions">
+											<Button
+												onClick={draftSettings.disableUpdateCheck ? undefined : props.onCheckUpdate}
+												loading={props.updateChecking}
+												disabled={draftSettings.disableUpdateCheck}
+											>
+												{draftSettings.disableUpdateCheck
+													? t("settings.updateCheckDisabled")
+													: t("settings.checkUpdate")}
+											</Button>
+											<Button
+												onClick={props.onCheckPiUpdate}
+												loading={props.piUpdateChecking}
+												disabled={draftSettings.disableUpdateCheck}
+											>
+												{t("settings.checkPiUpdate")}
+											</Button>
+											<Button
+												onClick={props.onUpdatePi}
+												loading={props.piUpdating}
+												disabled={
+													draftSettings.disableUpdateCheck ||
+													!props.piUpdateCheck?.hasUpdate
+												}
+											>
+												{t("settings.updatePi")}
+											</Button>
+										</div>
+									</div>
+									{props.piUpdateResult && (
+										<pre className="setting-update-output">
+											{props.piUpdateResult.command}
+											{"\n"}
+											{props.piUpdateResult.output}
+										</pre>
 									)}
-								</div>
-								)}
-								<SettingSwitch
-									title={t("settings.disableUpdateCheck")}
-									description={t("settings.disableUpdateCheckDesc")}
-									checked={draftSettings.disableUpdateCheck}
-									onChange={(checked) =>
-										updateDraft({ disableUpdateCheck: checked })
-									}
-								/>
-								<div className="setting-row">
-									<div>
-										<strong>{t("settings.piUpdate")}</strong>
-										<span style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", color: "var(--color-text-tertiary)", fontSize: "var(--font-size-caption)" }}>
-											<span>v{props.appInfo.version}</span>
-											{props.piUpdateCheck?.currentVersion || props.piStatus?.version ? (
-												<span>
-													{t("settings.piUpdateVersions", {
-														current: props.piUpdateCheck?.currentVersion ?? props.piStatus?.version ?? "-",
-														latest: props.piUpdateCheck?.latestVersion ?? "-",
-													})}
-												</span>
-											) : (
-												<span>{t("settings.piUpdateDesc")}</span>
-											)}
-										</span>
-									</div>
-									<div className="setting-inline-actions">
-										<Button
-											onClick={draftSettings.disableUpdateCheck ? undefined : props.onCheckUpdate}
-											loading={props.updateChecking}
-											disabled={draftSettings.disableUpdateCheck}
-										>
-											{draftSettings.disableUpdateCheck
-												? t("settings.updateCheckDisabled")
-												: t("settings.checkUpdate")}
-										</Button>
-										<Button
-											onClick={props.onCheckPiUpdate}
-											loading={props.piUpdateChecking}
-											disabled={draftSettings.disableUpdateCheck}
-										>
-											{t("settings.checkPiUpdate")}
-										</Button>
-										<Button
-											onClick={props.onUpdatePi}
-											loading={props.piUpdating}
-											disabled={
-												draftSettings.disableUpdateCheck ||
-												!props.piUpdateCheck?.hasUpdate
-											}
-										>
-											{t("settings.updatePi")}
-										</Button>
-									</div>
-								</div>
-								{props.piUpdateResult && (
-									<pre className="setting-update-output">
-										{props.piUpdateResult.command}
-										{"\n"}
-										{props.piUpdateResult.output}
-									</pre>
-								)}
+
+									<hr className="setting-divider" />
+
+									{/* 禁用版本检测 */}
+									<SettingSwitch
+										title={t("settings.disableUpdateCheck")}
+										description={t("settings.disableUpdateCheckDesc")}
+										checked={draftSettings.disableUpdateCheck}
+										onChange={(checked) =>
+											updateDraft({ disableUpdateCheck: checked })
+										}
+									/>
 								</SettingsSection>
 								<SettingsSection title={t("settings.debug")}>
 									<div className="setting-row">
@@ -1412,7 +1431,6 @@ function StorageTab(props: {
 		onConfirm: () => void;
 	} | null>(null);
 
-	// 每 5 秒刷新一次日志大小; 切换到此 tab 时立即刷新（activeTab 由父组件管理,当前存储 tab 自身 mount 时刷新）
 	useEffect(() => {
 		let mounted = true;
 		const refresh = () => {
