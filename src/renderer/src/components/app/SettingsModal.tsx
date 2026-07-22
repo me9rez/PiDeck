@@ -617,6 +617,42 @@ export function SettingsModal(props: {
 										}
 									/>
 								</SettingsSection>
+								<SettingsSection title={t("settings.advanced")}>
+									<div className="setting-field">
+										<span>
+											{t("settings.rpcTimeout")}
+											<DirtyMarker dirty={isDirty("rpcTimeout")} label={t("settings.rpcTimeout")} />
+										</span>
+										<input
+											type="number"
+											value={String(Math.round(draftSettings.rpcTimeout / 1000))}
+											onChange={(e) => {
+												const seconds = Math.max(600, parseInt(e.target.value) || 600);
+												updateDraft({ rpcTimeout: seconds * 1000 });
+											}}
+										/>
+										<small style={{ color: "var(--color-text-tertiary)", fontSize: "var(--font-size-caption)" }}>
+											{t("settings.rpcTimeoutDesc")}
+										</small>
+									</div>
+									<div className="setting-field">
+										<span>
+											{t("settings.maxEditorFileSize")}
+											<DirtyMarker dirty={isDirty("maxEditorFileSizeMB")} label={t("settings.maxEditorFileSize")} />
+										</span>
+										<input
+											type="number"
+											value={String(draftSettings.maxEditorFileSizeMB)}
+											onChange={(e) => {
+												const mb = Math.max(1, parseInt(e.target.value) || 5);
+												updateDraft({ maxEditorFileSizeMB: mb });
+											}}
+										/>
+										<small style={{ color: "var(--color-text-tertiary)", fontSize: "var(--font-size-caption)" }}>
+											{t("settings.maxEditorFileSizeDesc")}
+										</small>
+									</div>
+								</SettingsSection>
 							</>
 						)}
 						{/* ── 外观设置 tab ── */}
@@ -969,40 +1005,6 @@ export function SettingsModal(props: {
 									)}
 								</div>
 								)}
-								<div className="setting-field">
-									<span>
-										{t("settings.rpcTimeout")}
-										<DirtyMarker dirty={isDirty("rpcTimeout")} label={t("settings.rpcTimeout")} />
-									</span>
-									<input
-										type="number"
-										value={String(Math.round(draftSettings.rpcTimeout / 1000))}
-										onChange={(e) => {
-											const seconds = Math.max(600, parseInt(e.target.value) || 600);
-											updateDraft({ rpcTimeout: seconds * 1000 });
-										}}
-									/>
-									<small style={{ color: "var(--color-text-tertiary)", fontSize: "var(--font-size-caption)" }}>
-										{t("settings.rpcTimeoutDesc")}
-									</small>
-								</div>
-								<div className="setting-field">
-									<span>
-										{t("settings.maxEditorFileSize")}
-										<DirtyMarker dirty={isDirty("maxEditorFileSizeMB")} label={t("settings.maxEditorFileSize")} />
-									</span>
-									<input
-										type="number"
-										value={String(draftSettings.maxEditorFileSizeMB)}
-										onChange={(e) => {
-											const mb = Math.max(1, parseInt(e.target.value) || 5);
-											updateDraft({ maxEditorFileSizeMB: mb });
-										}}
-									/>
-									<small style={{ color: "var(--color-text-tertiary)", fontSize: "var(--font-size-caption)" }}>
-										{t("settings.maxEditorFileSizeDesc")}
-									</small>
-								</div>
 								<SettingSwitch
 									title={t("settings.disableUpdateCheck")}
 									description={t("settings.disableUpdateCheckDesc")}
@@ -1064,6 +1066,26 @@ export function SettingsModal(props: {
 										{props.piUpdateResult.output}
 									</pre>
 								)}
+								</SettingsSection>
+								<SettingsSection title={t("settings.debug")}>
+									<div className="setting-row">
+										<div>
+											<strong>{t("settings.restartApp")}</strong>
+											<small>{t("settings.restartAppDesc")}</small>
+										</div>
+										<Button onClick={props.onRestartApp}>
+											{t("settings.restartAppButton")}
+										</Button>
+									</div>
+									<div className="setting-row">
+										<div>
+											<strong>{t("settings.devTools")}</strong>
+											<small>{t("settings.devToolsDesc")}</small>
+										</div>
+										<Button onClick={props.onToggleDevTools}>
+											{t("settings.toggle")}
+										</Button>
+									</div>
 								</SettingsSection>
 								<SettingsSection title={t("settings.webLocalService")} description={t("settings.webLocalServiceDesc")}>
 									<SettingSwitch
@@ -1134,26 +1156,6 @@ export function SettingsModal(props: {
 											updateDraft({ telemetryEnabled: checked })
 										}
 									/>
-								</SettingsSection>
-								<SettingsSection title={t("settings.debug")}>
-									<div className="setting-row">
-										<div>
-											<strong>{t("settings.restartApp")}</strong>
-											<small>{t("settings.restartAppDesc")}</small>
-										</div>
-										<Button onClick={props.onRestartApp}>
-											{t("settings.restartAppButton")}
-										</Button>
-									</div>
-									<div className="setting-row">
-										<div>
-											<strong>{t("settings.devTools")}</strong>
-											<small>{t("settings.devToolsDesc")}</small>
-										</div>
-										<Button onClick={props.onToggleDevTools}>
-											{t("settings.toggle")}
-										</Button>
-									</div>
 								</SettingsSection>
 							</>
 						)}
