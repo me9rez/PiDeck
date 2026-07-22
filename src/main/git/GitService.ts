@@ -359,6 +359,39 @@ export class GitService {
 		}
 	}
 
+	/**
+	 * 获取当前暂存区（staged）的完整 diff 文本，用于 AI 生成提交摘要。
+	 * 优先返回暂存区的 diff，无暂存文件时返回工作区 diff。
+	 * @param cwd 仓库工作目录
+	 * @param maxBytes 最大返回字节数（默认 100KB），超出截断
+	 */
+	async getStagedDiff(cwd: string, maxBytes = 100 * 1024): Promise<string> {
+		try {
+			// 先试暂存区 diff
+			let { stdout } = await execFileAsync("git", ["diff", "--staged", "--unified=3"], {
+				cwd,
+				encoding: "utf8",
+				timeout: GIT_MUTATION_TIMEOUT_MS,
+				maxBuffer: maxBytes + 1024,
+			});
+			// 无暂存内容时回退到工作区 diff
+			if (!stdout.trim()) {
+				({ stdout } = await execFileAsync("git", ["diff", "--unified=3"], {
+					cwd,
+					encoding: "utf8",
+					timeout: GIT_MUTATION_TIMEOUT_MS,
+					maxBuffer: maxBytes + 1024,
+				}));
+			}
+			const truncated = stdout.length > maxBytes
+				? stdout.slice(0, maxBytes) + "\n\n... (diff truncated)"
+				: stdout;
+			return truncated;
+		} catch {
+			return "";
+		}
+	}
+
 	// ── 以下为 Git 增强方法（复刻 VS Code git.ts） ──────────────────────
 
 	/**

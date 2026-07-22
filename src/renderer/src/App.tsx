@@ -5742,7 +5742,7 @@ export function App() {
               placeholder={t("app.search")}
             />
           </div>
-          <button className="round-add" onClick={addProject}>
+          <button className="round-add" onClick={addProject} title={t("app.addProject")}>
             <Plus size={18} />
           </button>
         </div>
@@ -5796,6 +5796,7 @@ export function App() {
               projectIsChat ? "chat-project" : "",
               isDraggingProject ? "dragging" : "",
               isProjectDropTarget ? "drag-over" : "",
+              projectSessionsLoading ? "project-loading" : "",
             ]
               .filter(Boolean)
               .join(" ");
@@ -5824,23 +5825,24 @@ export function App() {
                       project,
                     });
                   }}
-                  onClick={() => {
+                  onClick={(event) => {
                     if (projectDragPreventClickRef.current) return;
-                    // 项目节点现在同时承载运行中的 Agent 和历史会话;有任一子项时点击项目行切换展开状态。
+                    // 项目点击脉冲动画：给按钮临时加动画 class，提供即时视觉反馈
+                    const el = event.currentTarget;
+                    el.classList.add('click-animating');
+                    setTimeout(() => el.classList.remove('click-animating'), 400);
+
+                    // 点击项目行始终切换展开/折叠状态
                     const wasCollapsed = collapsedProjects.has(project.id);
-                    const willBeExpanded = wasCollapsed; // 如果之前折叠,点击后会展开
+                    setCollapsedProjects((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(project.id)) next.delete(project.id);
+                      else next.add(project.id);
+                      return next;
+                    });
 
-                    if (hasProjectChildren) {
-                      setCollapsedProjects((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(project.id)) next.delete(project.id);
-                        else next.add(project.id);
-                        return next;
-                      });
-                    }
-
-                    // 展开项目时加载会话(如果之前未加载过)
-                    if (willBeExpanded && !projectIsChat) {
+                    // 展开项目时同步加载会话记录，loading 指示器让用户知道正在加载
+                    if (wasCollapsed && !projectIsChat) {
                       const hasLoadedSessions = sessionsByProject[project.id]?.length > 0;
                       if (!hasLoadedSessions) {
                         void refreshProjectSessions(project.id).catch(() => undefined);
@@ -5870,6 +5872,9 @@ export function App() {
                       <strong title={project.path}>
                         {projectDirectoryName}
                       </strong>
+                      {projectSessionsLoading && (
+                        <span className="conversation-loading" />
+                      )}
                       {(sessionSourceFilter[project.id] ?? null) !== null && (
                         <Filter
                           size={12}
@@ -7503,6 +7508,7 @@ export function App() {
                   revert={api.git.revert}
                   reset={api.git.reset}
                   dropCommit={api.git.dropCommit}
+                  generateCommitMessage={api.git.generateCommitMessage}
                 />
               </div>
               {gitDrawerDiff && gitDrawerDiff.projectId === activeProjectId && gitDiffDisplayMode === "drawer" && (

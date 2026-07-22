@@ -1822,6 +1822,61 @@ function registerIpc() {
 		},
 	);
 
+	ipcMain.handle(
+		ipcChannels.gitGenerateCommitMessage,
+		async (_event, projectId: string) => {
+			const project = projectStore.get(projectId);
+			if (!project) return "";
+			const diff = await gitService.getStagedDiff(project.path);
+			if (!diff.trim()) return "";
+
+			// 构建提示词：因在模板字面量中避免嵌套反引号，使用数组拼接
+			const prompt = [
+				"请根据以下 git diff 生成一条中文 git commit message。",
+				"格式：feat: / fix: / refactor: / chore: / docs: / style: / perf: / test: 等标准约定式提交前缀。",
+				"只输出 message 本身，不要解释，不要包含 markdown 标记。",
+				"",
+				diff.slice(0, 8000),
+			].join("\n");
+
+			const settings = settingsStore.get();
+			const command = piLocator.resolveCommand(
+				settings.customPiPath,
+				settings.wslEnabled,
+				settings.wslDistro,
+				settings.wslUser,
+			);
+			const invocation = piLocator.createInvocation(command, [
+				"-p", prompt,
+				"--model", "gpt-4o-mini",
+			]);
+			try {
+				const { execFile } = await import("node:child_process");
+				const result = await new Promise<string>((resolve, reject) => {
+					execFile(invocation.command, invocation.args, {
+						env: piLocator.createProcessEnv(settings, invocation.pathPrefix, invocation.wsl),
+						shell: invocation.shell,
+						windowsHide: true,
+						timeout: 30_000,
+						encoding: "utf8",
+						windowsVerbatimArguments: invocation.windowsVerbatimArguments,
+					}, (error, stdout, stderr) => {
+						if (error) {
+							const message = (stderr || error.message).slice(0, 300);
+							void appLogger.warn("git", "Generate commit message failed", { error: message });
+							reject(new Error(message));
+							return;
+						}
+						resolve(stdout.trim());
+					});
+				});
+				return result;
+			} catch {
+				return "";
+			}
+		},
+	);
+
 	ipcMain.handle(ipcChannels.piCheck, async () => {
 		// 用户手动指定的路径优先于自动检测
 		const settings = settingsStore.get();

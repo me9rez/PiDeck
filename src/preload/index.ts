@@ -408,6 +408,12 @@ const api = {
 				projectId,
 				hash,
 			) as Promise<void>,
+		/** AI 生成提交摘要 */
+		generateCommitMessage: (projectId: string) =>
+			ipcRenderer.invoke(
+				ipcChannels.gitGenerateCommitMessage,
+				projectId,
+			) as Promise<string>,
 	},
 	pi: {
 		check: () =>
