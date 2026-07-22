@@ -367,15 +367,15 @@ export function SettingsModal(props: {
 				<div className="modal-header">
 					<strong>{t("settings.title")}</strong>
 					<div className="modal-header-actions" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-						{/* 全局保存/取消按钮：仅在存在未保存变更时显示 */}
+						{/* 全局保存/取消按钮：仅在存在未保存变更时显示，样式与配置弹框的导入/导出按钮一致 */}
 						{hasDirtyChanges && (
 							<>
-								<Button buttonSize="sm" variant="primary" onClick={saveAll}>
+								<button className="config-btn primary" onClick={saveAll}>
 									{t("common.save")}
-								</Button>
-								<Button buttonSize="sm" variant="secondary" onClick={cancelAll}>
+								</button>
+								<button className="config-btn" onClick={cancelAll}>
 									{t("common.cancel")}
-								</Button>
+								</button>
 							</>
 						)}
 						<CloseIconButton
