@@ -14040,6 +14040,12 @@ a.config-btn {
   gap: 8px;
   align-items: center;
 }
+/* 覆盖 .setting-row div 的 grid 布局，确保按钮容器横排 */
+.setting-row .setting-inline-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
 
 /* 调试按钮 */
 .debug-toggle {
