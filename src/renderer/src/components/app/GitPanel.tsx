@@ -1232,7 +1232,12 @@ export function GitPanel(props: GitPanelProps) {
                         props.projectId,
                       );
                       if (message) setCommitMessage(message);
-                    } catch {}
+                    } catch (err) {
+                      showNotice(
+                        err instanceof Error ? err.message : t("git.generateCommitMessageFailed"),
+                        5000,
+                        "error",
+                      );
                     setCommitGenLoading(false);
                   }}
                 >

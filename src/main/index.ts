@@ -1848,32 +1848,27 @@ function registerIpc() {
 			);
 			const invocation = piLocator.createInvocation(command, [
 				"-p", prompt,
-				"--model", "gpt-4o-mini",
 			]);
-			try {
-				const { execFile } = await import("node:child_process");
-				const result = await new Promise<string>((resolve, reject) => {
-					execFile(invocation.command, invocation.args, {
-						env: piLocator.createProcessEnv(settings, invocation.pathPrefix, invocation.wsl),
-						shell: invocation.shell,
-						windowsHide: true,
-						timeout: 30_000,
-						encoding: "utf8",
-						windowsVerbatimArguments: invocation.windowsVerbatimArguments,
-					}, (error, stdout, stderr) => {
-						if (error) {
-							const message = (stderr || error.message).slice(0, 300);
-							void appLogger.warn("git", "Generate commit message failed", { error: message });
-							reject(new Error(message));
-							return;
-						}
-						resolve(stdout.trim());
-					});
+			const { execFile } = await import("node:child_process");
+			const result = await new Promise<string>((resolve, reject) => {
+				execFile(invocation.command, invocation.args, {
+					env: piLocator.createProcessEnv(settings, invocation.pathPrefix, invocation.wsl),
+					shell: invocation.shell,
+					windowsHide: true,
+					timeout: 30_000,
+					encoding: "utf8",
+					windowsVerbatimArguments: invocation.windowsVerbatimArguments,
+				}, (error, stdout, stderr) => {
+					if (error) {
+						const message = (stderr || error.message).slice(0, 500);
+						void appLogger.warn("git", "Generate commit message failed", { error: message });
+						reject(new Error(message));
+						return;
+					}
+					resolve(stdout.trim());
 				});
-				return result;
-			} catch {
-				return "";
-			}
+			});
+			return result;
 		},
 	);
 
