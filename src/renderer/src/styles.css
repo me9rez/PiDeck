@@ -1636,6 +1636,30 @@ body:not(.is-list-resizing)
   font-weight: 500;
   border-radius: var(--radius-md);
   color: var(--color-text-secondary);
+  /* 点击即时反馈：按下时背景闪一下、微缩、弹回 */
+  transition: background 0.12s ease, transform 0.1s ease;
+  animation: none;
+}
+.project-group > .conversation:first-child:active:not(.dragging) {
+  background: color-mix(in srgb, var(--color-bg-hover) 70%, var(--color-accent-soft));
+  transform: scale(0.985);
+  transition-duration: 0.05s;
+}
+
+/* 项目点击涟漪 — 视觉脉冲反馈 */
+@keyframes project-click-flash {
+  0% {
+    box-shadow: inset 0 0 0 0 rgba(35, 134, 54, 0);
+  }
+  20% {
+    box-shadow: inset 0 0 0 2px rgba(35, 134, 54, 0.2);
+  }
+  100% {
+    box-shadow: inset 0 0 0 0 rgba(35, 134, 54, 0);
+  }
+}
+.project-group > .conversation:first-child.click-animating {
+  animation: project-click-flash 0.35s ease-out;
 }
 .project-group > .conversation:first-child .conversation-title strong {
   color: var(--color-text-primary);
@@ -18779,13 +18803,14 @@ html[data-theme="dark"] .scratch-pad-md mark {
    Git panel — VS Code-style three-pane Source Control workbench
    ═══════════════════════════════════════════════════════════════ */
 /* ── Git 面板顶部分支栏 ───────────────────── */
+/* 分支栏与下方 pane header 保持统一的底色和分隔线，构成同一个工具栏家族 */
 .git-branch-bar {
   position: relative;
   display: flex;
   align-items: center;
   padding: 4px 8px;
-  border-bottom: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-muted);
+  border-bottom: 1px solid var(--git-panel-border);
+  background: color-mix(in srgb, var(--color-text-primary) 3%, var(--git-panel-bg));
   flex-shrink: 0;
 }
 /* 分支下拉触发器，统一使用按钮样式 */
@@ -18814,7 +18839,7 @@ html[data-theme="dark"] .scratch-pad-md mark {
   outline: none;
   box-shadow: var(--focus-ring);
 }
-/* 分支下拉菜单与 GitCompactFilter 菜单统一风格 */
+/* 分支下拉菜单与 GitCompactFilter 菜单统一风格；加强边框和 hover 区分度 */
 .git-branch-dropdown {
   position: absolute;
   left: 8px;
@@ -18825,10 +18850,10 @@ html[data-theme="dark"] .scratch-pad-md mark {
   overflow-y: auto;
   margin-top: 2px;
   padding: 4px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-bg-panel);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(0,0,0,0.04) inset;
 }
 .git-branch-item {
   display: flex;
@@ -18847,7 +18872,7 @@ html[data-theme="dark"] .scratch-pad-md mark {
   cursor: pointer;
 }
 .git-branch-item:hover {
-  background: var(--color-bg-hover);
+  background: color-mix(in srgb, var(--color-text-primary) 8%, var(--color-bg-panel));
 }
 .git-branch-item.active {
   color: var(--color-accent);
@@ -18858,7 +18883,7 @@ html[data-theme="dark"] .scratch-pad-md mark {
   color: var(--color-accent);
 }
 .git-branch-label {
-  max-width: 100px;
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -19049,7 +19074,7 @@ html[data-theme="dark"] .scratch-pad-md mark {
   text-transform: uppercase;
   white-space: nowrap;
 }
-.git-pane-header-actions { display: inline-flex; min-width: 0; align-items: center; gap: 1px; }
+.git-pane-header-actions { display: flex; min-width: 0; align-items: center; gap: 1px; overflow: hidden; }
 .git-pane-header-actions .git-action-btn { flex: 0 0 auto; }
 .git-pane-count {
   min-width: 14px;
@@ -19058,9 +19083,10 @@ html[data-theme="dark"] .scratch-pad-md mark {
   font-size: var(--font-size-caption);
   text-align: right;
 }
-.git-pane-body { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; }
-.git-changes-body { display: flex; flex-direction: column; }
-.git-resource-list { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; }
+.git-pane-body { min-height: 0; flex: 1; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
+/* 变更区域：提交输入框固定不滚动，文件列表独立滚动（仿 VS Code SCM） */
+.git-changes-body { display: flex; flex-direction: column; overflow: hidden; }
+.git-resource-list { min-height: 0; flex: 1; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
 .git-graph-body, .git-compare-body { display: flex; flex-direction: column; }
 
 .git-pane-sash {
@@ -19136,26 +19162,31 @@ body.is-git-pane-resizing, body.is-git-pane-resizing * { cursor: row-resize !imp
 .git-action-btn:active:not(:disabled) { background: var(--git-panel-active); color: var(--git-panel-fg); }
 .git-action-btn:disabled { opacity: .45; cursor: default; }
 
+/* 提交输入区：固定不滚动，底部有分隔线 */
 .git-scm-input-wrap {
   display: flex;
+  flex-shrink: 0;
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-2) 10px 6px;
+  border-bottom: 1px solid var(--git-panel-border);
+  background: var(--git-panel-bg);
 }
+/* 文本框不要撑满侧边栏宽度，避免在窄侧边栏中显得臃肿 */
 .git-scm-input {
   box-sizing: border-box;
   width: 100%;
-  min-height: 64px;
-  max-height: 120px;
+  min-height: 56px;
+  max-height: 100px;
   resize: vertical;
-  padding: var(--space-2);
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--git-input-border);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   background: var(--git-input-bg);
   color: var(--git-panel-fg);
   font-family: var(--git-ui-font);
-  font-size: var(--font-size-input);
-  line-height: var(--line-height-input);
+  font-size: var(--font-size-control);
+  line-height: var(--line-height-control);
 }
 .git-scm-input::placeholder { color: var(--git-desc-fg); }
 .git-compare-btn {
@@ -19174,11 +19205,12 @@ body.is-git-pane-resizing, body.is-git-pane-resizing * { cursor: row-resize !imp
   font-size: var(--font-size-control);
 }
 .git-commit-btn {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   min-height: 32px;
   border-radius: var(--radius-sm);
   font-family: var(--git-ui-font);
-  font-size: var(--font-size-body);
+  font-size: var(--font-size-control);
   font-weight: 500;
 }
 .git-commit-actions {
@@ -19269,6 +19301,7 @@ body.is-git-pane-resizing, body.is-git-pane-resizing * { cursor: row-resize !imp
 
 .git-status-msg {
   display: flex;
+  flex-shrink: 0;
   min-height: 22px;
   align-items: center;
   gap: var(--space-1);
@@ -19278,6 +19311,8 @@ body.is-git-pane-resizing, body.is-git-pane-resizing * { cursor: row-resize !imp
 }
 .git-status-msg.error { color: var(--git-conflict); }
 .git-resource-group { border-bottom: 1px solid var(--git-panel-border); }
+/* 最后一个分组不要底部边框，避免在列表末尾残留一条横线 */
+.git-resource-group:last-child { border-bottom: none; }
 .git-resource-group-header {
   display: flex;
   height: 22px;
@@ -19315,7 +19350,9 @@ body.is-git-pane-resizing, body.is-git-pane-resizing * { cursor: row-resize !imp
   white-space: nowrap;
 }
 .git-resource-group-actions { display: none; align-items: center; gap: 1px; }
-.git-resource-group-header:hover .git-resource-group-actions, .git-resource-group-header:focus-within .git-resource-group-actions { display: flex; }
+.git-resource-group-header:hover .git-resource-group-actions,
+.git-resource-group-header:focus-within .git-resource-group-actions,
+.git-resource-group.open .git-resource-group-actions { display: flex; }
 .git-resource-group-count { min-width: 14px; margin-left: var(--space-1); color: var(--git-desc-fg); font-family: var(--git-ui-font); font-size: var(--font-size-caption); text-align: right; }
 .git-resource-group-body { min-width: 0; }
 .git-resource-row {
@@ -19335,7 +19372,7 @@ body.is-git-pane-resizing, body.is-git-pane-resizing * { cursor: row-resize !imp
   height: 26px;
   flex: 1;
   align-items: center;
-  padding: 0 0 0 17px;
+  padding: 0 0 0 12px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -19352,7 +19389,6 @@ body.is-git-pane-resizing, body.is-git-pane-resizing * { cursor: row-resize !imp
 .git-file-icon svg { width: 16px; height: 16px; fill: currentColor; }
 .git-file-fallback { box-sizing: border-box; width: 12px; height: 14px; border: 1px solid var(--git-desc-fg); border-radius: var(--radius-xs); }
 .git-resource-name { min-width: 0; flex: 0 1 auto; overflow: hidden; color: var(--git-panel-fg); text-overflow: ellipsis; white-space: nowrap; }
-.git-resource-path { min-width: 0; flex: 1; overflow: hidden; padding: 0 5px; color: var(--git-desc-fg); font-family: var(--git-ui-font); font-size: var(--font-size-caption); text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .git-resource-actions { display: flex; flex: 0 0 auto; gap: 1px; margin-right: var(--space-1); visibility: hidden; }
 .git-discard-action:hover:not(:disabled), .git-discard-action:focus-visible { color: var(--color-danger); }
 .git-resource-row:hover .git-resource-actions, .git-resource-row:focus-within .git-resource-actions { visibility: visible; }
@@ -19384,6 +19420,8 @@ body.is-git-pane-resizing, body.is-git-pane-resizing * { cursor: row-resize !imp
   font-size: var(--font-size-control);
   cursor: pointer;
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 .git-compact-filter-btn:hover {
@@ -19395,7 +19433,7 @@ body.is-git-pane-resizing, body.is-git-pane-resizing * { cursor: row-resize !imp
   box-shadow: var(--focus-ring);
 }
 .git-compact-filter-label {
-  max-width: 120px;
+  max-width: 80px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -19418,10 +19456,10 @@ body.is-git-pane-resizing, body.is-git-pane-resizing * { cursor: row-resize !imp
   overflow-y: auto;
   margin-top: 2px;
   padding: 4px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-bg-panel);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(0,0,0,0.04) inset;
 }
 .git-compact-filter-opt {
   display: flex;
@@ -19439,7 +19477,7 @@ body.is-git-pane-resizing, body.is-git-pane-resizing * { cursor: row-resize !imp
   cursor: pointer;
 }
 .git-compact-filter-opt:hover {
-  background: var(--color-bg-hover);
+  background: color-mix(in srgb, var(--color-text-primary) 8%, var(--color-bg-panel));
 }
 .git-compact-filter-opt.active {
   color: var(--color-accent);
@@ -19568,8 +19606,8 @@ body.is-git-pane-resizing, body.is-git-pane-resizing * { cursor: row-resize !imp
 
 .git-compare-controls { display: flex; flex: 0 0 auto; align-items: end; gap: 5px; padding: 7px 10px; }
 .git-compare-controls label { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; color: var(--git-desc-fg); font-family: var(--git-ui-font); font-size: 11px; }
-.git-compare-controls label .git-compact-filter { display: flex; }
-.git-compare-controls label .git-compact-filter-btn { width: 100%; }
+.git-compare-controls label .git-compact-filter { display: flex; flex: 1; min-width: 0; }
+.git-compare-controls label .git-compact-filter-btn { flex: 1; min-width: 0; }
 .git-compare-arrow { display: flex; align-items: center; padding-bottom: 1px; color: var(--git-desc-fg); }
 .git-compare-summary { flex: 0 0 auto; padding: var(--space-1) 10px; border-top: 1px solid var(--git-panel-border); color: var(--git-desc-fg); font-family: var(--git-ui-font); font-size: 11px; }
 .git-compare-files { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; }
@@ -19578,6 +19616,8 @@ body.is-git-pane-resizing, body.is-git-pane-resizing * { cursor: row-resize !imp
 @media (max-width: 420px) {
   .git-history-label { gap: 6px; }
   .git-history-author, .git-resource-path { display: none; }
-  .git-pane-header-actions .git-compact-filter-btn { max-width: 34vw; }
-  .git-pane-header-actions .git-compact-filter-label { max-width: 80px; }
+  .git-pane-header-actions .git-compact-filter-btn { max-width: 100px; }
+  .git-pane-header-actions .git-compact-filter-label { max-width: 60px; }
 }
+
+
