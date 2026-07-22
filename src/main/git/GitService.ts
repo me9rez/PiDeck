@@ -233,11 +233,17 @@ export class GitService {
 		return { groups, repoRoot, inputProjectRoot, projectRoot };
 	}
 
-	/** 获取 Git 工作区状态（VS Code 风格分组）。 */
+	/** 获取 Git 工作区状态（VS Code 风格分组）。
+	 * 非 Git 仓库和 Git 未安装的错误向上抛出，让渲染层展示初始化提示或安装引导。 */
 	async getStatus(cwd: string): Promise<GitResourceGroups> {
 		try {
 			return (await this.getStatusContext(cwd)).groups;
-		} catch {
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			// 非 Git 仓库或 Git 未安装时抛出异常，让渲染层展示对应提示
+			if (/not a git repository|fatal:|command not found|ENOENT|spawn.*git.*ENOENT/i.test(msg)) {
+				throw err;
+			}
 			return { merge: [], index: [], workingTree: [], untracked: [] };
 		}
 	}

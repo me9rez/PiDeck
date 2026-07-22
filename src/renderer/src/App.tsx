@@ -3234,11 +3234,11 @@ export function App() {
 
   function viewFilePath(path: string) {
     openEditorTab(path, "view");
-    if (editorMode === "drawer") {
-      prevDrawerPanelRef.current = drawer;
-      setDrawer("editor");
-      setDrawerCollapsed(false);
-    }
+    // 始终切换到侧栏模式，确保文件预览在抽屉中渲染
+    setEditorMode("drawer");
+    prevDrawerPanelRef.current = drawer;
+    setDrawer("editor");
+    setDrawerCollapsed(false);
   }
 
   function diffFilePath(path: string, originalContent?: string, content?: string) {
