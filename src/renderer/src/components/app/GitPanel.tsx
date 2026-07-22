@@ -1298,6 +1298,7 @@ export function GitPanel(props: GitPanelProps) {
                 </Button>
               </div>
             </div>
+            )}
 
             {error && <div className="git-status-msg error">{error}</div>}
             {!loading && total === 0 && !error && (
