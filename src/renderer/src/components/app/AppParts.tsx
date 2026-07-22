@@ -2226,7 +2226,7 @@ export const ThinkingBlock = memo(function ThinkingBlock(props: {
 			: `${props.text.slice(0, previewLen)}...`;
 	// 计算思考耗时（毫秒），有 endAt 且有 startAt 时才显示
 	const durationMs =
-		props.endedAt && props.startedAt && props.endedAt > props.startedAt
+		props.endedAt && props.startedAt && props.endedAt >= props.startedAt
 			? props.endedAt - props.startedAt
 			: null;
 	const durationText = durationMs != null ? formatDuration(durationMs) : null;
@@ -2507,7 +2507,7 @@ export const TurnRow = memo(function TurnRow(props: {
 	}, [editing]);
 	const isComplete = run.endedAt > 0;
 	const duration = isComplete && run.startedAt > 0 ? run.endedAt - run.startedAt : 0;
-	const showDuration = isComplete && duration > 100;
+	const showDuration = isComplete && duration > 0;
 
 	// 收集本轮所有 assistant 消息（按 run.items 的时序保持原始顺序）
 	const assistantMessages = run.items.filter(

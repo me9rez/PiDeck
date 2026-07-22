@@ -132,6 +132,8 @@ export function groupToolMessages(messages: ChatMessage[]): RenderMessage[] {
 	let currentRun: Array<MessageItem | ToolGroupItem | ThinkingGroupItem> = [];
 	let runStartedAt = 0;
 	let runEndedAt = 0;
+	/** 当前回合的触发用户消息时间戳，用于替代 assistant/tool 时间戳作为回合起点 */
+	let lastUserTimestamp = 0;
 
 	function isThinkingOnly(message: ChatMessage) {
 		return (
@@ -213,12 +215,14 @@ export function groupToolMessages(messages: ChatMessage[]): RenderMessage[] {
 				.map((item) => (item.kind === "message" ? item.message.id : item.id))
 				.join("|"),
 			items: merged,
-			startedAt: runStartedAt,
+			// 回合起点优先用触发它的用户消息时间戳，无用户消息时回退到 run 内首条消息时间戳
+			startedAt: lastUserTimestamp || runStartedAt,
 			endedAt: runEndedAt || runStartedAt,
 		});
 		currentRun = [];
 		runStartedAt = 0;
 		runEndedAt = 0;
+		lastUserTimestamp = 0;
 	}
 
 	function appendRunMessage(message: ChatMessage) {
@@ -284,6 +288,8 @@ export function groupToolMessages(messages: ChatMessage[]): RenderMessage[] {
 				flushRun();
 			}
 			result.push({ kind: "message", message });
+			// 记录触发回合的用户消息时间戳，作为回合的真实起点
+			lastUserTimestamp = message.timestamp;
 		}
 	}
 	// 最后 flush 当前 run（含合并后的暂存 run）
