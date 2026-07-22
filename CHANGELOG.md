@@ -4,6 +4,28 @@
 
 All notable changes to PiDeck are documented here.
 
+## v0.6.6-beta.2 - 2026-07-22
+
+### 🐛 Bug Fixes
+
+- **Git Commit Message Generation** — Replace per-call `pi -p` process with a persistent
+  `pi --mode rpc` daemon, eliminating repeated cold-start overhead. Start with
+  `--no-session --no-tools --no-extensions --no-skills --no-prompt-templates
+  --no-context-files --no-themes --thinking off` for minimal startup cost.
+- **GitService.getStagedDiff maxBuffer** — Fixed `maxBuffer` being too small (5 KB),
+  causing large diffs to silently fail with `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`.
+  Changed to fixed 10 MB.
+- **Dev terminal Chinese garbled** — Auto-run `chcp 65001` on Windows to set UTF-8
+  code page.
+
+### 🚀 New Features
+
+- **Customizable Commit Message Prompt** — New Setting `gitCommitMessagePrompt`,
+  a textarea in the Git section of Settings. The template supports `{diff}`
+  placeholder. Default prompt includes Gitmoji mapping.
+- **Git panel relative paths** — Directory group headers now show paths relative to
+  project root instead of absolute file system paths.
+
 ## v0.6.6-beta.1 - 2026-07-22
 
 ### 🚀 New Features

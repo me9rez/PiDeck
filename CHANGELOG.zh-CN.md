@@ -4,6 +4,25 @@
 
 这里记录 PiDeck 各版本的重要变化。
 
+## v0.6.6-beta.2 - 2026-07-22
+
+### 🐛 Bug 修复
+
+- **Git 提交摘要生成** — 从每次调起 `pi -p` 改为持久化 `pi --mode rpc` 守护进程，
+  消除反复冷启动开销。启动参数带 `--no-session --no-tools --no-extensions
+  --no-skills --no-prompt-templates --no-context-files --no-themes --thinking off`
+  以最小化启动耗时。
+- **GitService.getStagedDiff maxBuffer 过小** — 原 `maxBuffer` 仅 5KB，diff 稍大
+  即静默失败返回空，改为固定 10MB。
+- **dev 终端中文乱码** — Windows 下自动 `chcp 65001` 切换到 UTF-8 代码页。
+
+### 🚀 新功能
+
+- **可配置的提交摘要提示词** — 新增设置项 `gitCommitMessagePrompt`，
+  在设置 Git 区块中提供 textarea 编辑。模板支持 `{diff}` 占位符，
+  默认提示词包含 Gitmoji 对应关系。
+- **Git 面板相对路径** — 目录分组标题改为显示项目相对路径而非绝对路径。
+
 ## v0.6.6-beta.1 - 2026-07-22
 
 ### 🚀 新功能
