@@ -1114,6 +1114,8 @@ export function App() {
   }, []);
   const [renderedDrawer, setRenderedDrawer] = useState<DrawerPanel | null>(null);
   const drawerUnmountTimerRef = useRef<number | null>(null);
+  /** 打开文件编辑器前所在的抽屉面板，供返回按钮恢复 */
+  const prevDrawerPanelRef = useRef<DrawerPanel | null>(null);
   // 最后一个 editor tab 被关闭时自动收起 drawer
   useEffect(() => {
     if (editorTabs.length === 0 && drawer === "editor") {
@@ -3232,6 +3234,7 @@ export function App() {
   function viewFilePath(path: string) {
     openEditorTab(path, "view");
     if (editorMode === "drawer") {
+      prevDrawerPanelRef.current = drawer;
       setDrawer("editor");
       setDrawerCollapsed(false);
     }
@@ -7444,6 +7447,15 @@ export function App() {
               filePath={activeTab.filePath}
               mode={activeTab.mode}
               onToggleMode={activeTab.preserveDrawer ? undefined : toggleEditorMode}
+              onBack={prevDrawerPanelRef.current && prevDrawerPanelRef.current !== "editor" ? () => {
+                const prev = prevDrawerPanelRef.current;
+                prevDrawerPanelRef.current = null;
+                if (prev) {
+                  setActiveTabId(null);
+                  setEditorTabs([]);
+                  setDrawer(prev);
+                }
+              } : undefined}
               originalContent={activeTab.mode === "diff" ? activeTab.originalContent : undefined}
               modifiedContent={activeTab.modifiedContent}
               tabs={editorTabs}

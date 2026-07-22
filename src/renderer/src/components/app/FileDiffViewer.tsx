@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DiffEditor, Editor } from "@monaco-editor/react";
 import type * as Monaco from "monaco-editor";
 import { t } from "../../i18n";
-import { Columns3, Edit3, Maximize2, Minimize2, X, Eye, FileCode } from "lucide-react";
+import { ArrowLeft, Columns3, Edit3, Maximize2, Minimize2, X, Eye, FileCode } from "lucide-react";
 import { setupMonaco } from "../../utils/monacoSetup";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -37,6 +37,8 @@ export function FileDiffViewer(props: {
 	displayMode?: "modal" | "drawer";
 	/** 在弹框/侧栏之间切换 */
 	onToggleMode?: () => void;
+	/** 返回按钮回调（侧栏模式时提供，点击返回上一面板） */
+	onBack?: () => void;
 	onClose: () => void;
 	/** 多 tab 支持：全部 tab 列表 */
 	tabs?: { id: string; filePath: string; label?: string }[];
@@ -354,6 +356,16 @@ export function FileDiffViewer(props: {
 							onClick={props.onToggleMode}
 						>
 							{displayMode === "modal" ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+						</button>
+					)}
+					{props.onBack && displayMode === "drawer" && (
+						<button
+							className="file-diff-close"
+							onClick={props.onBack}
+							title={t("common.back")}
+							aria-label={t("common.back")}
+						>
+							<ArrowLeft size={18} />
 						</button>
 					)}
 					<button className="file-diff-close" onClick={handleClose} aria-label={t("common.close")}>

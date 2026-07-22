@@ -2298,9 +2298,8 @@ export function RespondingIndicator(props: {
 				<span />
 				<span />
 			</span>
-			{kind !== "waiting" && (
-				<span className="responding-indicator-label">{label}</span>
-			)}
+			{/* 标签始终渲染，waiting 态通过 CSS visibility:hidden 隐藏，保持容器宽度稳定 */}
+			<span className="responding-indicator-label">{label}</span>
 		</div>
 	);
 }
