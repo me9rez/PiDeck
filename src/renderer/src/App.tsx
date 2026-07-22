@@ -130,6 +130,7 @@ import {
   ExtensionWidgetCard,
   MultiSelectModal,
   WorktreeCreateDialog,
+  stripMarkdown,
   type DrawerPanel,
   type SessionModifiedFile,
 } from "./components/app/AppParts";
@@ -1758,7 +1759,7 @@ export function App() {
           text = text.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, "");
           text = text.replace(/<thinking>[\s\S]*?<\/thinking>/g, "");
           text = text.replace(/<skill\s+name="[^"]*"[^>]*>[\s\S]*?<\/skill>/gi, "");
-          return text.trim();
+          return stripMarkdown(text);
         }).join(separator)
       : selected.map((m) => m.text).join(separator);
 

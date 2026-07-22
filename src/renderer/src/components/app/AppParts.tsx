@@ -126,6 +126,7 @@ import type {
 	SessionSummary,
 } from "../../../../shared/types";
 import { parseRichInputChips, type RichInputChip } from "./RichInput";
+import removeMarkdown from "remove-markdown";
 /** 复用 petdex 标准网格规格，在主设置面板里为宠物选择器渲染单格动画预览 */
 import { GRID_COLS, CELL_W, CELL_H, MODE_ROW, MODE_FRAMES } from "../../pet/PetSpriteSheet";
 
@@ -2791,7 +2792,7 @@ export const TurnRow = memo(function TurnRow(props: {
 				{/* 操作栏 */}
 				{mergedText && !editing && (
 					<div className="turn-row-actions">
-						<CopyMenu text={mergedText} markdown={mergedText} targetRef={rowRef} />
+						<CopyMenu text={stripMarkdown(mergedText)} markdown={mergedText} targetRef={rowRef} />
 						<button
 							className="turn-row-action-btn"
 							onClick={props.onEnterMultiSelect}
@@ -2982,7 +2983,7 @@ export const UserBubble = memo(function UserBubble(props: {
 				<time>{formatTime(message.timestamp)}</time>
 			</div>
 			<div className="user-turn-actions">
-				<CopyMenu text={cleanText} markdown={message.text} targetRef={rowRef} />
+				<CopyMenu text={stripMarkdown(cleanText)} markdown={message.text} targetRef={rowRef} />
 				<button
 					className="user-turn-action-btn"
 					onClick={props.onEnterMultiSelect}
@@ -3161,6 +3162,20 @@ function stripAnsi(text: string): string {
 /** 去除文本中的 <thinking> 标签 */
 function stripThinkingTags(text: string): string {
 	return text.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "").trim();
+}
+
+/** 将 Markdown 语法转换为纯文本，保留可读的文字内容 */
+export function stripMarkdown(text: string): string {
+	return removeMarkdown(text, {
+		// 保留列表项文本，移除列表标记符号
+		stripListLeaders: true,
+		// 使用 Unicode 字符替换列表标记
+		listUnicodeChar: "",
+		// 启用 GFM 表格/任务列表等处理
+		gfm: true,
+		// 图片保留 alt 文本
+		useImgAltText: true,
+	});
 }
 
 /** 将消息文本中的 @path / /command 渲染为行内 chip（聊天区展示用，与输入框 chip 视觉一致）。
