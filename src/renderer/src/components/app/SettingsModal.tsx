@@ -280,6 +280,12 @@ export function SettingsModal(props: {
 			.then((pets) => { setPetList(pets); setPetOptions(pets.map((p) => ({ value: p.id, label: p.displayName }))); })
 			.catch(() => undefined);
 	}, []);
+	// 进入开发设置 tab 时，若 piStatus 为空则自动检测（避免每次需手动点击「检测环境」）
+	useEffect(() => {
+		if (activeTab === "dev" && props.piStatus === null && !props.piChecking) {
+			props.onCheckPi();
+		}
+	}, [activeTab, props.piStatus, props.piChecking, props.onCheckPi]);
 	const [petPreviewMode, setPetPreviewMode] = useState("__auto");
 
 	const applyWebPortDraft = () => {

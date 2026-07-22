@@ -5830,16 +5830,13 @@ export function App() {
                     el.classList.add('click-animating');
                     setTimeout(() => el.classList.remove('click-animating'), 400);
 
-                    // 点击项目行：切换展开/折叠状态
-                    const wasCollapsed = collapsedProjects.has(project.id);
+                    // 点击项目行：始终展开 + 加载会话
                     setCollapsedProjects((prev) => {
                       const next = new Set(prev);
-                      if (next.has(project.id)) next.delete(project.id);
-                      else next.add(project.id);
+                      next.delete(project.id);
                       return next;
                     });
-                    // 展开时同步加载会话记录
-                    if (wasCollapsed && !projectIsChat) {
+                    if (!projectIsChat) {
                       const hasLoadedSessions = sessionsByProject[project.id]?.length > 0;
                       if (!hasLoadedSessions) {
                         void refreshProjectSessions(project.id).catch(() => undefined);
@@ -5857,6 +5854,16 @@ export function App() {
                         ? t("app.projectExpand")
                         : t("app.projectCollapse")
                     }
+                    onClick={(e) => {
+                      // 点击折叠图标仅切换折叠状态，不加载会话
+                      e.stopPropagation();
+                      setCollapsedProjects((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(project.id)) next.delete(project.id);
+                        else next.add(project.id);
+                        return next;
+                      });
+                    }}
                   >
                     <Play size={12} />
                   </span>
