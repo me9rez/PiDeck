@@ -18944,6 +18944,30 @@ html[data-theme="dark"] .scratch-pad-md mark {
   outline: none;
   box-shadow: var(--focus-ring);
 }
+
+/* 分支栏初始化按钮 */
+.git-init-branch-btn {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.12s ease;
+}
+.git-init-branch-btn:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+.git-init-branch-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 /* 分支下拉菜单与 GitCompactFilter 菜单统一风格；加强边框和 hover 区分度 */
 .git-branch-dropdown {
   position: absolute;
@@ -19720,6 +19744,30 @@ body.is-git-pane-resizing, body.is-git-pane-resizing * { cursor: row-resize !imp
 @keyframes git-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 /* 未初始化 Git 仓库时的提示 */
+.git-not-installed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-10) var(--space-4);
+  text-align: center;
+}
+.git-not-installed-icon {
+  font-size: 32px;
+  line-height: 1;
+  opacity: 0.6;
+}
+.git-not-installed-title {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+.git-not-installed-desc {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-body);
+  max-width: 360px;
+}
 .git-not-init {
   display: flex;
   flex-direction: column;

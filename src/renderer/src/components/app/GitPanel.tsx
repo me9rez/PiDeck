@@ -744,6 +744,7 @@ export function GitPanel(props: GitPanelProps) {
   const [committing, setCommitting] = useState(false);
   const [mutating, setMutating] = useState(false);
   const [notAGitRepo, setNotAGitRepo] = useState(false);
+  const [gitNotInstalled, setGitNotInstalled] = useState(false);
   const [initializing, setInitializing] = useState(false);
   const [smartCommitPreference, setSmartCommitPreference] =
     useState<SmartCommitPreference>(() =>
@@ -858,6 +859,9 @@ export function GitPanel(props: GitPanelProps) {
             // 检测"不是 Git 仓库"的错误，展示初始化提示
             if (/not a git repository|fatal:/.test(msg)) {
               setNotAGitRepo(true);
+              setError("");
+            } else if (/command not found|ENOENT|spawn.*git.*ENOENT/i.test(msg)) {
+              setGitNotInstalled(true);
               setError("");
             } else {
               setError(msg);
@@ -1107,6 +1111,32 @@ export function GitPanel(props: GitPanelProps) {
             className={`git-branch-chevron${branchOpen ? " open" : ""}`}
           />
         </button>
+        {notAGitRepo && (
+          <button
+            type="button"
+            className="git-init-branch-btn"
+            title={t("git.initInBranchBar")}
+            disabled={initializing}
+            onClick={async () => {
+              if (!props.gitInit) return;
+              setInitializing(true);
+              try {
+                await props.gitInit(props.projectId);
+                setNotAGitRepo(false);
+                void refresh();
+              } catch (caught) {
+                setError(errorMessage(caught));
+              }
+              setInitializing(false);
+            }}
+          >
+            {initializing ? (
+              <Loader2 size={14} className="git-spin" />
+            ) : (
+              <Plus size={14} />
+            )}
+          </button>
+        )}
         {branchOpen && (
           <div className="git-branch-dropdown">
             {props.branches.map((branch) => (
@@ -1206,7 +1236,13 @@ export function GitPanel(props: GitPanelProps) {
         </PaneHeader>
         {paneState.open.changes && (
           <div className="git-pane-body git-changes-body">
-            {notAGitRepo ? (
+            {gitNotInstalled ? (
+              <div className="git-not-installed">
+                <div className="git-not-installed-icon">⚡</div>
+                <div className="git-not-installed-title">{t("git.gitNotInstalled")}</div>
+                <div className="git-not-installed-desc">{t("git.gitNotInstalledDesc")}</div>
+              </div>
+            ) : notAGitRepo ? (
               <div className="git-not-init">
                 <div className="git-not-init-prompt">{t("git.notAGitRepo")}</div>
                 <button
