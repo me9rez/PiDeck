@@ -216,17 +216,47 @@ function normalizeVersion(version: string) {
 	return version.trim().replace(/^v/i, "");
 }
 
+function parseVersion(version: string) {
+	const normalized = normalizeVersion(version);
+	const dashIdx = normalized.indexOf("-");
+	const mainVer = dashIdx >= 0 ? normalized.slice(0, dashIdx) : normalized;
+	const preRel = dashIdx >= 0 ? normalized.slice(dashIdx + 1) : "";
+	return {
+		main: mainVer.split(".").map((p) => Number(p)),
+		pre: preRel
+			? preRel.split(/[.-]/).map((p) => (isNaN(Number(p)) ? p : Number(p)))
+			: [],
+	};
+}
+
+/**
+ * 语义化版本比较，符合 semver 规范：
+ * - 主版本号（major.minor.patch）逐段比较
+ * - pre-release 版本 < 正式版（如 0.6.6-beta.1 < 0.6.6）
+ * - pre-release 之间逐段比较，数字按数值、字符串按字典序
+ */
 function compareVersions(left: string, right: string) {
-	const leftParts = normalizeVersion(left)
-		.split(/[.-]/)
-		.map((part) => Number(part) || 0);
-	const rightParts = normalizeVersion(right)
-		.split(/[.-]/)
-		.map((part) => Number(part) || 0);
-	const length = Math.max(leftParts.length, rightParts.length);
-	for (let index = 0; index < length; index += 1) {
-		const diff = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+	const l = parseVersion(left);
+	const r = parseVersion(right);
+	const maxLen = Math.max(l.main.length, r.main.length);
+	for (let i = 0; i < maxLen; i++) {
+		const diff = (l.main[i] ?? 0) - (r.main[i] ?? 0);
 		if (diff !== 0) return diff;
+	}
+	// 主版本相等时比较 pre-release
+	if (l.pre.length === 0 && r.pre.length > 0) return 1;  // 正式版 > pre-release
+	if (l.pre.length > 0 && r.pre.length === 0) return -1; // pre-release < 正式版
+	// 两个都是 pre-release，逐段比较
+	const preLen = Math.max(l.pre.length, r.pre.length);
+	for (let i = 0; i < preLen; i++) {
+		if (l.pre[i] === undefined) return -1;
+		if (r.pre[i] === undefined) return 1;
+		if (typeof l.pre[i] === "number" && typeof r.pre[i] === "number") {
+			if (l.pre[i] !== r.pre[i]) return (l.pre[i] as number) - (r.pre[i] as number);
+		} else {
+			const cmp = String(l.pre[i]).localeCompare(String(r.pre[i]));
+			if (cmp !== 0) return cmp;
+		}
 	}
 	return 0;
 }
