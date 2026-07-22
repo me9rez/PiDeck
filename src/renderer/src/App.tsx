@@ -7800,6 +7800,12 @@ export function App() {
               onDeleteSession={deleteHistorySession}
               onViewFile={viewFilePath}
               onOpenFile={openFilePath}
+              onCreateItem={(parentDir, name, type) => {
+                void api.files.create(parentDir, name, type).then(() => {
+                  if (activeProjectId) void refreshFiles(activeProjectId);
+                });
+              }}
+              projectRoot={projects.find((p) => p.id === activeProjectId)?.path}
             />
           </LazyWrapper>
         ) : null}

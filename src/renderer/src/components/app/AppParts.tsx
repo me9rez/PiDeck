@@ -3997,6 +3997,9 @@ export function DrawerContent(props: {
 	onDeleteSession: (session: SessionSummary) => void | Promise<void>;
 	onOpenFile?: (path: string) => void;
 	onViewFile?: (path: string) => void;
+	onCreateItem?: (parentDir: string, name: string, type: "file" | "directory") => void;
+	/** 项目根目录路径 */
+	projectRoot?: string;
 }) {
 	const title =
 		props.panel === "files"
@@ -4038,6 +4041,8 @@ export function DrawerContent(props: {
 					onOpenFolder={props.onOpenFolder}
 					onOpenFile={props.onOpenFile}
 					onViewFile={props.onViewFile}
+					onCreateItem={props.onCreateItem}
+					currentProjectRoot={props.projectRoot}
 				/>
 			)}
 			{props.panel === "sessions" && (
@@ -4066,6 +4071,9 @@ function FilesPanel(props: {
 	onOpenFolder?: () => void;
 	onOpenFile?: (path: string) => void;
 	onViewFile?: (path: string) => void;
+	onCreateItem?: (parentDir: string, name: string, type: "file" | "directory") => void;
+	/** 项目根目录路径 */
+	currentProjectRoot?: string;
 }) {
 	return (
 		<div className="files-panel">
@@ -4073,9 +4081,30 @@ function FilesPanel(props: {
 				<span>{t("drawer.fileItems", { count: props.files.length })}</span>
 				<div className="panel-action-buttons">
 					{props.onOpenFolder && (
-						<button onClick={props.onOpenFolder} title={t("drawer.openFolder")}>
+						<button
+							className="icon-only"
+							onClick={props.onOpenFolder}
+							title={t("drawer.openFolder")}
+							aria-label={t("drawer.openFolder")}
+						>
 							<Folder size={14} />
-							{t("drawer.openFolder")}
+						</button>
+					)}
+					{props.onCreateItem && props.currentProjectRoot && (
+						<button
+							className="icon-only"
+							onClick={() => {
+								const name = window.prompt(t("drawer.createItemPrompt"));
+								if (!name?.trim()) return;
+								const isDir = name.endsWith("/") || name.endsWith("\\");
+								const finalName = isDir ? name.slice(0, -1).trim() : name.trim();
+								const targetDir = props.currentProjectRoot!;
+								props.onCreateItem!(targetDir, finalName, isDir ? "directory" : "file");
+							}}
+							title={t("drawer.createItem")}
+							aria-label={t("drawer.createItem")}
+						>
+							<Plus size={14} />
 						</button>
 					)}
 					{/* 刷新与全部收起使用纯图标按钮，保持工具栏紧凑、与列表项字号对齐 */}

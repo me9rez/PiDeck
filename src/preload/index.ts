@@ -172,6 +172,8 @@ const api = {
 			ipcRenderer.invoke(ipcChannels.filesDelete, path, recursive) as Promise<void>,
 		rename: (path: string, newName: string) =>
 			ipcRenderer.invoke(ipcChannels.filesRename, path, newName) as Promise<string>,
+		create: (parentDir: string, name: string, type: "file" | "directory") =>
+			ipcRenderer.invoke(ipcChannels.filesCreate, parentDir, name, type) as Promise<string>,
 	},
 	sessions: {
 		list: (projectId?: string) =>

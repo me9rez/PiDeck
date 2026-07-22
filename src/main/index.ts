@@ -1381,6 +1381,15 @@ function registerIpc() {
 		return result;
 	});
 
+	ipcMain.handle(
+		ipcChannels.filesCreate,
+		async (_event, parentDir: string, name: string, type: "file" | "directory") => {
+			const result = await fileSystemService.create(parentDir, name, type);
+			void appLogger.info("file", "File/folder created", { parentDir, name, type, result });
+			return result;
+		},
+	);
+
 	// Scratch Pad（草稿本）：多草稿支持，每份草稿为 drafts/ 下的独立 .md 文件
 	const draftsDir = join(app.getPath("userData"), "drafts");
 

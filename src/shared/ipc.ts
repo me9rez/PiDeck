@@ -28,6 +28,7 @@ export const ipcChannels = {
 	filesShowInFolder: "files:show-in-folder",
 	filesReadContent: "files:read-content",
 	filesWriteContent: "files:write-content",
+	filesCreate: "files:create",
 	filesDelete: "files:delete",
 	filesRename: "files:rename",
 	sessionsList: "sessions:list",
