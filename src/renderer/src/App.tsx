@@ -3248,9 +3248,16 @@ export function App() {
     // HTML/HTM 文件用内置浏览器渲染，避免 Monaco 预览的 sandbox 限制导致空白/样式丢失
     if (ext === "html" || ext === "htm") {
       const normalized = path.replace(/\\/g, "/");
-      const fileUrl = /^[A-Za-z]:/.test(normalized)
-        ? "file:///" + normalized
-        : "file://" + normalized;
+      // 逐段 encodeURIComponent，正确处理空格、中文、# 等特殊字符
+      const isWin = /^[A-Za-z]:/.test(normalized);
+      let fileUrl: string;
+      if (isWin) {
+        const drive = normalized.substring(0, 2); // "C:"
+        const rest = normalized.substring(2).replace(/^\/+/, "").split("/").map((s) => encodeURIComponent(s)).join("/");
+        fileUrl = "file:///" + drive + "/" + rest;
+      } else {
+        fileUrl = "file:///" + normalized.replace(/^\/+/, "").split("/").map((s) => encodeURIComponent(s)).join("/");
+      }
       setDrawer("browser");
       setDrawerCollapsed(false);
       navigateTo(fileUrl);
@@ -7787,6 +7794,7 @@ export function App() {
         {editorMode === "drawer" && drawerContentPanel === "editor" && !drawerCollapsed && activeTab ? (
           <Suspense fallback={<div className="drawer-content-frame"><div className="file-diff-loading">Loading...</div></div>}>
             <FileDiffViewer
+              key={activeTab.filePath}
               displayMode="drawer"
               filePath={activeTab.filePath}
               mode={activeTab.mode}

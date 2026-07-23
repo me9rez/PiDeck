@@ -8,6 +8,14 @@ All notable changes to PiDeck are documented here.
 
 ### 🐛 Bug Fixes
 
+- **TurnRow "Rendered fewer hooks" crash** — Moved `useMemo` before early returns
+  in `TurnRow`, fixing white screen on sending messages.
+- **Stop button invisible during agent response** — Extracted from
+  `hasComposerContent` condition; now always shown when agent is busy.
+- **Historical session not scrolling to bottom** — Added `activeMessages.length`
+  to ResizeObserver deps so observer is created after messages load.
+- **NoSession anonymous agent duplicate in sidebar** — Added `noSession` matching
+  path to `isReplacementForPendingAgent`.
 - **Agent startup status stuck on "starting"** — Fix `setAgents` in `createAgent`
   to overwrite existing entries when the API returns, preventing stale status.
 - **Session loading indicator flicker** — Enforce a 200 ms minimum display duration
@@ -24,6 +32,12 @@ All notable changes to PiDeck are documented here.
 
 ### 🚀 New Features
 
+- **Composer redesign (OpenCode style)** — Replaced the top pill-button toolbar
+  with a bottom bar: mode toggle / prompt template / attachment / model name /
+  thinking level (all clickable).
+- **Local packaging** — `npm run compile-exe` for fast portable `.exe` (skip tsc,
+  ASAR no compression). `npm run dist:win -- [format]` supports single-format
+  builds (nsis / portable / zip).
 - **Git Push / Pull** — Add Push and Pull buttons to the Changes pane header,
   with full IPC pipeline and error notifications.
 - **Customizable Commit Message Prompt** — New Setting `gitCommitMessagePrompt`,

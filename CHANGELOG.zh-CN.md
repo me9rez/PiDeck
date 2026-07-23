@@ -8,6 +8,13 @@
 
 ### 🐛 Bug 修复
 
+- **TurnRow "Rendered fewer hooks" 崩溃** — 将 `useMemo` 移至 early return 之前，
+  修复发送消息后白屏。
+- **停止按钮在 agent 回答时不可见** — 从 `hasComposerContent` 条件中抽离，
+  agent 繁忙时始终显示。
+- **历史会话打开不滚动到底部** — `ResizeObserver` 依赖加入 `activeMessages.length`，
+  消息加载后自动滚到底部。
+- **匿名 agent 侧栏重复** — `isReplacementForPendingAgent` 增加 `noSession` 匹配路径。
 - **Agent 启动状态卡在 "starting"** — 修复 `createAgent` 中 `setAgents`
   在 API 返回后未覆盖已有条目导致状态不更新的问题。
 - **Session 加载指示器闪烁** — 强制最小展示 200ms，避免快速 API 响应时闪一下。
@@ -21,6 +28,10 @@
 
 ### 🚀 新功能
 
+- **Composer 重新设计（OpenCode 风格）** — 顶部圆框按钮组移至底部操作栏：
+  模式切换 / Prompt 图标 / 附件图标 / 模型名 / 思考级别（均可点击）。
+- **本地快速打包** — `npm run compile-exe` 输出便携 exe（跳过 tsc、ASAR 不压缩）。
+  `npm run dist:win -- [格式]` 支持单格式打包（nsis / portable / zip）。
 - **Git Push / Pull** — 变更面板标题栏新增 Push 和 Pull 按钮，
   完整 IPC 链路及错误通知支持。
 - **可配置的提交摘要提示词** — 新增设置项 `gitCommitMessagePrompt`，
