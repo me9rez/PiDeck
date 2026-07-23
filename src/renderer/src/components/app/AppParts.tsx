@@ -1647,7 +1647,7 @@ const statusLabel =
 	status === "running"
 		? t("tool.statusRunning")
 		: status === "error"
-			? t("tool.statusError")
+			? ""
 			: "";
 	const [copied, setCopied] = useState(false);
 	const handleCopy = () => {

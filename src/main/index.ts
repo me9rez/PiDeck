@@ -2943,10 +2943,12 @@ function registerIpc() {
 		const pkg = lastSlash > 0 ? slug.slice(0, lastSlash) : slug;
 		const skillName = lastSlash > 0 ? slug.slice(lastSlash + 1) : "";
 		try {
-			const { execSync } = await import("node:child_process");
+			const { exec } = await import("node:child_process");
+			const { promisify } = await import("node:util");
+			const execAsync = promisify(exec);
 			// -g 安装到用户全局目录, -s 指定单个 skill, -y 跳过交互确认
 			const cmd = `npx skills add "${pkg}" -g -s "${skillName}" -y`;
-			execSync(cmd, { encoding: "utf8", timeout: 120_000, stdio: ["ignore", "pipe", "pipe"] });
+			await execAsync(cmd, { encoding: "utf8", timeout: 120_000, maxBuffer: 10 * 1024 * 1024 });
 			void appLogger.info("skill-hub", "Installed skill", { slug, pkg, skillName });
 			return { success: true, slug, installDir: "" };
 		} catch (err) {
