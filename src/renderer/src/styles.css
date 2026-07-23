@@ -11338,21 +11338,34 @@ body.is-composer-resizing .composer-resize-handle::after {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.skillhub-card-install-btn {
+.skillhub-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.skillhub-card-action-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
   background: var(--color-bg-panel);
-  color: var(--color-accent);
+  color: var(--color-text-tertiary);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.15s;
+  transition: all 0.15s;
 }
-.skillhub-card-install-btn:hover {
+.skillhub-card-action-btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+.skillhub-card-action-btn.primary {
+  color: var(--color-accent);
+}
+.skillhub-card-action-btn.primary:hover {
   background: var(--color-accent-soft);
   border-color: var(--color-accent);
 }

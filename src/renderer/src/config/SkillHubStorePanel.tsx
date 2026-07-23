@@ -205,17 +205,31 @@ export function SkillHubStorePanel() {
 									<span className="skillhub-card-source">{item.ownerName}</span>
 								</div>
 							</div>
-							<button
-								className="skillhub-card-install-btn"
-								title={t("common.install")}
-								disabled={installingSlugs.has(item.slug)}
-								onClick={async (e) => {
-									e.stopPropagation();
-									await handleInstallFromList(item.slug, item.name);
-								}}
-							>
-								{installingSlugs.has(item.slug) ? <span className="skillhub-installing-dot" /> : <Download size={14} />}
-							</button>
+							<div className="skillhub-card-actions">
+								<button
+									className="skillhub-card-action-btn"
+									title={t("common.copy")}
+									onClick={(e) => {
+										e.stopPropagation();
+										const pkg = item.slug.slice(0, item.slug.lastIndexOf("/"));
+										navigator.clipboard.writeText(`npx skills add ${pkg}`);
+										showNotice(t("app.codeCopied"), 1200);
+									}}
+								>
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+								</button>
+								<button
+									className="skillhub-card-action-btn primary"
+									title={t("common.install")}
+									disabled={installingSlugs.has(item.slug)}
+									onClick={async (e) => {
+										e.stopPropagation();
+										await handleInstallFromList(item.slug, item.name);
+									}}
+								>
+									{installingSlugs.has(item.slug) ? <span className="skillhub-installing-dot" /> : <Download size={14} />}
+								</button>
+							</div>
 						</article>
 					))}
 				</div>
