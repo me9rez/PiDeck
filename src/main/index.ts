@@ -98,7 +98,7 @@ import { ConfigManager } from "./config/ConfigManager";
 import { TerminalSessionManager } from "./terminal/TerminalSessionManager";
 import { TelemetryService } from "./telemetry/TelemetryService";
 import { PromptManager } from "./prompts/PromptManager";
-import { YaoPromptManager } from "./prompts/YaoPromptManager";
+import { XuePromptManager } from "./prompts/XuePromptManager";
 import { SkillManager } from "./skills/SkillManager";
 import { ExtensionManager } from "./extensions/ExtensionManager";
 import { ProjectResourceManager } from "./projects/ProjectResourceManager";
@@ -145,7 +145,7 @@ let piLocator: PiLocator;
 let agentManager: AgentManager;
 let configManager: ConfigManager;
 let promptManager: PromptManager;
-let yaoPromptManager: YaoPromptManager;
+let xuePromptManager: XuePromptManager;
 let skillManager: SkillManager;
 let extensionManager: ExtensionManager;
 let projectResourceManager: ProjectResourceManager;
@@ -2559,14 +2559,14 @@ function registerIpc() {
 					promptManager.configureWsl(settings.wslDistro, settings.wslUser);
 					extensionManager.configureWsl(settings.wslDistro, settings.wslUser);
 					if (configManager) configManager.configureWsl(settings.wslDistro, settings.wslUser);
-					if (yaoPromptManager) yaoPromptManager.configureWsl(settings.wslDistro, settings.wslUser);
+					if (xuePromptManager) xuePromptManager.configureWsl(settings.wslDistro, settings.wslUser);
 				} else {
 					sessionScanner.clearWsl();
 					skillManager.configureWsl(null);
 					promptManager.configureWsl(null);
 					extensionManager.configureWsl(null);
 					if (configManager) configManager.configureWsl(null);
-					if (yaoPromptManager) yaoPromptManager.configureWsl(null);
+					if (xuePromptManager) xuePromptManager.configureWsl(null);
 				}
 			}
 			return settings;
@@ -2961,7 +2961,7 @@ function registerIpc() {
 	// ── Yao Open Prompts（中文提示词精选） ─────────────────────────────
 	ipcMain.handle(ipcChannels.yaoPromptsList, async () => {
 		try {
-			const result = await yaoPromptManager.list();
+			const result = await xuePromptManager.list();
 			return result;
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
@@ -2972,7 +2972,7 @@ function registerIpc() {
 
 	ipcMain.handle(ipcChannels.yaoPromptsDetail, async (_event, slug: string, category: string) => {
 		try {
-			const result = await yaoPromptManager.detail(slug, category);
+			const result = await xuePromptManager.detail(slug, category);
 			if (!result) throw new Error(`未找到提示词: ${slug}`);
 			return result;
 		} catch (err) {
@@ -2984,7 +2984,7 @@ function registerIpc() {
 
 	ipcMain.handle(ipcChannels.yaoPromptsImport, async (_event, slug: string, category: string) => {
 		try {
-			const result = await yaoPromptManager.importToPi(slug, category);
+			const result = await xuePromptManager.importToPi(slug, category);
 			void appLogger.info("yao-prompts", "Imported to pi templates", { slug, localName: result.name });
 			return result;
 		} catch (err) {
@@ -3459,7 +3459,7 @@ app.whenReady().then(async () => {
 	piLocator = new PiLocator();
 	configManager = new ConfigManager();
 	promptManager = new PromptManager();
-	yaoPromptManager = new YaoPromptManager();
+	xuePromptManager = new XuePromptManager();
 	skillManager = new SkillManager();
 	extensionManager = new ExtensionManager(piLocator, () => settingsStore.get());
 	projectResourceManager = new ProjectResourceManager((projectId) => projectStore.get(projectId));
@@ -3506,14 +3506,14 @@ app.whenReady().then(async () => {
 			promptManager.configureWsl(wslDistro, wslUser);
 			extensionManager.configureWsl(wslDistro, wslUser);
 				if (configManager) configManager.configureWsl(wslDistro, wslUser);
-			if (yaoPromptManager) yaoPromptManager.configureWsl(wslDistro, wslUser);
+			if (xuePromptManager) xuePromptManager.configureWsl(wslDistro, wslUser);
 		} else {
 			sessionScanner.clearWsl();
 			skillManager.configureWsl(null);
 			promptManager.configureWsl(null);
 			extensionManager.configureWsl(null);
 			if (configManager) configManager.configureWsl(null);
-			if (yaoPromptManager) yaoPromptManager.configureWsl(null);
+			if (xuePromptManager) xuePromptManager.configureWsl(null);
 		}
 	};
 	await syncWslConfig();
