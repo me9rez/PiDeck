@@ -18746,7 +18746,6 @@ html[data-theme="dark"] .scratch-pad-md mark {
 .chat-list-pane.v3-braun .sidebar-body .agent-row.active,
 .chat-list-pane.v3-braun .sidebar-body .session-row.active,
 .chat-list-pane.v3-braun .sidebar-body .worktree-row.active {
-  border-left-color: var(--color-accent);
   background: var(--color-accent-soft);
   box-shadow: none;
 }
