@@ -3244,25 +3244,8 @@ export function App() {
   }
 
   function viewFilePath(path: string) {
-    const ext = path.split(".").pop()?.toLowerCase() ?? "";
-    // HTML/HTM 文件用内置浏览器渲染，避免 Monaco 预览的 sandbox 限制导致空白/样式丢失
-    if (ext === "html" || ext === "htm") {
-      const normalized = path.replace(/\\/g, "/");
-      // 逐段 encodeURIComponent，正确处理空格、中文、# 等特殊字符
-      const isWin = /^[A-Za-z]:/.test(normalized);
-      let fileUrl: string;
-      if (isWin) {
-        const drive = normalized.substring(0, 2); // "C:"
-        const rest = normalized.substring(2).replace(/^\/+/, "").split("/").map((s) => encodeURIComponent(s)).join("/");
-        fileUrl = "file:///" + drive + "/" + rest;
-      } else {
-        fileUrl = "file:///" + normalized.replace(/^\/+/, "").split("/").map((s) => encodeURIComponent(s)).join("/");
-      }
-      setDrawer("browser");
-      setDrawerCollapsed(false);
-      navigateTo(fileUrl);
-      return;
-    }
+    // HTML/HTM 文件默认在编辑器中打开（与 .md 一致），
+    // 需要预览时通过编辑器工具栏的「浏览器预览」按钮切换到内置浏览器。
     openEditorTab(path, "view");
     // 始终切换到侧栏模式，确保文件预览在抽屉中渲染
     setEditorMode("drawer");
