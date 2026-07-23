@@ -208,7 +208,7 @@ export function SkillHubStorePanel() {
 							<div className="skillhub-card-actions">
 								<button
 									className="skillhub-card-action-btn"
-									title={t("common.copy")}
+									title="复制安装命令"
 									onClick={(e) => {
 										e.stopPropagation();
 										const pkg = item.slug.slice(0, item.slug.lastIndexOf("/"));

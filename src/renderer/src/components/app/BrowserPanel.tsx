@@ -381,11 +381,11 @@ export function BrowserPanel(props: {
 				</button>
 				{!props.isFullscreen && (
 					<div className="browser-tabbar-actions">
-						<button className="browser-tabbar-btn" onClick={onClose} title={t("common.close")}>
-							<X size={14} />
-						</button>
 						<button className="browser-tabbar-btn" onClick={onToggleFullscreen} title={t("browser.fullscreen")}>
 							<Maximize2 size={13} />
+						</button>
+						<button className="browser-tabbar-btn" onClick={onClose} title={t("common.close")}>
+							<X size={14} />
 						</button>
 					</div>
 				)}

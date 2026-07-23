@@ -2938,15 +2938,16 @@ function registerIpc() {
 
 	/** 安装 Skills.sh skill：npx skills add <package> */
 	ipcMain.handle(ipcChannels.skillHubInstall, async (_event, slug: string) => {
-		// slug 是 "source/skillName" 格式，提取 package 名 = source
-		// 例如 "anthropics/skills/pdf" → package = "anthropics/skills"
+		// slug 是 "source/skillName" 格式，例如 "anthropics/skills/pdf"
 		const lastSlash = slug.lastIndexOf("/");
 		const pkg = lastSlash > 0 ? slug.slice(0, lastSlash) : slug;
+		const skillName = lastSlash > 0 ? slug.slice(lastSlash + 1) : "";
 		try {
 			const { execSync } = await import("node:child_process");
-			const cmd = `npx skills add "${pkg}"`;
-			execSync(cmd, { encoding: "utf8", timeout: 60_000, stdio: ["ignore", "pipe", "pipe"] });
-			void appLogger.info("skill-hub", "Installed skill package", { slug, pkg });
+			// -g 安装到用户全局目录, -s 指定单个 skill, -y 跳过交互确认
+			const cmd = `npx skills add "${pkg}" -g -s "${skillName}" -y`;
+			execSync(cmd, { encoding: "utf8", timeout: 120_000, stdio: ["ignore", "pipe", "pipe"] });
+			void appLogger.info("skill-hub", "Installed skill", { slug, pkg, skillName });
 			return { success: true, slug, installDir: "" };
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
