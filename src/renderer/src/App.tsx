@@ -7603,8 +7603,8 @@ export function App() {
                 )}
               </div>
               <div className="composer-bottom-right">
-                {/* 停止按钮：agent 繁忙时始终显示，不依赖输入框是否有内容 */}
-                {isAgentBusy ? (
+                {/* 停止按钮：agent 繁忙时始终显示 */}
+                {isAgentBusy && (
                   <button
                     type="button"
                     className="composer-bar-btn stop"
@@ -7614,63 +7614,63 @@ export function App() {
                   >
                     <Square size={15} strokeWidth={0} fill="currentColor" />
                   </button>
-                ) : (showBusySendControls && hasComposerContent) || !keepBusyDraftControls ? (
-                  <>
-                    {showBusySendControls && hasComposerContent && (
-                      <div className="send-behavior-toggle">
-                        <button
-                          type="button"
-                          className="send-behavior-primary"
-                          title={t("app.sendSteerTitle")}
-                          aria-label={t("app.sendSteerTitle")}
-                          onClick={() => void sendPrompt()}
-                        >
-                          <ArrowUp size={15} strokeWidth={2.4} />
-                        </button>
-                        <button
-                          type="button"
-                          className="send-behavior-chevron"
-                          title={t("app.sendBehaviorTitle")}
-                          aria-label={t("app.sendBehaviorTitle")}
-                          aria-haspopup="menu"
-                          aria-expanded={sendBehaviorMenuOpen}
-                          onMouseEnter={keepSendBehaviorMenuOpen}
-                          onFocus={keepSendBehaviorMenuOpen}
-                          onClick={() => setSendBehaviorMenuOpen((open) => !open)}
-                        >
-                          <ChevronDown size={12} strokeWidth={2.2} />
-                        </button>
-                      </div>
-                    )}
-                    {!keepBusyDraftControls ? (
-                      <button
-                        type="button"
-                        disabled={isAgentStarting || (!activeAgentId) || (!prompt.trim() && attachedImages.length === 0)}
-                        className="composer-bar-btn send"
-                        onClick={() => void sendPrompt()}
-                        title={t("app.send")}
-                        aria-label={t("app.send")}
-                      >
-                        <ArrowUp size={16} strokeWidth={2.5} />
-                      </button>
-                    ) : null}
-                    {sendBehaviorMenuOpen && showBusySendControls && hasComposerContent && (
-                      <div className="send-behavior-menu" role="menu"
-                        onMouseEnter={keepSendBehaviorMenuOpen}
-                        onMouseLeave={scheduleSendBehaviorMenuClose}
-                      >
-                        <button className="send-behavior-option steer" type="button" role="menuitem" onClick={() => void sendPrompt()}>
-                          <span className="send-behavior-option-dot" aria-hidden="true" />
-                          <span>{t("app.sendSteerTitle")}</span>
-                        </button>
-                        <button className="send-behavior-option follow-up" type="button" role="menuitem" onClick={sendPromptAsFollowUp}>
-                          <span className="send-behavior-option-dot" aria-hidden="true" />
-                          <span>{t("app.sendFollowUpTitle")}</span>
-                        </button>
-                      </div>
-                    )}
-                  </>
-                ) : null}
+                )}
+                {/* 队列/发送按钮：有内容时才显示行为选择器 */}
+                {showBusySendControls && hasComposerContent && (
+                  <div className="send-behavior-toggle">
+                    <button
+                      type="button"
+                      className="send-behavior-primary"
+                      title={isAgentBusy ? t("app.sendSteerTitle") : t("app.send")}
+                      aria-label={isAgentBusy ? t("app.sendSteerTitle") : t("app.send")}
+                      onClick={() => void sendPrompt()}
+                    >
+                      <ArrowUp size={15} strokeWidth={2.4} />
+                    </button>
+                    <button
+                      type="button"
+                      className="send-behavior-chevron"
+                      title={t("app.sendBehaviorTitle")}
+                      aria-label={t("app.sendBehaviorTitle")}
+                      aria-haspopup="menu"
+                      aria-expanded={sendBehaviorMenuOpen}
+                      onMouseEnter={keepSendBehaviorMenuOpen}
+                      onFocus={keepSendBehaviorMenuOpen}
+                      onClick={() => setSendBehaviorMenuOpen((open) => !open)}
+                    >
+                      <ChevronDown size={12} strokeWidth={2.2} />
+                    </button>
+                  </div>
+                )}
+                {/* idle 时无草稿显示普通发送按钮 */}
+                {!isAgentBusy && !keepBusyDraftControls && !showBusySendControls && (
+                  <button
+                    type="button"
+                    disabled={isAgentStarting || (!activeAgentId) || (!prompt.trim() && attachedImages.length === 0)}
+                    className="composer-bar-btn send"
+                    onClick={() => void sendPrompt()}
+                    title={t("app.send")}
+                    aria-label={t("app.send")}
+                  >
+                    <ArrowUp size={16} strokeWidth={2.5} />
+                  </button>
+                )}
+                {/* 行为选择下拉菜单 */}
+                {sendBehaviorMenuOpen && showBusySendControls && hasComposerContent && (
+                  <div className="send-behavior-menu" role="menu"
+                    onMouseEnter={keepSendBehaviorMenuOpen}
+                    onMouseLeave={scheduleSendBehaviorMenuClose}
+                  >
+                    <button className="send-behavior-option steer" type="button" role="menuitem" onClick={() => void sendPrompt()}>
+                      <span className="send-behavior-option-dot" aria-hidden="true" />
+                      <span>{t("app.sendSteerTitle")}</span>
+                    </button>
+                    <button className="send-behavior-option follow-up" type="button" role="menuitem" onClick={sendPromptAsFollowUp}>
+                      <span className="send-behavior-option-dot" aria-hidden="true" />
+                      <span>{t("app.sendFollowUpTitle")}</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
