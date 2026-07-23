@@ -3157,6 +3157,8 @@ export function App() {
     const request = (sessionRequestByProjectRef.current[projectId] ?? 0) + 1;
     sessionRequestByProjectRef.current[projectId] = request;
     sessionRefreshRunningRef.current.add(projectId);
+    const loadingStart = Date.now();
+    const MIN_LOADING_MS = 200;
     if (!silent) {
       setSessionLoadingByProject((current) => ({
         ...current,
@@ -3187,6 +3189,10 @@ export function App() {
       if (sessionRequestByProjectRef.current[projectId] === request) {
         sessionRefreshRunningRef.current.delete(projectId);
         if (!silent) {
+          const elapsed = Date.now() - loadingStart;
+          if (elapsed < MIN_LOADING_MS) {
+            await new Promise<void>((resolve) => setTimeout(resolve, MIN_LOADING_MS - elapsed));
+          }
           setSessionLoadingByProject((current) => ({
             ...current,
             [projectId]: false,
@@ -3952,9 +3958,16 @@ export function App() {
         AGENT_CREATE_TIMEOUT_MS,
         t("app.agentCreateTimeout"),
       );
-      // 立即将 tab 加入 agents，避免等待 IPC agents:state 事件导致 UI 闪烁
+      // 立即将 tab 加入 agents，避免等待 IPC agents:state 事件导致 UI 闪烁。
+      // 如果 agent 已存在（onState 先行到达），也要覆盖其 status 等信息，
+      // 否则可能卡在 "starting" 不更新。
       setAgents((current) => {
-        if (current.some((a) => a.id === tab.id)) return current;
+        const index = current.findIndex((a) => a.id === tab.id);
+        if (index >= 0) {
+          const next = [...current];
+          next[index] = tab;
+          return next;
+        }
         return [...current, tab];
       });
       pendingAgentsRef.current = pendingAgentsRef.current.filter(
@@ -7782,6 +7795,8 @@ export function App() {
                   dropCommit={api.git.dropCommit}
                   generateCommitMessage={api.git.generateCommitMessage}
                   gitInit={api.git.init}
+                  push={api.git.push}
+                  pull={api.git.pull}
                 />
               </div>
               {gitDrawerDiff && gitDrawerDiff.projectId === activeProjectId && gitDiffDisplayMode === "drawer" && (

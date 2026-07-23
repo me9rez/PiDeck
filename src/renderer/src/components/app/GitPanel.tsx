@@ -11,6 +11,8 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
   Check,
   ChevronDown,
   GitBranch,
@@ -92,6 +94,10 @@ type GitPanelProps = {
   ) => Promise<string>;
   /** 初始化 Git 仓库 */
   gitInit?: (projectId: string) => Promise<void>;
+  /** Push：将当前分支推送到远程 */
+  push?: (projectId: string) => Promise<void>;
+  /** Pull：从远程拉取并合并到当前分支 */
+  pull?: (projectId: string) => Promise<void>;
 };
 
 type PaneId = "changes" | "graph" | "compare";
@@ -865,6 +871,8 @@ export function GitPanel(props: GitPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [commitMessage, setCommitMessage] = useState("");
   const [committing, setCommitting] = useState(false);
+  const [pushing, setPushing] = useState(false);
+  const [pulling, setPulling] = useState(false);
   const [mutating, setMutating] = useState(false);
   const [notAGitRepo, setNotAGitRepo] = useState(false);
   const [gitNotInstalled, setGitNotInstalled] = useState(false);
@@ -1155,6 +1163,56 @@ export function GitPanel(props: GitPanelProps) {
     );
   };
 
+  const doPush = async () => {
+    if (!props.push || mutationRunningRef.current) return;
+    const projectId = props.projectId;
+    const mutationRequest = ++mutationRequestRef.current;
+    mutationRunningRef.current = true;
+    setPushing(true);
+    setError(null);
+    try {
+      await props.push(projectId);
+      if (projectId !== projectIdRef.current) return;
+      await refresh();
+    } catch (caught) {
+      if (projectId === projectIdRef.current) {
+        const msg = errorMessage(caught);
+        setError(msg);
+        showNotice(msg, 10000, "error");
+      }
+    } finally {
+      if (mutationRequest === mutationRequestRef.current) {
+        mutationRunningRef.current = false;
+        if (projectId === projectIdRef.current) setPushing(false);
+      }
+    }
+  };
+
+  const doPull = async () => {
+    if (!props.pull || mutationRunningRef.current) return;
+    const projectId = props.projectId;
+    const mutationRequest = ++mutationRequestRef.current;
+    mutationRunningRef.current = true;
+    setPulling(true);
+    setError(null);
+    try {
+      await props.pull(projectId);
+      if (projectId !== projectIdRef.current) return;
+      await refresh();
+    } catch (caught) {
+      if (projectId === projectIdRef.current) {
+        const msg = errorMessage(caught);
+        setError(msg);
+        showNotice(msg, 10000, "error");
+      }
+    } finally {
+      if (mutationRequest === mutationRequestRef.current) {
+        mutationRunningRef.current = false;
+        if (projectId === projectIdRef.current) setPulling(false);
+      }
+    }
+  };
+
   const visibleSashAfterChanges = adjacentVisiblePane(
     paneState.open,
     "changes",
@@ -1356,6 +1414,38 @@ export function GitPanel(props: GitPanelProps) {
           >
             <RefreshCw size={14} />
           </button>
+          {props.push && (
+            <button
+              type="button"
+              className="git-action-btn"
+              title={t("git.push")}
+              aria-label={t("git.push")}
+              disabled={pushing || mutationRunningRef.current}
+              onClick={() => void doPush()}
+            >
+              {pushing ? (
+                <Loader2 size={14} className="git-spin" />
+              ) : (
+                <ArrowUpFromLine size={14} />
+              )}
+            </button>
+          )}
+          {props.pull && (
+            <button
+              type="button"
+              className="git-action-btn"
+              title={t("git.pull")}
+              aria-label={t("git.pull")}
+              disabled={pulling || mutationRunningRef.current}
+              onClick={() => void doPull()}
+            >
+              {pulling ? (
+                <Loader2 size={14} className="git-spin" />
+              ) : (
+                <ArrowDownToLine size={14} />
+              )}
+            </button>
+          )}
         </PaneHeader>
         {paneState.open.changes && (
           <div className="git-pane-body git-changes-body">

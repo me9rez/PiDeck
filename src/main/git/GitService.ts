@@ -731,6 +731,21 @@ export class GitService {
 		const { stdout: parentHash } = await execFileAsync("git", ["rev-parse", `${hash}^`], { cwd, timeout: GIT_MUTATION_TIMEOUT_MS });
 		await execFileAsync("git", ["rebase", "--onto", parentHash.trim(), hash], { cwd, timeout: GIT_MUTATION_TIMEOUT_MS });
 	}
+
+	/** Push：将当前分支推送到远程 */
+	async push(cwd: string): Promise<void> {
+		await execFileAsync("git", ["push"], { cwd, timeout: GIT_MUTATION_TIMEOUT_MS * 4 });
+	}
+
+	/** Pull：从远程拉取并合并到当前分支 */
+	async pull(cwd: string): Promise<void> {
+		await execFileAsync("git", ["pull"], { cwd, timeout: GIT_MUTATION_TIMEOUT_MS * 4 });
+	}
+
+	/** Fetch：从远程获取最新数据但不合并 */
+	async fetch(cwd: string): Promise<void> {
+		await execFileAsync("git", ["fetch"], { cwd, timeout: GIT_MUTATION_TIMEOUT_MS * 4 });
+	}
 }
 
 // ── 解析工具函数（复刻 VS Code git.ts）──────────────────────────────────

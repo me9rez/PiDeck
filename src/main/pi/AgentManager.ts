@@ -843,11 +843,6 @@ export class AgentManager {
 				: undefined;
 			const preserveMessagesAfter = Date.now();
 			if (messagesPromise) {
-				if (input.sessionPath) {
-					this.addMessage(id, "system", "正在加载历史会话，大会话可能需要几秒钟…", {
-						historyLoading: true,
-					});
-				}
 				void this.loadMessages(id, true, messagesPromise, { preserveMessagesAfter })
 					.catch(() =>
 						new Promise<void>((resolve) => setTimeout(resolve, 800))
@@ -875,15 +870,6 @@ export class AgentManager {
 						});
 					});
 			} else if (input.sessionPath) {
-				this.addMessage(
-					id,
-					"system",
-					`历史会话文件较大，正在加载最近 ${AgentManager.MAX_HISTORY_LOAD_TURNS} 条消息…`,
-					{
-						historyLoading: true,
-						sessionSizeBytes: historyLoadDecision.sizeBytes,
-					},
-				);
 				void this.loadMessages(
 					id,
 					true,

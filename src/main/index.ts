@@ -2048,6 +2048,33 @@ function registerIpc() {
 	);
 
 	ipcMain.handle(
+		ipcChannels.gitPush,
+		async (_event, projectId: string) => {
+			const project = projectStore.get(projectId);
+			if (!project) throw new Error(`Project not found: ${projectId}`);
+			await gitService.push(project.path);
+		},
+	);
+
+	ipcMain.handle(
+		ipcChannels.gitPull,
+		async (_event, projectId: string) => {
+			const project = projectStore.get(projectId);
+			if (!project) throw new Error(`Project not found: ${projectId}`);
+			await gitService.pull(project.path);
+		},
+	);
+
+	ipcMain.handle(
+		ipcChannels.gitFetch,
+		async (_event, projectId: string) => {
+			const project = projectStore.get(projectId);
+			if (!project) throw new Error(`Project not found: ${projectId}`);
+			await gitService.fetch(project.path);
+		},
+	);
+
+	ipcMain.handle(
 		ipcChannels.gitInit,
 		async (_event, projectId: string) => {
 			const project = projectStore.get(projectId);

@@ -19465,7 +19465,13 @@ body.is-git-pane-resizing, body.is-git-pane-resizing * { cursor: row-resize !imp
   color: var(--git-desc-fg);
   font-size: var(--font-size-control);
 }
-.git-status-msg.error { color: var(--git-conflict); }
+.git-status-msg.error {
+  color: var(--git-conflict);
+  word-break: break-word;
+  white-space: pre-wrap;
+  padding: var(--space-2) 9px;
+  line-height: var(--line-height-body);
+}
 .git-resource-group { border-bottom: 1px solid var(--git-panel-border); }
 /* 最后一个分组不要底部边框，避免在列表末尾残留一条横线 */
 .git-resource-group:last-child { border-bottom: none; }

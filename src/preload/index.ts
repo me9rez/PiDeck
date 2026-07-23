@@ -422,6 +422,24 @@ const api = {
 				ipcChannels.gitInit,
 				projectId,
 			) as Promise<void>,
+		/** Push：将当前分支推送到远程 */
+		push: (projectId: string) =>
+			ipcRenderer.invoke(
+				ipcChannels.gitPush,
+				projectId,
+			) as Promise<void>,
+		/** Pull：从远程拉取并合并到当前分支 */
+		pull: (projectId: string) =>
+			ipcRenderer.invoke(
+				ipcChannels.gitPull,
+				projectId,
+			) as Promise<void>,
+		/** Fetch：从远程获取最新数据但不合并 */
+		fetch: (projectId: string) =>
+			ipcRenderer.invoke(
+				ipcChannels.gitFetch,
+				projectId,
+			) as Promise<void>,
 	},
 	pi: {
 		check: () =>
