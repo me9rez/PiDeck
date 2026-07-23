@@ -308,6 +308,17 @@ function fileNameOnly(path: string): string {
   return path.split(/[/\\]/).pop() ?? path;
 }
 
+/**
+ * 缩短长目录路径，类似 Java package 包名缩写：取每段的首字母。
+ * 例如 "src/main/java/com/example/service/impl" → "s/m/j/c/e/s/i"。
+ * 短路径（≤3 段或总长 ≤20）保持原样。
+ */
+function shortenDir(dir: string): string {
+  const parts = dir.split("/");
+  if (parts.length <= 3 || dir.length <= 20) return dir;
+  return parts.map((p) => p.charAt(0) || "").join("/");
+}
+
 /** 按目录分组 Git 资源，返回 { dir -> resources[] } 映射 */
 function groupByDir(
 	resources: import("../../../../shared/types").GitResource[],
@@ -382,8 +393,8 @@ function FileTree(props: {
 								size={12}
 								className={`git-tree-chevron${collapsedDirs.has(dir) ? "" : " open"}`}
 							/>
-							<span className="git-tree-directory-name">
-								{dir || "/"}
+							<span className="git-tree-directory-name" title={dir || "/"}>
+								{shortenDir(dir) || "/"}
 							</span>
 							<span className="git-tree-directory-count">{resources.length}</span>
 						</div>

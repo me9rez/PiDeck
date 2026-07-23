@@ -8,6 +8,9 @@
 
 ### 🐛 Bug 修复
 
+- **Agent 启动状态卡在 "starting"** — 修复 `createAgent` 中 `setAgents`
+  在 API 返回后未覆盖已有条目导致状态不更新的问题。
+- **Session 加载指示器闪烁** — 强制最小展示 200ms，避免快速 API 响应时闪一下。
 - **Git 提交摘要生成** — 从每次调起 `pi -p` 改为持久化 `pi --mode rpc` 守护进程，
   消除反复冷启动开销。启动参数带 `--no-session --no-tools --no-extensions
   --no-skills --no-prompt-templates --no-context-files --no-themes --thinking off`
@@ -18,6 +21,8 @@
 
 ### 🚀 新功能
 
+- **Git Push / Pull** — 变更面板标题栏新增 Push 和 Pull 按钮，
+  完整 IPC 链路及错误通知支持。
 - **可配置的提交摘要提示词** — 新增设置项 `gitCommitMessagePrompt`，
   在设置 Git 区块中提供 textarea 编辑。模板支持 `{diff}` 占位符，
   默认提示词包含 Gitmoji 对应关系。

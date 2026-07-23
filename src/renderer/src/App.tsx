@@ -390,6 +390,8 @@ function isReplacementForPendingAgent(agent: AgentTab, pending: PendingAgentTab)
   if (isSameSessionPath(agent.sessionPath, pending.sessionPath)) return true;
   if (pending.sessionPath && agent.createdAt >= pending.createdAt - 1000)
     return true;
+  // noSession 匿名 agent：没有 sessionPath，靠 noSession 标记 + 归属项目匹配
+  if (pending.noSession && agent.noSession) return true;
   return (
     agent.title === pending.title && agent.createdAt >= pending.createdAt - 1000
   );
@@ -5592,6 +5594,22 @@ export function App() {
     if (activeProjectId) saveExpandedDirs(activeProjectId, collapsedDirs);
   }
 
+  function expandAllDirectories() {
+    // 收集当前文件树中的所有目录路径并全部展开，方便用户快速浏览完整结构。
+    const allDirs = new Set<string>();
+    const collectDirs = (nodes: FileTreeNode[]) => {
+      for (const node of nodes) {
+        if (node.type === "directory") {
+          allDirs.add(node.path);
+          if (node.children) collectDirs(node.children);
+        }
+      }
+    };
+    collectDirs(files);
+    setExpandedDirs(allDirs);
+    if (activeProjectId) saveExpandedDirs(activeProjectId, allDirs);
+  }
+
   function startResize(target: "list" | "drawer", event: PointerEvent) {
     const startX = event.clientX;
     const startListWidth = listCollapsed ? 68 : listWidth;
@@ -7851,6 +7869,7 @@ export function App() {
               expandedDirs={expandedDirs}
               onToggleDirectory={toggleDirectory}
               onCollapseAllDirectories={collapseAllDirectories}
+              onExpandAllDirectories={expandAllDirectories}
               pinned={drawerPinned}
               onTogglePin={toggleDrawerPinned}
               onCollapse={collapseDrawer}

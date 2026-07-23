@@ -4006,6 +4006,7 @@ export function DrawerContent(props: {
 	expandedDirs: Set<string>;
 	onToggleDirectory: (path: string) => void;
 	onCollapseAllDirectories: () => void;
+	onExpandAllDirectories?: () => void;
 	pinned: boolean;
 	onTogglePin: () => void;
 	onCollapse: () => void;
@@ -4034,6 +4035,7 @@ export function DrawerContent(props: {
 	return (
 		<>
 			<div className="drawer-header">
+				{props.panel === "files" && <LogoMark />}
 				<strong>{title}</strong>
 				<div className="drawer-header-actions">
 					<button
@@ -4060,6 +4062,7 @@ export function DrawerContent(props: {
 					expandedDirs={props.expandedDirs}
 					onToggleDirectory={props.onToggleDirectory}
 					onCollapseAll={props.onCollapseAllDirectories}
+					onExpandAll={props.onExpandAllDirectories}
 					onFileContextMenu={props.onFileContextMenu}
 					onRefreshFiles={props.onRefreshFiles}
 					onOpenFolder={props.onOpenFolder}
@@ -4092,6 +4095,8 @@ function FilesPanel(props: {
 	onRefreshFiles: () => void;
 	/** 收起文件树中所有已展开的目录，清空 expandedDirs。 */
 	onCollapseAll?: () => void;
+	/** 展开文件树中所有目录 */
+	onExpandAll?: () => void;
 	onOpenFolder?: () => void;
 	onOpenFile?: (path: string) => void;
 	onViewFile?: (path: string) => void;
@@ -4099,8 +4104,53 @@ function FilesPanel(props: {
 	/** 项目根目录路径 */
 	currentProjectRoot?: string;
 }) {
+	const panelRef = useRef<HTMLDivElement>(null);
+	const [showScrollTop, setShowScrollTop] = useState(false);
+	const [showScrollBottom, setShowScrollBottom] = useState(false);
+
+	const handleScroll = useCallback(() => {
+		const el = panelRef.current;
+		if (!el) return;
+		const threshold = 40;
+		setShowScrollTop(el.scrollTop > threshold);
+		setShowScrollBottom(el.scrollTop + el.clientHeight < el.scrollHeight - threshold);
+	}, []);
+
+	useEffect(() => {
+		const el = panelRef.current;
+		if (!el) return;
+		el.addEventListener("scroll", handleScroll, { passive: true });
+		handleScroll();
+		return () => el.removeEventListener("scroll", handleScroll);
+	}, [handleScroll, props.files, props.expandedDirs]);
+
+	const scrollToTop = useCallback(() => {
+		panelRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+	}, []);
+
+	const scrollToBottom = useCallback(() => {
+		const el = panelRef.current;
+		if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+	}, []);
+
+	// 判断是否所有目录都已展开，用于切换折叠/展开按钮状态
+	const allDirsList = useMemo(() => {
+		const dirs: string[] = [];
+		const collect = (nodes: FileTreeNode[]) => {
+			for (const n of nodes) {
+				if (n.type === "directory") {
+					dirs.push(n.path);
+					if (n.children) collect(n.children);
+				}
+			}
+		};
+		collect(props.files);
+		return dirs;
+	}, [props.files]);
+	const isAllExpanded = allDirsList.length > 0 && allDirsList.every((d) => props.expandedDirs.has(d));
+
 	return (
-		<div className="files-panel">
+		<div className="files-panel" ref={panelRef}>
 			<div className="panel-action-row">
 				<span>{t("drawer.fileItems", { count: props.files.length })}</span>
 				<div className="panel-action-buttons">
@@ -4151,8 +4201,29 @@ function FilesPanel(props: {
 							<ChevronsDownUp size={14} />
 						</button>
 					)}
+					{props.onExpandAll && (
+						<button
+							className="icon-only"
+							onClick={props.onExpandAll}
+							title={t("drawer.expandAllDirs")}
+							aria-label={t("drawer.expandAllDirs")}
+							disabled={isAllExpanded}
+						>
+							<ChevronsUpDown size={14} />
+						</button>
+					)}
 				</div>
 			</div>
+			{showScrollTop && (
+				<button
+					type="button"
+					className="drawer-scroll-btn drawer-scroll-top"
+					title={t("app.modelScrollToTop")}
+					onClick={scrollToTop}
+				>
+					<MoveUp size={14} strokeWidth={1.8} aria-hidden="true" />
+				</button>
+			)}
 			{props.files.map((node) => (
 				<FileNode
 					key={node.path}
@@ -4164,6 +4235,16 @@ function FilesPanel(props: {
 					onViewFile={props.onViewFile}
 				/>
 			))}
+			{showScrollBottom && (
+				<button
+					type="button"
+					className="drawer-scroll-btn drawer-scroll-bottom"
+					title={t("app.modelScrollToBottom")}
+					onClick={scrollToBottom}
+				>
+					<MoveDown size={14} strokeWidth={1.8} aria-hidden="true" />
+				</button>
+			)}
 		</div>
 	);
 }

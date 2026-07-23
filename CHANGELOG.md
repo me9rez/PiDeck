@@ -8,6 +8,10 @@ All notable changes to PiDeck are documented here.
 
 ### 🐛 Bug Fixes
 
+- **Agent startup status stuck on "starting"** — Fix `setAgents` in `createAgent`
+  to overwrite existing entries when the API returns, preventing stale status.
+- **Session loading indicator flicker** — Enforce a 200 ms minimum display duration
+  to avoid a brief flash on fast API responses.
 - **Git Commit Message Generation** — Replace per-call `pi -p` process with a persistent
   `pi --mode rpc` daemon, eliminating repeated cold-start overhead. Start with
   `--no-session --no-tools --no-extensions --no-skills --no-prompt-templates
@@ -20,6 +24,8 @@ All notable changes to PiDeck are documented here.
 
 ### 🚀 New Features
 
+- **Git Push / Pull** — Add Push and Pull buttons to the Changes pane header,
+  with full IPC pipeline and error notifications.
 - **Customizable Commit Message Prompt** — New Setting `gitCommitMessagePrompt`,
   a textarea in the Git section of Settings. The template supports `{diff}`
   placeholder. Default prompt includes Gitmoji mapping.
