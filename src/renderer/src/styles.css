@@ -2440,6 +2440,7 @@ body.is-terminal-resizing {
   max-width: var(--content-max-width);
   margin-inline: auto;
 }
+.chat-pane[style*="--content-max-width"] .ask-inline-bar,
 .chat-pane[style*="--content-max-width"] .composer-box,
 .chat-pane[style*="--content-max-width"] .image-preview-area,
 .chat-pane[style*="--content-max-width"] .extension-widgets-container,
