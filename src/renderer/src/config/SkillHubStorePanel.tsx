@@ -8,7 +8,7 @@ import type { SkillHubItem, SkillHubDetail, SkillHubSearchResult, SkillHubInstal
 const api = (window as unknown as {
 	piDesktop: {
 		skillHub: {
-			search: (q: string, page?: number) => Promise<SkillHubSearchResult>;
+			search: (q: string, page?: number, pageSize?: number, sortBy?: string, order?: string) => Promise<SkillHubSearchResult>;
 			detail: (slug: string) => Promise<SkillHubDetail | null>;
 			install: (slug: string, installDir: string) => Promise<SkillHubInstallResult>;
 		};
@@ -26,8 +26,16 @@ function fmtNum(n: number): string {
 	return String(n);
 }
 
+const SORT_OPTIONS = [
+	{ value: "score", label: "综合排序" },
+	{ value: "downloads", label: "下载量" },
+	{ value: "stars", label: "收藏数" },
+	{ value: "newest", label: "最新" },
+];
+
 export function SkillHubStorePanel() {
 	const [query, setQuery] = useState("");
+	const [sortBy, setSortBy] = useState("score");
 	const [searching, setSearching] = useState(false);
 	const [result, setResult] = useState<SkillHubSearchResult | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -52,7 +60,7 @@ export function SkillHubStorePanel() {
 		setError(null);
 		setSearching(true);
 		try {
-			const data = await api.skillHub.search(q);
+			const data = await api.skillHub.search(q, 1, 24, sortBy, "desc");
 			setResult(data);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
@@ -226,6 +234,20 @@ export function SkillHubStorePanel() {
 					>
 						{searching ? t("common.searching") + "…" : <Search size={14} />}
 					</button>
+				</div>
+				<div className="skillhub-sort-bar">
+					{SORT_OPTIONS.map((opt) => (
+						<button
+							key={opt.value}
+							className={`skillhub-sort-chip${sortBy === opt.value ? " active" : ""}`}
+							onClick={() => {
+								setSortBy(opt.value);
+								if (query.trim()) handleSearch(query);
+							}}
+						>
+							{opt.label}
+						</button>
+					))}
 				</div>
 				{!result && !searching && (
 					<div className="skillhub-suggestions">

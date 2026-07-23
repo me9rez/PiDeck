@@ -602,8 +602,8 @@ const api = {
 			ipcRenderer.invoke(ipcChannels.skillStoreImport, item, locationId) as Promise<PiSkillSummary>,
 	},
 	skillHub: {
-		search: (query: string, page?: number) =>
-			ipcRenderer.invoke(ipcChannels.skillHubSearch, query, page ?? 1) as Promise<import("../shared/types").SkillHubSearchResult>,
+		search: (query: string, page?: number, pageSize?: number, sortBy?: string, order?: string) =>
+			ipcRenderer.invoke(ipcChannels.skillHubSearch, { query, page, pageSize, sortBy, order }) as Promise<import("../shared/types").SkillHubSearchResult>,
 		detail: (slug: string) =>
 			ipcRenderer.invoke(ipcChannels.skillHubDetail, slug) as Promise<import("../shared/types").SkillHubDetail | null>,
 		install: (slug: string, installDir: string) =>
