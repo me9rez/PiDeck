@@ -329,7 +329,7 @@ function ExtensionCard(props: {
 						title={extension.enabled !== false ? t("common.disable") : t("common.enabled")}
 						style={extension.enabled !== false ? { color: "var(--color-accent)" } : undefined}
 					>
-						{extension.enabled !== false ? <ToggleRight size={14} strokeWidth={1.8} /> : <ToggleLeft size={14} strokeWidth={1.8} />}
+						{extension.enabled !== false ? <ToggleRight size={18} strokeWidth={1.8} /> : <ToggleLeft size={18} strokeWidth={1.8} />}
 					</button>
 					{!extension.builtIn && (
 						<button

@@ -1,9 +1,38 @@
 // @ts-nocheck - SkillHub store panel, new feature
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Search, Download, ArrowLeft, Sparkles, Check, AlertCircle } from "lucide-react";
+import { Search, Download, ArrowLeft, Check, AlertCircle, BadgeCheck } from "lucide-react";
 import { t } from "../i18n";
 import { showNotice } from "../utils/notice";
-import type { SkillHubItem, SkillHubDetail, SkillHubSearchResult, SkillHubInstallResult } from "../../../shared/types";
+import { openInSystemBrowser } from "../utils/openExternal";
+import type { SkillHubItem, SkillHubDetail, SkillHubSearchResult, SkillHubInstallResult, PiSkillListResult } from "../../../shared/types";
+
+/** 获取本地已安装 skill 名称 → slugs 映射（同名取第一个匹配的 skills.sh slug） */
+async function getInstalledSlugsSet(searchItems: SkillHubItem[]): Promise<Set<string>> {
+	try {
+		const piDesktop = (window as any).piDesktop;
+		if (!piDesktop?.skills?.list) return new Set();
+		const list: PiSkillListResult = await piDesktop.skills.list();
+		const installed = new Set(list.skills.map((s) => s.name.toLowerCase()));
+
+		// 统计搜索结果中各 name 出现的次数
+		const nameCount = new Map<string, number>();
+		for (const item of searchItems) {
+			const n = item.name.toLowerCase();
+			nameCount.set(n, (nameCount.get(n) || 0) + 1);
+		}
+
+		// 仅当 name 在搜索结果中唯一出现时才标为已安装（避免同名不同包的误标）
+		const result = new Set<string>();
+		for (const item of searchItems) {
+			if (installed.has(item.name.toLowerCase()) && nameCount.get(item.name.toLowerCase()) === 1) {
+				result.add(item.slug);
+			}
+		}
+		return result;
+	} catch {
+		return new Set();
+	}
+}
 
 const api = (window as unknown as {
 	piDesktop: {
@@ -29,6 +58,7 @@ function fmtNum(n: number): string {
 export function SkillHubStorePanel() {
 	const [query, setQuery] = useState("");
 	const [searching, setSearching] = useState(false);
+	const [installedSlugs, setInstalledSlugs] = useState<Set<string>>(new Set());
 	const [installingSlugs, setInstallingSlugs] = useState<Set<string>>(new Set());
 	const [result, setResult] = useState<SkillHubSearchResult | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -54,7 +84,10 @@ export function SkillHubStorePanel() {
 		setSearching(true);
 		try {
 			const data = await api.skillHub.search(q, 50);
+			// 搜索后判断已安装状态（需要搜索结果列表来消除同名歧义）
+			const installed = await getInstalledSlugsSet(data.items);
 			setResult(data);
+			setInstalledSlugs(installed);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
 		} finally {
@@ -81,13 +114,17 @@ export function SkillHubStorePanel() {
 		}
 	}, []);
 
-	/** 列表直接安装（不进入详情） */
+	/** 列表直接安装（不进入详情），安装成功后重新搜索以刷新状态 */
 	const handleInstallFromList = async (slug: string, name: string) => {
 		setInstallingSlugs((prev) => new Set(prev).add(slug));
 		try {
 			const result = await api.skillHub.install(slug, "");
 			if (result.success) {
 				showNotice(t("app.skillsInstalled", { name }), 3000);
+				// 安装成功 → 标记该 slug（确保同名歧义场景下仍显示已安装）
+				setInstalledSlugs((prev) => new Set(prev).add(slug));
+				// 刷新搜索结果（更新已安装标注）
+				void handleSearch(query);
 			} else {
 				showNotice(result.error || t("common.error"), 5000, "error");
 			}
@@ -191,13 +228,20 @@ export function SkillHubStorePanel() {
 							key={item.slug}
 							className="skillhub-card"
 							onClick={() => {
-								(window as any).piDesktop.app.openExternal(
+								openInSystemBrowser(
 									`https://www.skills.sh/search?q=${encodeURIComponent(item.name)}`
 								);
 							}}
 						>
 							<div className="skillhub-card-main">
-								<strong className="skillhub-card-title">{item.name}</strong>
+								<strong className="skillhub-card-title">
+									{item.name}
+									{installedSlugs.has(item.slug) && (
+										<span className="skillhub-installed-badge">
+											<Check size={11} /> 已安装
+										</span>
+									)}
+								</strong>
 								<div className="skillhub-card-meta">
 									<span className="skillhub-card-stats">
 										<Download size={12} /> {fmtNum(item.downloads)} 安装
@@ -218,17 +262,19 @@ export function SkillHubStorePanel() {
 								>
 									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
 								</button>
-								<button
-									className="skillhub-card-action-btn primary"
-									title={t("common.install")}
-									disabled={installingSlugs.has(item.slug)}
-									onClick={async (e) => {
-										e.stopPropagation();
-										await handleInstallFromList(item.slug, item.name);
-									}}
-								>
-									{installingSlugs.has(item.slug) ? <span className="skillhub-installing-dot" /> : <Download size={14} />}
-								</button>
+								{!installedNames.has(item.name.toLowerCase()) && (
+									<button
+										className="skillhub-card-action-btn primary"
+										title={t("common.install")}
+										disabled={installingSlugs.has(item.slug)}
+										onClick={async (e) => {
+											e.stopPropagation();
+											await handleInstallFromList(item.slug, item.name);
+										}}
+									>
+										{installingSlugs.has(item.slug) ? <span className="skillhub-installing-dot" /> : <Download size={14} />}
+									</button>
+								)}
 							</div>
 						</article>
 					))}
