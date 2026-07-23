@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
 import { join } from "node:path";
 import { app } from "electron";
 import initSqlJs from "sql.js";
@@ -54,6 +55,23 @@ export class XuePromptManager {
 	}
 
 	/**
+	 * 解压 BLOB 字段（gzip 压缩的 content/description）
+	 */
+	private blobToString(blob: any): string {
+		if (!blob) return "";
+		// sql.js 返回 BLOB 为 Uint8Array
+		const buf = blob instanceof Uint8Array || ArrayBuffer.isView(blob)
+			? Buffer.from(blob as Uint8Array)
+			: Buffer.from(blob as number[]);
+		try {
+			return gunzipSync(buf).toString("utf8");
+		} catch {
+			// 兼容旧版未压缩数据
+			return buf.toString("utf8");
+		}
+	}
+
+	/**
 	 * 延迟初始化 sql.js（WASM 只需加载一次）
 	 */
 	private async getDb(): Promise<import("sql.js").Database> {
@@ -97,7 +115,7 @@ export class XuePromptManager {
 				// xueprompt 数据没有 subcategory/tags 字段，返回空值
 				subcategory: "",
 				tags: [],
-				description: String(row[5] ?? ""),
+				description: row[5] ? this.blobToString(row[5]) : "",
 				// SQLite 模式下 path 无意义，用 slug 填充兼容类型
 				path: String(row[0] ?? ""),
 			}));
@@ -125,8 +143,8 @@ export class XuePromptManager {
 
 			const row = rows[0].values[0];
 			const title = String(row[0] ?? "");
-			const content = String(row[1] ?? "");
-			const description = String(row[2] ?? "");
+			const content = this.blobToString(row[1]);
+			const description = this.blobToString(row[2]);
 			const url = String(row[3] ?? "");
 
 			// 拼接完整内容（含类 frontmatter 头）

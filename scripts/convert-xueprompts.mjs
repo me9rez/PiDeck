@@ -1,8 +1,9 @@
 /**
- * 将 xueprompt JSON 数据转换为 SQLite 数据库（含 FTS3 全文搜索）。
+ * 将 xueprompt JSON 数据转换为 SQLite 数据库。
+ * content/description 存为 TEXT，后续运行 compact-xueprompts.mjs 可压缩为 BLOB。
  *
  * 用法: node scripts/convert-xueprompts.mjs
- * 输入: C:\Users\<user>\AppData\Roaming\pi-desktop\chat-workspace\xueprompt-data\xueprompt-prompts.json
+ * 输入: C:\Users\<user>\...\xueprompt-prompts.json
  * 输出: resources/xueprompts.db
  */
 
@@ -30,7 +31,6 @@ async function main() {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
 
-  // 主表
   db.run(`
     CREATE TABLE IF NOT EXISTS xueprompts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,7 +43,6 @@ async function main() {
     )
   `);
 
-  // 分类表
   db.run(`
     CREATE TABLE IF NOT EXISTS xueprompt_categories (
       slug TEXT PRIMARY KEY,
@@ -52,14 +51,6 @@ async function main() {
     )
   `);
 
-  // FTS3 全文搜索虚拟表（sql.js 的 WASM 支持 FTS3/4，不支持 FTS5）
-  db.run(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS xueprompts_fts USING fts3(
-      title, content, description
-    )
-  `);
-
-  // 插入主数据
   const insertStmt = db.prepare(
     `INSERT OR REPLACE INTO xueprompts (slug, url, title, category, content, description)
      VALUES (?, ?, ?, ?, ?, ?)`
@@ -87,7 +78,6 @@ async function main() {
   }
   insertStmt.free();
 
-  // 分类数据
   const catInsertStmt = db.prepare(
     `INSERT OR REPLACE INTO xueprompt_categories (slug, name, count) VALUES (?, ?, ?)`
   );
@@ -100,29 +90,8 @@ async function main() {
     catInsertStmt.run([slug, name, count]);
   }
   catInsertStmt.free();
-
-  // FTS 索引：读取所有记录后插入 FTS 表
-  const ftsInsertStmt = db.prepare(
-    `INSERT INTO xueprompts_fts (rowid, title, content, description) VALUES (?, ?, ?, ?)`
-  );
-
-  const rows = db.exec(
-    "SELECT id, title, content, description FROM xueprompts ORDER BY id"
-  );
-  for (const row of rows[0]?.values ?? []) {
-    ftsInsertStmt.run(row);
-  }
-  ftsInsertStmt.free();
-
   db.run("COMMIT");
 
-  // 验证 FTS
-  const testResult = db.exec(
-    "SELECT rowid, snippet(xueprompts_fts, '<b>', '</b>', '...', -1, 16) FROM xueprompts_fts WHERE xueprompts_fts MATCH '小红书' LIMIT 3"
-  );
-  console.log(`FTS 搜索测试 "小红书": ${testResult[0]?.values?.length ?? 0} 条结果`);
-
-  // 导出
   const data = db.export();
   writeFileSync(OUTPUT_DB, Buffer.from(data));
   console.log(`数据库已写入: ${OUTPUT_DB}`);
@@ -130,13 +99,8 @@ async function main() {
   console.log(`分类数: ${Object.keys(catCount).length}`);
   console.log(`提示词数: ${records.length}`);
 
-  const countResult = db.exec("SELECT COUNT(*) as cnt FROM xueprompts");
-  const ftsResult = db.exec("SELECT COUNT(*) as cnt FROM xueprompts_fts");
-  console.log(
-    `验证: xueprompts=${countResult[0]?.values[0]?.[0]}, fts=${ftsResult[0]?.values[0]?.[0]}`
-  );
-
   db.close();
+  console.log("\n提示: 可运行 node scripts/compact-xueprompts.mjs 做进一步瘦身");
 }
 
 main().catch((err) => {
