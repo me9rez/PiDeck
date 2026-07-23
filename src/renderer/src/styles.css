@@ -7232,9 +7232,10 @@ body.is-composer-resizing .composer-resize-handle::after {
 }
 .composer-bar-btn.stop {
   color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
 }
 .composer-bar-btn.stop:hover {
-  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 18%, transparent);
 }
 .composer-bar-btn.send {
   width: 28px;
