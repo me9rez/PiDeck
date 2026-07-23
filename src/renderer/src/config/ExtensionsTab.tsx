@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
+import { Copy, Download, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
 import type { PiCliUpdateResult, PiExtensionListResult, PiExtensionSummary, PiPackageInfo } from "../../../shared/types";
 import { t } from "../i18n";
+import { showNotice } from "../utils/notice";
 
 type ExtensionsApi = {
 	list: () => Promise<PiExtensionListResult>;
@@ -203,14 +204,36 @@ export function ExtensionsTab(props: {
 							<div className="extensions-recommended-action" onClick={(e) => e.stopPropagation()}>
 								{installing ? (
 									<span className="config-btn" style={{ opacity: 0.6 }}>{t("config.installing")}</span>
-								) : (
+								) : alreadyInstalled ? (
 									<button
-										className="config-btn"
-										onClick={() => handleInstall(pkg)}
-										disabled={alreadyInstalled || installing}
+										className="config-icon-btn"
+										title={t("config.installed")}
+										disabled
 									>
-										{alreadyInstalled ? t("config.installed") : t("config.install")}
+										<Download size={15} strokeWidth={1.8} />
 									</button>
+								) : (
+									<>
+										<button
+											className="config-icon-btn"
+											title={t("config.install")}
+											onClick={() => handleInstall(pkg)}
+										>
+											<Download size={15} strokeWidth={1.8} />
+										</button>
+										<button
+											className="config-icon-btn"
+											title={t("common.copy")}
+											onClick={(e) => {
+												e.stopPropagation();
+												const cmd = `pi install ${pkg.installCmd}`;
+												navigator.clipboard.writeText(cmd);
+												showNotice(t("app.codeCopied"), 1200);
+											}}
+										>
+											<Copy size={14} strokeWidth={1.8} />
+										</button>
+									</>
 								)}
 							</div>
 						</div>
