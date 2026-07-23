@@ -35,13 +35,24 @@ export class XuePromptManager {
 
 	/**
 	 * 初始化 sql.js WASM，传入 locateFile 确保能找到 sql-wasm.wasm
+	 *
+	 * 打包后 sql-wasm.wasm 通过 asarUnpack 解压到
+	 * app.asar.unpacked/node_modules/sql.js/dist/ 下，
+	 * 不能从 asar 内加载 WASM 二进制。
 	 */
 	private async initSql(): Promise<import("sql.js").SqlJsStatic> {
 		if (!this.sqlPromise) {
 			this.sqlPromise = initSqlJs({
 				locateFile: (file: string) => {
 					if (app.isPackaged) {
-						return join(process.resourcesPath, file);
+						return join(
+							process.resourcesPath,
+							"app.asar.unpacked",
+							"node_modules",
+							"sql.js",
+							"dist",
+							file
+						);
 					}
 					return join(app.getAppPath(), "node_modules", "sql.js", "dist", file);
 				},
