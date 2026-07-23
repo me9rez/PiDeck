@@ -5708,6 +5708,13 @@ export function App() {
     }
   }
 
+  const handlePreviewHtml = (filePath: string) => {
+    const url = new URL('file:///' + filePath.split('\\').join('/')).toString();
+    navigateTo(url);
+    setDrawer('browser');
+    setDrawerCollapsed(false);
+  };
+
   return (
     <div
       className={[
@@ -7779,7 +7786,8 @@ export function App() {
             <FileDiffViewer
               key={activeTab.filePath}
               displayMode="drawer"
-              filePath={activeTab.filePath}
+              onPreviewHtml={handlePreviewHtml}
+filePath={activeTab.filePath}
               mode={activeTab.mode}
               onToggleMode={activeTab.preserveDrawer ? undefined : toggleEditorMode}
               onBack={prevDrawerPanelRef.current && prevDrawerPanelRef.current !== "editor" ? () => {
@@ -7859,7 +7867,8 @@ export function App() {
                   <Suspense fallback={<div className="file-diff-loading">Loading...</div>}>
                     <FileDiffViewer
                       displayMode="drawer"
-                      filePath={gitDrawerDiff.filePath}
+                      onPreviewHtml={handlePreviewHtml}
+filePath={gitDrawerDiff.filePath}
                       mode="diff"
                       onToggleMode={toggleGitDiffDisplayMode}
                       originalContent={gitDrawerDiff.originalContent}
@@ -8624,7 +8633,8 @@ export function App() {
         <Suspense fallback={<div className="modal-backdrop"><span className="file-diff-loading">Loading...</span></div>}>
         <FileDiffViewer
           displayMode="modal"
-          filePath={activeTab.filePath}
+          onPreviewHtml={handlePreviewHtml}
+filePath={activeTab.filePath}
           mode={activeTab.mode}
           onToggleMode={activeTab.preserveDrawer ? undefined : toggleEditorMode}
           originalContent={activeTab.mode === "diff" ? activeTab.originalContent : undefined}
@@ -8646,7 +8656,8 @@ export function App() {
         <Suspense fallback={<div className="modal-backdrop"><span className="file-diff-loading">Loading...</span></div>}>
           <FileDiffViewer
             displayMode="modal"
-            filePath={gitDrawerDiff.filePath}
+            onPreviewHtml={handlePreviewHtml}
+filePath={gitDrawerDiff.filePath}
             mode="diff"
             onToggleMode={toggleGitDiffDisplayMode}
             originalContent={gitDrawerDiff.originalContent}
