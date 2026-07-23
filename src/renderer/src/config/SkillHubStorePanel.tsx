@@ -1,6 +1,6 @@
 // @ts-nocheck - SkillHub store panel, new feature
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Search, Download, Star, ArrowLeft, ExternalLink, Sparkles, Check, AlertCircle } from "lucide-react";
+import { Search, Download, Star, ArrowLeft, Sparkles, Check, AlertCircle } from "lucide-react";
 import { t } from "../i18n";
 import { showNotice } from "../utils/notice";
 import type { SkillHubItem, SkillHubDetail, SkillHubSearchResult, SkillHubInstallResult } from "../../../shared/types";
@@ -87,6 +87,21 @@ export function SkillHubStorePanel() {
 			setDetailLoading(false);
 		}
 	}, []);
+
+	/** 列表直接安装（不进入详情） */
+	const handleInstallFromList = async (slug: string, name: string) => {
+		setInstalling(true);
+		try {
+			const result = await api.skillHub.install(slug, "");
+			if (result.success) {
+				showNotice(t("app.skillsInstalled", { name }), 3000);
+			}
+		} catch (err) {
+			showNotice(err instanceof Error ? err.message : String(err), 5000, "error");
+		} finally {
+			setInstalling(false);
+		}
+	};
 
 	const handleInstall = async () => {
 		if (!previewSlug) return;
@@ -282,22 +297,6 @@ export function SkillHubStorePanel() {
 							className="skillhub-card"
 							onClick={() => void openDetail(item.slug)}
 						>
-							<div className="skillhub-card-icon-wrap">
-								<img
-									className="skillhub-card-icon"
-									src={item.iconUrl}
-									alt=""
-									onError={(e) => {
-										(e.target as HTMLImageElement).style.display = "none";
-										const fb = (e.target as HTMLImageElement).parentElement?.querySelector(".skillhub-card-icon--fallback");
-										if (fb) (fb as HTMLElement).style.display = "flex";
-									}}
-								/>
-								<div className="skillhub-card-icon skillhub-card-icon--fallback"
-									style={{ display: "none" }}>
-									<Sparkles size={16} />
-								</div>
-							</div>
 							<div className="skillhub-card-main">
 								<strong className="skillhub-card-title">{item.name}</strong>
 								<p className="skillhub-card-desc">
@@ -317,12 +316,13 @@ export function SkillHubStorePanel() {
 							<button
 								className="skillhub-card-install-btn"
 								title={t("common.install")}
+								disabled={installing}
 								onClick={async (e) => {
 									e.stopPropagation();
-									await openDetail(item.slug);
+									await handleInstallFromList(item.slug, item.name);
 								}}
 							>
-								<Download size={14} />
+								{installing ? t("common.installing") : <Download size={14} />}
 							</button>
 						</article>
 					))}

@@ -11220,6 +11220,32 @@ body.is-composer-resizing .composer-resize-handle::after {
   background: var(--color-bg-hover);
   color: var(--color-text-primary);
 }
+
+/* 排序按钮组 */
+.skillhub-sort-bar {
+  display: flex;
+  gap: 2px;
+  padding: 6px 0 4px;
+}
+.skillhub-sort-chip {
+  padding: 2px 8px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-micro);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.skillhub-sort-chip:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-hover);
+}
+.skillhub-sort-chip.active {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
 /* 搜索结果列表 */
 .skillhub-results {
   flex: 1;
