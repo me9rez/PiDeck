@@ -991,7 +991,7 @@ export function ModelPicker(props: {
 	);
 }
 
-const THINKING_LEVELS = [
+export const THINKING_LEVELS = [
 	{ value: "off", labelKey: "thinking.levelLabel.off", descriptionKey: "thinking.level.off" },
 	// minimal 是 pi/Codex reasoning 的最轻量档位,放在 Off 与 Low 之间便于按强度递增选择。
 	{ value: "minimal", labelKey: "thinking.levelLabel.minimal", descriptionKey: "thinking.level.minimal" },
@@ -2504,6 +2504,48 @@ export const TurnRow = memo(function TurnRow(props: {
 		? stripAnsi(finalMessageItem.message.thinking)
 		: null;
 	const hasFinalThinking = Boolean(finalThinking && props.showThinking);
+
+	// Streaming 模式：agent 仍在执行中，按时间顺序渲染所有条目，
+	// 不把最后一条 assistant 回答分离到最底部，避免新的思考和工具出现在已回答文本之上。
+	if (props.agentRunning) {
+		const allItems = run.items as (ThinkingGroupItem | ToolGroupItem | MessageItem)[];
+		// 对最后一条 assistant 消息提取 thinking 作为独立的 thinking-group，
+		// 在时间线上插在回答文本之前（与已完成回合的 finalThinking 逻辑一致）。
+		const chronologicalItems = (() => {
+			if (allItems.length === 0) return allItems;
+			const last = allItems[allItems.length - 1];
+			if (
+				last?.kind === "message" &&
+				last.message.role === "assistant" &&
+				props.showThinking &&
+				last.message.thinking?.trim()
+			) {
+				const thinkingBlock: ThinkingGroupItem = {
+					kind: "thinking-group",
+					id: `streaming-thinking-${last.message.id}`,
+					messages: [last.message],
+					text: stripAnsi(last.message.thinking),
+					startedAt: run.startedAt,
+					endedAt: last.message.timestamp ?? run.endedAt,
+				};
+				return [...allItems.slice(0, -1), thinkingBlock, last];
+			}
+			return allItems;
+		})();
+
+		return (
+			<article ref={rowRef} className="turn-row" data-message-id={run.id}>
+				<div className="turn-row-body">
+					<div className="turn-row-meta">
+						<span className="turn-row-agent">pi</span>
+						<time>{formatTime(run.endedAt)}</time>
+					</div>
+					{/* 按时间顺序渲染所有条目，最新的活动在底部 */}
+					{chronologicalItems.map(renderExecutionItem)}
+				</div>
+			</article>
+		);
+	}
 
 	// 将最终消息的思考插入执行过程（放在工具之前），确保时序正确：思考→工具→文本
 	const executionItemsWithFinalThinking = useMemo(() => {

@@ -30,6 +30,9 @@ import {
   Plus,
   Trash2,
   Wrench,
+  FileText,
+  ListChecks,
+  Paperclip,
   Minus,
   FolderOpen,
   FolderCog,
@@ -55,6 +58,7 @@ import { TerminalDock } from "./components/terminal/TerminalDock";
 import { FeishuLinkIndicator } from "./components/feishu/FeishuLinkIndicator";
 import { useFeishuBridge } from "./hooks/useFeishuBridge";
 import { CloseIconButton } from "./components/ui/IconButton";
+import { THINKING_LEVELS } from "./components/app/AppParts";
 import {
   buildComposerPromptSubmission,
   expandPromptTemplates,
@@ -100,7 +104,6 @@ import { ScratchPadPanel } from "./components/scratchPad/ScratchPadPanel";
 import { LazyWrapper } from "./hooks/useLazyComponent";
 import {
   AgentContextMenu,
-  ComposerToolbar,
   CompactionCard,
   ConversationOutline,
   DiagnosticMessageCard,
@@ -3241,6 +3244,18 @@ export function App() {
   }
 
   function viewFilePath(path: string) {
+    const ext = path.split(".").pop()?.toLowerCase() ?? "";
+    // HTML/HTM 文件用内置浏览器渲染，避免 Monaco 预览的 sandbox 限制导致空白/样式丢失
+    if (ext === "html" || ext === "htm") {
+      const normalized = path.replace(/\\/g, "/");
+      const fileUrl = /^[A-Za-z]:/.test(normalized)
+        ? "file:///" + normalized
+        : "file://" + normalized;
+      setDrawer("browser");
+      setDrawerCollapsed(false);
+      navigateTo(fileUrl);
+      return;
+    }
     openEditorTab(path, "view");
     // 始终切换到侧栏模式，确保文件预览在抽屉中渲染
     setEditorMode("drawer");
@@ -7364,39 +7379,6 @@ export function App() {
               title={t("app.resizeComposer")}
               onPointerDown={startComposerResize}
             />
-            <ComposerToolbar
-              state={activeRuntimeState}
-              compacting={compacting}
-              disabled={isAgentBusy || isAgentStarting}
-              onPickModel={openModelPicker}
-              onPickThinking={() => setThinkingPickerOpen(true)}
-              onPickPromptTemplate={openPromptTemplatePicker}
-              onCompact={() => compactAgent()}
-              composerAgentMode={currentComposerAgentMode}
-              onOpenComposerModePicker={() => setComposerModePickerOpen(true)}
-              onCancelPlan={() => setCurrentComposerAgentMode("normal")}
-              onAttachFile={handleAttachFile}
-              feishuIndicator={
-                feishu.bots.length > 0 ? (
-                  <FeishuLinkIndicator
-                  status={feishu.status}
-                  bots={feishu.bots}
-                  activeAgentId={activeAgentId}
-                  activeBotId={feishu.activeBotId}
-                  sessionBotId={sessionFeishuBotId}
-                  isConnected={feishu.isConnected}
-                  connecting={feishu.connecting}
-                  onConnectByBot={feishu.connectByBot}
-                  onDisconnect={feishu.disconnect}
-                  onSetSessionBot={async (agentId: string, botId: string | null) => {
-                    await feishu.setSessionBot(agentId, botId);
-                    setSessionFeishuBotId(botId ?? undefined);
-                  }}
-                  />
-                ) : undefined
-              }
-
-            />
             <RichInput
               ref={composerTextareaRef}
               value={prompt}
@@ -7521,16 +7503,81 @@ export function App() {
                 }}
               />
             )}
-            <div className="composer-footer">
-              {composerMode && (
-                <span className="composer-mode-status">{composerStatusText}</span>
-              )}
-              <div className="footer-actions">
-                <div
-                  className="send-behavior-menu-wrap"
-                  onMouseLeave={scheduleSendBehaviorMenuClose}
+
+            {/* 底部操作栏：mode切换 + prompt模板 + 附件 + 模型信息 */}
+            <div className="composer-bottom-bar">
+              <div className="composer-bottom-left">
+                {currentComposerAgentMode && (
+                  <button
+                    type="button"
+                    className={`composer-bar-btn${currentComposerAgentMode === "plan" ? " active" : ""}`}
+                    disabled={isAgentBusy || isAgentStarting}
+                    onClick={() => setComposerModePickerOpen(true)}
+                    title={t("app.composerModeTitle")}
+                  >
+                    {currentComposerAgentMode === "plan" ? (
+                      <>
+                        <ListChecks size={15} strokeWidth={2} />
+                        <span>{t("app.composerModePlan")}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Wrench size={15} strokeWidth={2} />
+                        <span>{t("app.composerModeNormal")}</span>
+                      </>
+                    )}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="composer-bar-btn icon"
+                  disabled={isAgentBusy || isAgentStarting}
+                  onClick={openPromptTemplatePicker}
+                  title={t("app.promptTemplatePickerTitle")}
                 >
-                  {showBusySendControls && hasComposerContent && (
+                  <FileText size={15} strokeWidth={1.8} />
+                </button>
+                <button
+                  type="button"
+                  className="composer-bar-btn icon"
+                  disabled={isAgentBusy || isAgentStarting}
+                  onClick={handleAttachFile}
+                  title={t("app.attachFileDesc")}
+                >
+                  <Paperclip size={15} strokeWidth={1.8} />
+                </button>
+              </div>
+              <div className="composer-bottom-center">
+                <button
+                  type="button"
+                  className="composer-bar-btn model"
+                  disabled={isAgentBusy || isAgentStarting}
+                  onClick={openModelPicker}
+                  title={t("app.modelPickerTitle")}
+                >
+                  {activeRuntimeState?.modelName
+                    ? `${activeRuntimeState.provider ? `${activeRuntimeState.provider}/` : ""}${activeRuntimeState.modelName}`
+                    : t("app.model") + ": —"}
+                </button>
+                {activeRuntimeState?.thinkingLevel && (
+                  <button
+                    type="button"
+                    className="composer-bar-btn thinking"
+                    disabled={isAgentBusy || isAgentStarting}
+                    onClick={() => setThinkingPickerOpen(true)}
+                    title={t("app.thinkingPickerTitle")}
+                  >
+                    {(() => {
+                      const level = THINKING_LEVELS.find((l) => l.value === activeRuntimeState.thinkingLevel);
+                      return level ? t(level.labelKey) : activeRuntimeState.thinkingLevel;
+                    })()}
+                  </button>
+                )}
+              </div>
+              <div className="composer-bottom-right">
+                {(showBusySendControls && hasComposerContent) || (!isAgentBusy && !keepBusyDraftControls) ? (
+                  <>
+                    {showBusySendControls && hasComposerContent && (
                       <div className="send-behavior-toggle">
                         <button
                           type="button"
@@ -7556,52 +7603,48 @@ export function App() {
                         </button>
                       </div>
                     )}
-                  {isAgentBusy ? (
-                    <button
-                      type="button"
-                      className="btn-circle stop"
-                      onClick={() => abortAgent()}
-                      title={t("app.stop")}
-                      aria-label={t("app.stop")}
-                    >
-                      <Square size={18} strokeWidth={0} fill="currentColor" />
-                    </button>
-                  ) : !keepBusyDraftControls ? (
-                    <button
-                      type="button"
-                      disabled={
-                        isAgentStarting ||
-                        (!activeAgentId) ||
-                        (!prompt.trim() && attachedImages.length === 0)
-                      }
-                      className="btn-circle send"
-                      onClick={() => void sendPrompt()}
-                      title={t("app.send")}
-                      aria-label={t("app.send")}
-                    >
-                      <ArrowUp size={18} strokeWidth={2.5} />
-                    </button>
-                  ) : null}
-                  {sendBehaviorMenuOpen && showBusySendControls && hasComposerContent && (
-                    <div
-                      className="send-behavior-menu"
-                      role="menu"
-                      onMouseEnter={keepSendBehaviorMenuOpen}
-                      onMouseLeave={scheduleSendBehaviorMenuClose}
-                    >
-                      <button className="send-behavior-option steer" type="button" role="menuitem" onClick={() => void sendPrompt()}>
-                        <span className="send-behavior-option-dot" aria-hidden="true" />
-                        <span>{t("app.sendSteerTitle")}</span>
+                    {isAgentBusy ? (
+                      <button
+                        type="button"
+                        className="composer-bar-btn stop"
+                        onClick={() => abortAgent()}
+                        title={t("app.stop")}
+                        aria-label={t("app.stop")}
+                      >
+                        <Square size={15} strokeWidth={0} fill="currentColor" />
                       </button>
-                      <button className="send-behavior-option follow-up" type="button" role="menuitem" onClick={sendPromptAsFollowUp}>
-                        <span className="send-behavior-option-dot" aria-hidden="true" />
-                        <span>{t("app.sendFollowUpTitle")}</span>
+                    ) : !keepBusyDraftControls ? (
+                      <button
+                        type="button"
+                        disabled={isAgentStarting || (!activeAgentId) || (!prompt.trim() && attachedImages.length === 0)}
+                        className="composer-bar-btn send"
+                        onClick={() => void sendPrompt()}
+                        title={t("app.send")}
+                        aria-label={t("app.send")}
+                      >
+                        <ArrowUp size={16} strokeWidth={2.5} />
                       </button>
-                    </div>
-                  )}
-                </div>
+                    ) : null}
+                    {sendBehaviorMenuOpen && showBusySendControls && hasComposerContent && (
+                      <div className="send-behavior-menu" role="menu"
+                        onMouseEnter={keepSendBehaviorMenuOpen}
+                        onMouseLeave={scheduleSendBehaviorMenuClose}
+                      >
+                        <button className="send-behavior-option steer" type="button" role="menuitem" onClick={() => void sendPrompt()}>
+                          <span className="send-behavior-option-dot" aria-hidden="true" />
+                          <span>{t("app.sendSteerTitle")}</span>
+                        </button>
+                        <button className="send-behavior-option follow-up" type="button" role="menuitem" onClick={sendPromptAsFollowUp}>
+                          <span className="send-behavior-option-dot" aria-hidden="true" />
+                          <span>{t("app.sendFollowUpTitle")}</span>
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : null}
               </div>
             </div>
+
           </div>
         </footer>
         )}

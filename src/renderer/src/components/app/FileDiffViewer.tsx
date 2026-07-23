@@ -89,7 +89,12 @@ export function FileDiffViewer(props: {
 		setReadOnly(true);
 		setDirty(false);
 		setShowHint(false);
-	}, [props.activeTabId, props.filePath]);
+		// 文件类型切换时重置预览状态，防止跨文件残留导致内容区域空白
+		const ext = (props.filePath.split(".").pop() ?? "").toLowerCase();
+		const isMd = ext === "md" || ext === "mdx";
+		const isHt = ext === "html" || ext === "htm";
+		setPreview((isMd || isHt) && props.mode !== "diff");
+	}, [props.activeTabId, props.filePath, props.mode]);
 
 	useEffect(() => {
 		ensureMonaco();
