@@ -118,18 +118,6 @@
   --image-preview-control-bg: rgba(255, 255, 255, 0.12);
   --image-preview-control-bg-hover: rgba(255, 255, 255, 0.22);
   --image-thumbnail-remove-bg: rgba(0, 0, 0, 0.6);
-  --brand-wordmark-gradient: linear-gradient(
-    120deg,
-    var(--color-brand-green) 0%,
-    var(--color-brand-blue) 54%,
-    var(--color-brand-amber) 100%
-  );
-  --brand-wordmark-underline: linear-gradient(
-    90deg,
-    var(--color-brand-green) 0%,
-    color-mix(in srgb, var(--color-brand-blue) 48%, transparent) 52%,
-    transparent 100%
-  );
   --logo-boot-gradient: linear-gradient(
     145deg,
     var(--color-logo-green),
@@ -1099,29 +1087,16 @@ body.is-resizing .wechat-shell {
   color: var(--color-text-primary);
   min-width: 0;
 }
+/* 侧栏字标与启动页 boot-title 保持一致：单色正文，不用五彩渐变/下划线。 */
 .brand-wordmark {
   display: inline-block;
   position: relative;
-  font-family: var(--font-family-brand);
-  font-size: 22px;
-  line-height: 1;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: transparent;
-  background: var(--brand-wordmark-gradient);
-  background-clip: text;
-  -webkit-background-clip: text;
-}
-.brand-wordmark::after {
-  content: "";
-  position: absolute;
-  left: 1px;
-  right: 1px;
-  bottom: -7px;
-  height: 2px;
-  border-radius: 999px;
-  background: var(--brand-wordmark-underline);
-  opacity: 0.56;
+  font-family: var(--font-family-base);
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: var(--color-text-primary);
 }
 .homepage-icon:hover {
   background: var(--color-bg-hover);
@@ -2947,11 +2922,13 @@ body.is-terminal-resizing {
   right: 24px;
   z-index: 9999;
   display: inline-flex;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   width: max-content;
   max-width: min(420px, calc(100vw - 32px));
   padding: var(--space-2) var(--space-3);
+  /* 错误 toast 右侧预留复制图标位，与正文拉开空隙 */
+  padding-right: calc(var(--space-3) + 28px);
   /* 微蒙层底 + accent 圆点：比纯卡片醒目、比暗色药丸安静 */
   background: color-mix(in srgb, var(--color-text-primary) 6%, var(--color-bg-panel));
   border-radius: var(--radius-md);
@@ -2967,15 +2944,19 @@ body.is-terminal-resizing {
   animation: notice-in 0.25s ease-out;
 }
 
-/* accent 小圆点 + 文字间距 */
+/* 成功 toast 无复制按钮，不必右侧留白 */
+.app-notice:not(.app-notice-error):not(.app-notice-warning) {
+  padding-right: var(--space-3);
+}
+
+/* accent 小圆点 */
 .app-notice::before {
   content: "";
-  display: inline-block;
-  width: 6px;
-  height: 6px;
+  display: block;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--color-accent);
-  margin-top: 0.45em;
   flex: 0 0 auto;
 }
 
@@ -2986,26 +2967,70 @@ body.is-terminal-resizing {
   word-break: break-word;
 }
 
+/*
+ * 复制图标绝对定位在 toast 右中：不进文字流，绝不会被 pre-wrap 挤到下一行。
+ * 默认透明，hover 整条 toast 时淡入；无底板无色块。
+ */
 .app-notice-copy {
-  flex: 0 0 auto;
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  margin-top: -2px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
+  all: unset;
+  box-sizing: border-box;
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--color-text-tertiary);
+  opacity: 0;
   cursor: pointer;
+  line-height: 0 !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  user-select: none;
+  transition: opacity 0.15s ease, color 0.12s ease;
 }
-.app-notice-copy:hover {
-  background: var(--color-bg-hover);
-  color: var(--color-text-primary);
+.app-notice:hover .app-notice-copy,
+.app-notice:focus-within .app-notice-copy {
+  opacity: 0.55;
+}
+.app-notice-copy:hover,
+.app-notice-copy:focus-visible {
+  opacity: 0.95 !important;
+  color: var(--color-text-secondary);
+  background: transparent !important;
 }
 .app-notice-copy:focus-visible {
-  outline: var(--focus-ring);
-  outline-offset: 1px;
+  outline: 1px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.app-notice-copy svg {
+  width: 11px !important;
+  height: 11px !important;
+  display: block;
+}
+.app-notice-copy.is-copied {
+  opacity: 0.95 !important;
+  color: var(--color-accent);
+}
+
+/* 文件树新建项弹层：输入框占满宽度，避免 label/input 挤在一行 */
+.drawer-create-item-dialog .ui-text-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.drawer-create-item-dialog .ui-text-field input {
+  width: 100%;
 }
 
 @keyframes notice-in {

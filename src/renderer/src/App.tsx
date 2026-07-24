@@ -624,6 +624,7 @@ export function App() {
       }
     });
   }, []);
+
   /** 活跃的 Extension UI 请求 map（requestId → UiRequest），用于实时显示 ask_question 卡片 */
   const [activeUiRequest, setActiveUiRequest] = useState<Record<string, UiRequest> | null>(null);
   /** Extension 通过 RPC setWidget 推送的轻量状态块；按 agent 隔离，避免切换会话串台。 */
@@ -6825,23 +6826,28 @@ export function App() {
                         <span className="app-notice-text" title={appNotice.message}>
                           {appNotice.message}
                         </span>
-                        <button
-                          type="button"
-                          className="app-notice-copy"
-                          title={t("common.copy")}
-                          aria-label={t("common.copy")}
-                          onClick={async (event) => {
-                            event.stopPropagation();
-                            try {
-                              await navigator.clipboard.writeText(appNotice.message);
-                              showNotice(t("copy.success"), 1200);
-                            } catch {
-                              showNotice(t("copy.failed"), 2000, "error");
-                            }
-                          }}
-                        >
-                          <Copy size={13} strokeWidth={1.8} aria-hidden="true" />
-                        </button>
+                        {/* 与正文并排的 flex 子项：避免内联 button 被 pre-wrap 挤到下一行 */}
+                        {(appNotice.kind === "error" || appNotice.kind === "warning") && (
+                          <button
+                            type="button"
+                            className="app-notice-copy"
+                            title={t("common.copy")}
+                            aria-label={t("common.copy")}
+                            onClick={async (event) => {
+                              event.stopPropagation();
+                              try {
+                                await navigator.clipboard.writeText(appNotice.message);
+                                const btn = event.currentTarget;
+                                btn.classList.add("is-copied");
+                                window.setTimeout(() => btn.classList.remove("is-copied"), 900);
+                              } catch {
+                                showNotice(t("copy.failed"), 2000, "error");
+                              }
+                            }}
+                          >
+                            <Copy size={11} strokeWidth={1.8} aria-hidden="true" />
+                          </button>
+                        )}
                       </div>
                     )}
                   {sessionActionsOpen && activeAgentId && (

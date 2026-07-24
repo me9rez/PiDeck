@@ -4445,6 +4445,9 @@ function FilesPanel(props: {
 	const panelRef = useRef<HTMLDivElement>(null);
 	const [showScrollTop, setShowScrollTop] = useState(false);
 	const [showScrollBottom, setShowScrollBottom] = useState(false);
+	// Electron renderer 不支持 window.prompt；新建文件/文件夹走应用内小弹层。
+	const [createItemOpen, setCreateItemOpen] = useState(false);
+	const [createItemName, setCreateItemName] = useState("");
 
 	const handleScroll = useCallback(() => {
 		const el = panelRef.current;
@@ -4505,12 +4508,8 @@ function FilesPanel(props: {
 						<button
 							className="icon-only"
 							onClick={() => {
-								const name = window.prompt(t("drawer.createItemPrompt"));
-								if (!name?.trim()) return;
-								const isDir = name.endsWith("/") || name.endsWith("\\");
-								const finalName = isDir ? name.slice(0, -1).trim() : name.trim();
-								const targetDir = props.currentProjectRoot!;
-								props.onCreateItem!(targetDir, finalName, isDir ? "directory" : "file");
+								setCreateItemName("");
+								setCreateItemOpen(true);
 							}}
 							title={t("drawer.createItem")}
 							aria-label={t("drawer.createItem")}
@@ -4581,6 +4580,71 @@ function FilesPanel(props: {
 				>
 					<MoveDown size={14} strokeWidth={1.8} aria-hidden="true" />
 				</button>
+			)}
+			{/* 新建文件/文件夹：替代 window.prompt（Electron 下会抛 prompt is not supported） */}
+			{createItemOpen && props.onCreateItem && props.currentProjectRoot && (
+				<div
+					className="config-modal-overlay"
+					onClick={() => setCreateItemOpen(false)}
+				>
+					<div
+						className="config-modal-dialog drawer-create-item-dialog"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<strong>{t("drawer.createItem")}</strong>
+						<p>{t("drawer.createItemPrompt")}</p>
+						<TextField
+							label={t("drawer.createItemName")}
+							value={createItemName}
+							onChange={setCreateItemName}
+							placeholder={t("drawer.createItemPlaceholder")}
+							onKeyDown={(e) => {
+								if (e.key === "Escape") {
+									e.preventDefault();
+									setCreateItemOpen(false);
+									return;
+								}
+								if (e.key !== "Enter") return;
+								e.preventDefault();
+								const name = createItemName.trim();
+								if (!name) return;
+								const isDir = name.endsWith("/") || name.endsWith("\\");
+								const finalName = isDir ? name.slice(0, -1).trim() : name;
+								if (!finalName) return;
+								props.onCreateItem?.(props.currentProjectRoot!, finalName, isDir ? "directory" : "file");
+								setCreateItemOpen(false);
+								setCreateItemName("");
+							}}
+						/>
+						<div className="config-modal-actions">
+							<button
+								className="config-btn"
+								onClick={() => {
+									setCreateItemOpen(false);
+									setCreateItemName("");
+								}}
+							>
+								{t("common.cancel")}
+							</button>
+							<button
+								className="config-btn primary"
+								disabled={!createItemName.trim()}
+								onClick={() => {
+									const name = createItemName.trim();
+									if (!name) return;
+									const isDir = name.endsWith("/") || name.endsWith("\\");
+									const finalName = isDir ? name.slice(0, -1).trim() : name;
+									if (!finalName) return;
+									props.onCreateItem?.(props.currentProjectRoot!, finalName, isDir ? "directory" : "file");
+									setCreateItemOpen(false);
+									setCreateItemName("");
+								}}
+							>
+								{t("common.confirm")}
+							</button>
+						</div>
+					</div>
+				</div>
 			)}
 		</div>
 	);
