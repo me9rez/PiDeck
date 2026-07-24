@@ -19,6 +19,14 @@
   font-weight: 400;
   font-display: swap;
 }
+/* 像素展示字体：仅用于侧栏品牌字标等少量展示位，贴近官方 pi 的 block/pixel 气质。 */
+@font-face {
+  font-family: "PiDeckDepartureMono";
+  src: url("./assets/fonts/DepartureMono-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
 
 :root {
   color-scheme: light;
@@ -31,6 +39,9 @@
   --font-family-mono:
     "PiDeckCommitMono", ui-monospace, SFMono-Regular, Menlo, Consolas,
     "Liberation Mono", monospace;
+  /* 品牌展示型等宽：Departure Mono，不进正文/列表，避免界面显得粗糙 */
+  --font-family-display-mono:
+    "PiDeckDepartureMono", "PiDeckCommitMono", ui-monospace, monospace;
   --font-family-business: var(--font-family-mono);
   --font-size-micro: 11px;
   --font-size-caption: 12px;
@@ -95,6 +106,7 @@
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-xl: 8px;
+  /* pill 仅用于真圆形（圆点/spinner/开关滑块）；矩形按钮/chip/badge 统一 radius-md */
   --radius-pill: 999px;
   --control-height-xs: 24px;
   --control-height-sm: 28px;
@@ -485,7 +497,7 @@ select:focus-visible {
   display: grid;
   place-items: center;
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--color-bg-panel);
   color: var(--color-text-tertiary);
   font-size: var(--font-size-micro);
@@ -534,7 +546,7 @@ select:focus-visible {
   flex-shrink: 0;
   width: 32px;
   height: 32px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--color-accent);
   color: var(--color-text-inverse);
   display: flex;
@@ -1087,16 +1099,59 @@ body.is-resizing .wechat-shell {
   color: var(--color-text-primary);
   min-width: 0;
 }
-/* 侧栏字标与启动页 boot-title 保持一致：单色正文，不用五彩渐变/下划线。 */
+
+/*
+ * 侧栏品牌 lockup：仅 PiLogoCanvas（官网同款 canvas 像素 π + 拼装动画）
+ */
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  color: var(--color-text-primary);
+  min-width: 0;
+  line-height: 0;
+}
+
+.pi-logo-canvas-stage {
+  all: unset;
+  box-sizing: border-box;
+  display: block;
+  flex: 0 0 auto;
+  cursor: pointer;
+  line-height: 0;
+  border-radius: 2px;
+}
+
+.pi-logo-canvas-stage:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.pi-logo-canvas,
+.pi-deck-wordmark-canvas {
+  display: block;
+  /* 关闭插值，保持像素块锐利 */
+  image-rendering: pixelated;
+}
+
+.pi-deck-wordmark-canvas {
+  flex: 0 0 auto;
+  /* 小字标相对左侧高棋盘略上移，光学居中 */
+  transform: translateY(1px);
+}
+
 .brand-wordmark {
   display: inline-block;
   position: relative;
-  font-family: var(--font-family-base);
-  font-size: 20px;
-  line-height: 1.2;
-  font-weight: 650;
-  letter-spacing: 0.01em;
+  font-family: var(--font-family-display-mono);
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 400;
+  letter-spacing: 0;
   color: var(--color-text-primary);
+  font-synthesis: none;
+  -webkit-font-smoothing: none;
+  text-rendering: geometricPrecision;
 }
 .homepage-icon:hover {
   background: var(--color-bg-hover);
@@ -1470,7 +1525,7 @@ body:not(.is-list-resizing)
   top: 5px;
   bottom: 5px;
   width: 3px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--color-accent);
 }
 .conversation-avatar {
@@ -1501,19 +1556,24 @@ body:not(.is-list-resizing)
   );
   color: var(--color-accent);
 }
+/* 聊天头像始终无底，避免 active 状态又补回背景 */
+.project-group > .conversation.active:first-child .project-avatar.chat-avatar {
+  background: transparent;
+}
 .chat-project .project-avatar {
   color: var(--color-accent);
 }
 .project-avatar.chat-avatar {
   color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  /* 聊天项目头像只保留图标，去掉底色容器 */
+  background: transparent;
 }
 :root[data-theme="dark"] .project-avatar {
   /* 暗色下项目 icon 容器只做层级提示，避免浅色 muted 混合后显得发灰发脏。 */
   background: color-mix(in srgb, var(--color-bg-panel) 58%, transparent);
 }
 :root[data-theme="dark"] .project-avatar.chat-avatar {
-  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  background: transparent;
 }
 @keyframes pulse-running {
   0%,
@@ -1529,7 +1589,7 @@ body:not(.is-list-resizing)
   height: 12px;
   border: 2px solid var(--color-border-subtle);
   border-top-color: var(--color-accent);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   animation: spin 0.75s linear infinite;
   flex-shrink: 0;
 }
@@ -2221,7 +2281,7 @@ body:not(.is-list-resizing)
 .session-source-badge {
   margin-left: 6px;
   padding: 1px 7px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   font-size: var(--font-size-micro);
   line-height: var(--line-height-micro);
   font-family: var(--font-family-business);
@@ -2370,7 +2430,7 @@ body:not(.is-list-resizing)
   bottom: 0;
   left: 2px;
   width: 1px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--color-border-strong) 58%, transparent);
 }
 .splitter::after {
@@ -2495,7 +2555,7 @@ body.is-terminal-resizing {
   height: 28px;
   padding: 0 10px;
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--color-chat-card-bg);
   color: var(--color-text-primary);
   flex: 0 0 auto;
@@ -2516,7 +2576,7 @@ body.is-terminal-resizing {
   padding: 0 5px;
   margin-left: 6px;
   border: 1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-border-subtle));
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--color-accent) 8%, var(--color-bg-panel));
   color: var(--color-text-secondary);
   font-family: var(--font-family-business);
@@ -2621,7 +2681,7 @@ body.is-terminal-resizing {
   color: var(--color-text-tertiary);
   font-family: var(--font-family-business);
   padding: 0 6px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--color-accent) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-accent) 16%, transparent);
 }
@@ -2766,7 +2826,8 @@ body.is-terminal-resizing {
   border: 1px solid var(--color-border-subtle);
   background: var(--color-bg-panel);
   color: var(--color-text-primary);
-  border-radius: var(--radius-pill);
+  /* 与 empty-state / logo 统一用方圆角，不用胶囊 pill */
+  border-radius: var(--radius-md);
   padding: 0 10px;
   font-size: var(--font-size-control);
   font-weight: 600;
@@ -2839,7 +2900,7 @@ body.is-terminal-resizing {
   max-width: 120px;
   padding: 0 10px;
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--color-bg-panel);
   color: var(--color-text-primary);
   box-shadow: 0 1px 2px
@@ -3110,8 +3171,7 @@ body.is-terminal-resizing {
   color: var(--color-success);
 }
 .chat-header-actions button,
-.panel-action-row button,
-.empty-state button {
+.panel-action-row button {
   flex: 0 0 auto;
   min-width: 60px;
   height: var(--control-height-md);
@@ -3132,7 +3192,7 @@ body.is-terminal-resizing {
   height: 26px;
   padding: 0 12px;
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--color-bg-panel);
   color: var(--color-text-primary);
   box-shadow: 0 1px 2px
@@ -3167,7 +3227,7 @@ body.is-terminal-resizing {
   border: 1px solid transparent;
   background: var(--color-bg-panel);
   color: var(--color-text-primary);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   padding: 0 6px;
   font-size: var(--font-size-control);
   font-weight: 600;
@@ -3200,7 +3260,7 @@ body.is-terminal-resizing {
   color: var(--color-text-primary);
   background: var(--color-bg-hover);
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   font-weight: 600;
   line-height: var(--line-height-micro);
   font-variant-numeric: tabular-nums;
@@ -3742,7 +3802,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
   right: 14px;
   z-index: 4;
   border: 1px solid var(--terminal-border);
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   background: var(--terminal-panel);
   color: var(--terminal-active-fg);
   font-size: var(--font-size-micro);
@@ -3937,7 +3997,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
   height: 26px;
   padding: 0 12px;
   border: 1px solid var(--color-border-subtle);
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   background: var(--color-chat-card-bg);
   color: var(--color-text-secondary);
   font-size: var(--font-size-caption);
@@ -4659,7 +4719,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
   text-overflow: ellipsis;
   white-space: nowrap;
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--color-bg-panel);
   color: var(--color-text-secondary);
   padding: 1px 7px;
@@ -4926,7 +4986,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
   padding: 0 7px;
   border: 1px solid
     color-mix(in srgb, var(--color-accent) 24%, var(--color-border-subtle));
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--color-accent-soft);
   color: var(--color-accent);
   font-family: var(--font-family-business);
@@ -5535,7 +5595,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
 .session-source-btn {
   padding: 4px 12px;
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-tertiary);
   font-size: var(--font-size-caption);
@@ -5782,7 +5842,7 @@ body.is-terminal-resizing .terminal-resize-handle::before {
       var(--color-brand-purple) 28%,
       var(--color-border-subtle)
     );
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: color-mix(
     in srgb,
     var(--color-brand-purple) 12%,
@@ -5892,7 +5952,7 @@ body.ask-bar-active .ask-question-card.pending {
   height: 28px;
   padding: 0 12px;
   border: 1px solid var(--color-border-subtle);
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   background: var(--color-chat-control-bg);
   color: var(--color-text-secondary);
   font-size: var(--font-size-caption);
@@ -5951,7 +6011,7 @@ body.ask-bar-active .ask-question-card.pending {
   height: 28px;
   padding: 0 12px;
   border: 1px solid var(--color-border-subtle);
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   background: var(--color-chat-card-bg);
   font-size: var(--font-size-caption);
   line-height: var(--line-height-caption);
@@ -6221,7 +6281,7 @@ body.ask-bar-active .ask-question-card.pending {
   justify-content: center;
   height: 28px;
   padding: 0 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border-subtle);
   background: var(--color-chat-control-bg);
   color: var(--color-text-secondary);
@@ -6753,43 +6813,39 @@ body.ask-bar-active .ask-question-card.pending {
   font-size: var(--font-size-caption) !important;
 }
 
+/* 与上方方形 logo 对齐：无底色、方圆角，宽度同 empty-logo（118px） */
 .empty-state button {
-  min-width: 148px;
-  height: 46px;
-  border: none;
-  background: color-mix(
-    in srgb,
-    var(--color-accent-soft) 75%,
-    var(--color-accent)
-  );
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  width: 118px;
+  min-width: 118px;
+  height: 40px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border-default));
+  background: transparent;
+  box-shadow: none;
   color: var(--color-accent-strong);
   font-family: var(--font-family-base);
-  font-size: var(--font-size-brand);
-  font-weight: 650;
-  letter-spacing: 0.01em;
-  border-radius: var(--radius-pill);
-  padding: 0 var(--space-6);
+  /* 118px 宽内容易被 brand 字号撑换行；用 control 字号 + 收紧左右 padding */
+  font-size: var(--font-size-control);
+  font-weight: 600;
+  letter-spacing: 0;
+  white-space: nowrap;
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-2);
   cursor: pointer;
   transition:
     background 0.15s,
-    transform 0.15s;
+    border-color 0.15s,
+    color 0.15s;
 }
 .empty-state button:hover {
-  background: color-mix(
-    in srgb,
-    var(--color-accent-soft) 55%,
-    var(--color-accent)
-  );
-  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border-default));
+  color: var(--color-accent-strong);
+  transform: none;
 }
 .empty-state button:active {
-  background: color-mix(
-    in srgb,
-    var(--color-accent-soft) 40%,
-    var(--color-accent)
-  );
-  transform: translateY(0);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border-color: var(--color-accent);
+  transform: none;
 }
 .empty-state button:focus-visible {
   outline: none;
@@ -7259,7 +7315,7 @@ body.is-composer-resizing .composer-resize-handle::after {
   height: 26px;
   padding: 0 8px;
   border: none;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-tertiary);
   font-size: var(--font-size-caption);
@@ -7307,7 +7363,7 @@ body.is-composer-resizing .composer-resize-handle::after {
   height: 28px;
   padding: 0;
   justify-content: center;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--color-accent);
   color: var(--color-text-inverse);
 }
@@ -7980,7 +8036,7 @@ body.is-composer-resizing .composer-resize-handle::after {
   height: var(--control-height-xs);
   margin-top: 1px;
   border: 1px solid transparent;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--color-bg-muted);
   color: var(--color-text-secondary);
   font-size: var(--font-size-micro);
@@ -8045,7 +8101,7 @@ body.is-composer-resizing .composer-resize-handle::after {
   grid-column: 1 / -1;
   justify-self: end;
   padding: 3px 8px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--color-bg-active);
   color: var(--color-accent);
   font-size: var(--font-size-micro);
@@ -8795,7 +8851,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 }
 .codex-status {
   flex: 0 0 auto;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   padding: 2px 7px;
   font-family: var(--font-family-business);
   font-size: var(--font-size-micro);
@@ -8876,7 +8932,7 @@ body.is-composer-resizing .composer-resize-handle::after {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   padding: 3px 8px;
   font-size: var(--font-size-micro);
 }
@@ -8990,7 +9046,7 @@ body.is-composer-resizing .composer-resize-handle::after {
   font-family: var(--font-family-business);
   font-size: var(--font-size-micro);
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   font-variant-numeric: tabular-nums;
 }
 .outline-list {
@@ -9616,7 +9672,7 @@ body.is-composer-resizing .composer-resize-handle::after {
   white-space: nowrap;
   padding: 0 10px;
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   font-family: var(--font-family-business);
   line-height: var(--line-height-caption);
   font-size: var(--font-size-caption);
@@ -9649,7 +9705,7 @@ body.is-composer-resizing .composer-resize-handle::after {
   height: 26px;
   padding: 0 10px;
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   font-size: var(--font-size-caption);
   font-weight: 600;
   line-height: var(--line-height-caption);
@@ -10203,7 +10259,7 @@ body.is-composer-resizing .composer-resize-handle::after {
   transition:
     color 0.15s,
     transform 0.15s;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
 }
 
 .model-favorite-star:hover {
@@ -10669,7 +10725,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 .web-endpoint-summary > span {
   width: 8px;
   height: 8px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--color-text-tertiary);
   box-shadow: 0 0 0 3px
     color-mix(in srgb, var(--color-text-tertiary) 12%, transparent);
@@ -11154,7 +11210,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 }
 .config-primary-tabs button {
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--color-bg-muted);
   color: var(--color-text-secondary);
   padding: var(--space-2) var(--space-4);
@@ -11312,7 +11368,7 @@ body.is-composer-resizing .composer-resize-handle::after {
 .skillhub-suggestion-chip {
   padding: 2px 10px;
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--color-bg-muted);
   color: var(--color-text-secondary);
   font-size: var(--font-size-caption);
@@ -11658,7 +11714,7 @@ body.is-composer-resizing .composer-resize-handle::after {
   background: color-mix(in srgb, var(--color-bg-app) 28%, black);
   color: var(--color-text-inverse);
   padding: 8px 18px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   font-size: var(--font-size-control);
   white-space: nowrap;
   z-index: 10;
@@ -12092,7 +12148,7 @@ a.config-btn {
   color: var(--color-accent);
   background: var(--color-accent-soft);
   padding: 2px 8px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -13163,7 +13219,7 @@ a.config-btn {
   padding: 0 5px 0 9px;
   border: 1px solid
     color-mix(in srgb, var(--color-accent) 24%, var(--color-border-subtle));
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--color-accent) 8%, var(--color-bg-panel));
   color: var(--color-text-primary);
   font-family: var(--font-family-mono);
@@ -13181,7 +13237,7 @@ a.config-btn {
   height: 16px;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -14046,7 +14102,7 @@ a.config-btn {
   right: 2px;
   width: 20px;
   height: 20px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--image-thumbnail-remove-bg);
   color: var(--color-text-inverse);
   border: none;
@@ -14130,7 +14186,7 @@ a.config-btn {
   right: 28px;
   width: 38px;
   height: 38px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   border: 1px solid var(--image-preview-control-border);
   background: var(--image-preview-control-bg);
   color: var(--color-text-inverse);
@@ -15048,7 +15104,7 @@ a.config-btn {
 }
 .skill-state {
   padding: 2px 6px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   font-family: var(--font-family-business);
   font-size: var(--font-size-micro);
   font-variant-numeric: tabular-nums;
@@ -16389,7 +16445,7 @@ a.config-btn {
   color: var(--color-accent);
   background: color-mix(in srgb, var(--color-accent) 10%, transparent);
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   margin-left: var(--space-2);
   line-height: var(--line-height-micro);
   vertical-align: middle;
@@ -17404,7 +17460,7 @@ a.config-btn {
 }
 .project-resource-title > span {
   padding: 0 6px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--color-warning) 10%, transparent);
   color: var(--color-warning);
   font-family: var(--font-family-business);
@@ -18690,11 +18746,13 @@ html[data-theme="dark"] .scratch-pad-md mark {
 }
 
 .chat-list-pane.v3-braun .sidebar-body .app-badge {
+  gap: 0;
   padding: var(--space-1) 0;
+  align-items: center;
 }
 
-.chat-list-pane.v3-braun .sidebar-body .brand-wordmark {
-  transform: translateY(-1px);
+.chat-list-pane.v3-braun .sidebar-body .brand-lockup {
+  gap: 10px;
 }
 
 .chat-list-pane.v3-braun .sidebar-body .search-row {
@@ -19198,7 +19256,7 @@ html[data-theme="dark"] .scratch-pad-md mark {
   color: var(--color-text-tertiary);
   background: var(--color-bg-hover);
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -19837,7 +19895,7 @@ body.is-git-pane-resizing, body.is-git-pane-resizing * { cursor: row-resize !imp
 .git-history-label { display: flex; min-width: 0; align-items: baseline; gap: 10px; overflow: hidden; }
 .git-history-msg { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; overflow: hidden; color: var(--git-panel-fg); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .git-history-msg .git-twistie { width: 13px; height: 28px; flex: 0 0 13px; margin-left: -3px; }
-.git-ref { max-width: 108px; overflow: hidden; padding: 0 7px; border: 1px solid currentColor; border-radius: var(--radius-pill); font-family: var(--git-ui-font); font-size: var(--font-size-caption); font-weight: 500; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.git-ref { max-width: 108px; overflow: hidden; padding: 0 7px; border: 1px solid currentColor; border-radius: var(--radius-md); font-family: var(--git-ui-font); font-size: var(--font-size-caption); font-weight: 500; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
 .git-ref-branch { color: var(--git-modified); }
 .git-ref-tag { color: var(--git-conflict); }
 .git-history-author { min-width: 48px; flex: 0 1 78px; overflow: hidden; color: var(--git-desc-fg); font-family: var(--git-ui-font); font-size: var(--font-size-caption); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }

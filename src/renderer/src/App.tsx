@@ -117,6 +117,7 @@ import {
   FileContextMenu,
   ConfirmDialog,
   ImagePreviewModal,
+  BrandLockup,
   LogoMark,
   ModelPicker,
   PromptTemplatePicker,
@@ -5925,10 +5926,8 @@ export function App() {
         <div className="sidebar-body">
           <div className="list-toolbar">
           <div className="app-badge">
-            <LogoMark />
-            <span className="brand-wordmark" aria-label="PiDeck">
-              PiDeck
-            </span>
+            {/* 像素几何标 + 点阵字标，贴近官方 pi logo 呈现，而非套用像素字体 */}
+            <BrandLockup />
           </div>
         </div>
         <button
