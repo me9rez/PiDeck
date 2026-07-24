@@ -941,6 +941,7 @@ body.is-resizing .wechat-shell {
   display: grid;
   grid-template-columns: repeat(4, 50px);
   height: var(--window-drag-height);
+  background: var(--color-bg-sidebar);
   -webkit-app-region: no-drag;
 }
 .window-control {
