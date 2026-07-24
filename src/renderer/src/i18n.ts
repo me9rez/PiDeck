@@ -724,6 +724,9 @@ const zhCN = {
   "config.fetchModelsHintOpenaiCompletions": "获取模型列表失败。OpenAI Chat Completions API 的 /v1/models 和 /models 端点均未返回有效数据。如果使用代理或第三方服务，请确认该服务是否支持模型列表查询。不支持时可直接在「额外模型」中手动添加已知模型 ID。",
   "config.testConnectionHint": "连接测试失败不代表会话一定不可用。部分代理会拒绝测试请求（如限制 max_tokens 过小），但实际会话可能正常。请以启动 Agent 后的实际表现为准。",
   "config.fetchedModels": "已获取 {count} 个模型",
+  // 检测侧兼容补了 /v1 且实际走通时，自动把表单 baseUrl 改成会话可用路径
+  "config.baseUrlAutoNormalized": "检测实际走通版本路径，已将 Base URL 更新为 {url}。请保存配置后启动会话。",
+  "config.baseUrlHint": "获取/测试会兼容尝试 / 与 /v1；会话会原样使用此处地址。建议填写到 /v1（或 /v1beta）。",
   "config.imported": "配置已导入",
   "config.importFailed": "导入失败",
   "config.loadFailed": "配置管理加载失败",
@@ -2368,6 +2371,8 @@ const enUS: Record<TranslationKey, string> = {
   "config.fetchModelsHintOpenaiCompletions": "Failed to fetch models. Both /v1/models and /models endpoints returned no valid data for OpenAI Chat Completions API. If using a proxy or third-party service, verify it supports model listing. If not supported, manually add known model IDs via 'Extra Models'.",
   "config.testConnectionHint": "A failed connection test does not always mean the session won't work. Some proxies reject test requests (e.g. too small max_tokens), but actual sessions may still succeed. Refer to the actual agent session behavior.",
   "config.fetchedModels": "Fetched {count} models",
+  "config.baseUrlAutoNormalized": "Versioned path worked during probe; Base URL updated to {url}. Save the config before starting a session.",
+  "config.baseUrlHint": "Fetch/test may try both / and /v1; sessions use this URL as-is. Prefer a versioned path such as /v1 (or /v1beta).",
   "config.imported": "Configuration imported",
   "config.importFailed": "Import failed",
   "config.loadFailed": "Pi Management failed to load",

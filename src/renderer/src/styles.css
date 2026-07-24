@@ -12262,6 +12262,19 @@ a.config-btn {
   min-width: 0;
 }
 
+/* Base URL 输入 + 路径说明：检测兼容 / 与 /v1，会话原样使用配置值 */
+.config-base-url-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  width: 100%;
+}
+
+.config-base-url-field input {
+  width: 100%;
+}
+
 .config-header-field select,
 .config-header-field input {
   width: 100%;

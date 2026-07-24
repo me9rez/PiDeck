@@ -3,6 +3,11 @@ import { normalize, join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { net } from "electron";
 import type { ConfigFileDiagnostic, ConfigFileReadResult } from "../../shared/types";
+import {
+	ensureOpenAiVersionPath,
+	needsSessionBaseUrlVersionHint,
+	suggestNormalizedBaseUrl,
+} from "./baseUrlPath";
 
 /** pi 全局配置目录：~/.pi/agent/ */
 const PI_AGENT_DIR = join(homedir(), ".pi", "agent");
@@ -335,11 +340,23 @@ export class ConfigManager {
 		baseUrl: string,
 		apiKey: string,
 		apiType?: string,
-	): Promise<{ success: boolean; models?: Array<{ id: string; name?: string }>; error?: string }> {
+	): Promise<{
+		success: boolean;
+		models?: Array<{ id: string; name?: string }>;
+		error?: string;
+		/** 实际成功/最后一次请求的 URL（脱敏），用于 UI 对比会话侧路径 */
+		requestUrl?: string;
+		/** 检测侧补了版本路径，而配置 baseUrl 仍是根路径 → 会话可能 404 */
+		sessionBaseUrlNeedsVersion?: boolean;
+		/** 建议写入配置的 baseUrl（含 /v1 等）；UI 可自动改写 */
+		suggestedBaseUrl?: string;
+	}> {
 		const requests = this.buildModelsRequest(baseUrl, apiKey, apiType);
 		let lastError: string | undefined;
+		let lastRequestUrl: string | undefined;
 
 		for (const request of requests) {
+			lastRequestUrl = this.redactSecret(request.url, apiKey);
 			try {
 				const controller = new AbortController();
 				// 10 秒超时，避免网络不通时长时间卡住
@@ -366,7 +383,21 @@ export class ConfigManager {
 						continue;
 					}
 
-					return { success: true, models };
+					// 成功路径若依赖检测侧自动补 /v1，而用户配置仍是根路径，
+					// 会话侧会原样用 baseUrl → 返回建议 baseUrl 供 UI 自动改写。
+					const sessionBaseUrlNeedsVersion = needsSessionBaseUrlVersionHint(
+						baseUrl,
+						request.url,
+					);
+					const suggestedBaseUrl =
+						suggestNormalizedBaseUrl(baseUrl, request.url, apiType) ?? undefined;
+					return {
+						success: true,
+						models,
+						requestUrl: lastRequestUrl,
+						sessionBaseUrlNeedsVersion,
+						suggestedBaseUrl,
+					};
 				} finally {
 					clearTimeout(timeout);
 				}
@@ -381,7 +412,15 @@ export class ConfigManager {
 			}
 		}
 
-		return { success: false, error: lastError ?? "获取模型列表失败" };
+		return {
+			success: false,
+			error: lastError ?? "获取模型列表失败",
+			requestUrl: lastRequestUrl,
+			sessionBaseUrlNeedsVersion: needsSessionBaseUrlVersionHint(
+				baseUrl,
+				lastRequestUrl,
+			),
+		};
 	}
 
 
@@ -653,15 +692,10 @@ export class ConfigManager {
 
 	/**
 	 * 确保 OpenAI 兼容 API 的基础 URL 包含 /v1 版本路径。
-	 * 很多代理/本地模型需要 {baseUrl}/v1/... 格式的请求路径。
-	 * 用户配置 baseUrl 时习惯只填到域名字段（如 http://localhost:11434），
-	 * 自动补齐 /v1 可以避免常见错误。
-	 * 如果 baseUrl 已包含 /v1、/api 等路径段则跳过补齐。
+	 * 仅用于「获取模型 / 测试连接」；pi 会话不会走此补齐。
 	 */
 	private ensureVersionPath(baseUrl: string): string {
-		const u = baseUrl.replace(/\/+$/, "");
-		const hasVersionPath = /\/v\d+$|\/api$/.test(u);
-		return hasVersionPath ? u : `${u}/v1`;
+		return ensureOpenAiVersionPath(baseUrl);
 	}
 
 	private googleModelPath(modelId: string) {
@@ -838,6 +872,10 @@ export class ConfigManager {
 		error?: string;
 		requestUrl?: string;
 		requestBody?: string;
+		/** 检测侧补了 /v1，配置仍是根路径 → 会话侧可能失败 */
+		sessionBaseUrlNeedsVersion?: boolean;
+		/** 建议写入配置的 baseUrl；仅 success 时由 UI 自动改写 */
+		suggestedBaseUrl?: string;
 	}> {
 		const startedAt = Date.now();
 		const api = this.normalizeApiType(apiType);
@@ -845,6 +883,13 @@ export class ConfigManager {
 			this.buildTestRequest(baseUrl, apiKey, modelId, api, requestHeaders);
 		const safeRequestUrl = this.redactSecret(requestUrl, apiKey);
 		const safeRequestBody = this.redactSecret(requestBody, apiKey);
+		// 与 fetch 一致：检测用了补齐路径、配置仍是根路径时给出建议 baseUrl。
+		const sessionBaseUrlNeedsVersion = needsSessionBaseUrlVersionHint(
+			baseUrl,
+			requestUrl,
+		);
+		const suggestedBaseUrl =
+			suggestNormalizedBaseUrl(baseUrl, requestUrl, api) ?? undefined;
 
 		try {
 			const controller = new AbortController();
@@ -876,12 +921,14 @@ export class ConfigManager {
 				} catch {
 					/* 忽略解析错误 */
 				}
+				// 失败时不自动改写 baseUrl，只保留诊断字段。
 				return {
 					success: false,
 					error: this.redactSecret(detail, apiKey),
 					latencyMs,
 					requestUrl: safeRequestUrl,
 					requestBody: safeRequestBody,
+					sessionBaseUrlNeedsVersion,
 				};
 			}
 
@@ -894,6 +941,8 @@ export class ConfigManager {
 				latencyMs,
 				requestUrl: safeRequestUrl,
 				requestBody: safeRequestBody,
+				sessionBaseUrlNeedsVersion,
+				suggestedBaseUrl,
 			};
 		} catch (e) {
 			const latencyMs = Date.now() - startedAt;
@@ -909,6 +958,7 @@ export class ConfigManager {
 				latencyMs,
 				requestUrl: safeRequestUrl,
 				requestBody: safeRequestBody,
+				sessionBaseUrlNeedsVersion,
 			};
 		}
 	}
