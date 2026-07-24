@@ -708,6 +708,10 @@ const api = {
 				success: boolean;
 				models?: Array<{ id: string; name?: string }>;
 				error?: string;
+				requestUrl?: string;
+				sessionBaseUrlNeedsVersion?: boolean;
+				/** 检测走通版本路径时，建议写入配置的 baseUrl（含 /v1） */
+				suggestedBaseUrl?: string;
 			}>,
 		/** 快速测试 provider 连接：发送一条最小请求验证配置是否正常 */
 		testProvider: (
@@ -729,6 +733,8 @@ const api = {
 				error?: string;
 				requestUrl?: string;
 				requestBody?: string;
+				sessionBaseUrlNeedsVersion?: boolean;
+				suggestedBaseUrl?: string;
 			}>,
 	},
 	agents: {

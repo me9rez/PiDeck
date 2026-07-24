@@ -19,6 +19,7 @@ import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import "katex/dist/katex.min.css";
+import { PiLogoCanvas } from "./PiLogoCanvas";
 import {
 	summarizeMessage,
 	type ToolGroupItem,
@@ -1538,6 +1539,11 @@ function formatCompact(value?: number | null) {
 	return String(value);
 }
 
+/** PiDeck 品牌几何路径（与 boot / Agent 头像共用，勿随意改形） */
+const PI_LOGO_PATH_MAIN =
+	"M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z";
+const PI_LOGO_PATH_CORNER = "M517.36 400H634.72V634.72H517.36Z";
+
 export function LogoMark() {
 	return (
 		<div className="logo-mark" aria-label={t("app.logoLabel")}>
@@ -1545,10 +1551,23 @@ export function LogoMark() {
 				<path
 					fill="#fff"
 					fillRule="evenodd"
-					d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
+					d={PI_LOGO_PATH_MAIN}
 				/>
-				<path fill="#fff" d="M517.36 400H634.72V634.72H517.36Z" />
+				<path fill="#fff" d={PI_LOGO_PATH_CORNER} />
 			</svg>
+		</div>
+	);
+}
+
+// 官方 pi 风格 canvas logo
+export { PiLogoCanvas } from "./PiLogoCanvas";
+
+/** 侧栏品牌：仅 canvas π 标（可点击重播拼装动画） */
+export function BrandLockup() {
+	return (
+		<div className="brand-lockup" aria-label="PiDeck">
+			{/* 仅 π 标；尺寸 55 与侧栏品牌位匹配 */}
+			<PiLogoCanvas size={55} autoPlay playOnClick />
 		</div>
 	);
 }
@@ -4445,6 +4464,9 @@ function FilesPanel(props: {
 	const panelRef = useRef<HTMLDivElement>(null);
 	const [showScrollTop, setShowScrollTop] = useState(false);
 	const [showScrollBottom, setShowScrollBottom] = useState(false);
+	// Electron renderer 不支持 window.prompt；新建文件/文件夹走应用内小弹层。
+	const [createItemOpen, setCreateItemOpen] = useState(false);
+	const [createItemName, setCreateItemName] = useState("");
 
 	const handleScroll = useCallback(() => {
 		const el = panelRef.current;
@@ -4505,12 +4527,8 @@ function FilesPanel(props: {
 						<button
 							className="icon-only"
 							onClick={() => {
-								const name = window.prompt(t("drawer.createItemPrompt"));
-								if (!name?.trim()) return;
-								const isDir = name.endsWith("/") || name.endsWith("\\");
-								const finalName = isDir ? name.slice(0, -1).trim() : name.trim();
-								const targetDir = props.currentProjectRoot!;
-								props.onCreateItem!(targetDir, finalName, isDir ? "directory" : "file");
+								setCreateItemName("");
+								setCreateItemOpen(true);
 							}}
 							title={t("drawer.createItem")}
 							aria-label={t("drawer.createItem")}
@@ -4581,6 +4599,71 @@ function FilesPanel(props: {
 				>
 					<MoveDown size={14} strokeWidth={1.8} aria-hidden="true" />
 				</button>
+			)}
+			{/* 新建文件/文件夹：替代 window.prompt（Electron 下会抛 prompt is not supported） */}
+			{createItemOpen && props.onCreateItem && props.currentProjectRoot && (
+				<div
+					className="config-modal-overlay"
+					onClick={() => setCreateItemOpen(false)}
+				>
+					<div
+						className="config-modal-dialog drawer-create-item-dialog"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<strong>{t("drawer.createItem")}</strong>
+						<p>{t("drawer.createItemPrompt")}</p>
+						<TextField
+							label={t("drawer.createItemName")}
+							value={createItemName}
+							onChange={setCreateItemName}
+							placeholder={t("drawer.createItemPlaceholder")}
+							onKeyDown={(e) => {
+								if (e.key === "Escape") {
+									e.preventDefault();
+									setCreateItemOpen(false);
+									return;
+								}
+								if (e.key !== "Enter") return;
+								e.preventDefault();
+								const name = createItemName.trim();
+								if (!name) return;
+								const isDir = name.endsWith("/") || name.endsWith("\\");
+								const finalName = isDir ? name.slice(0, -1).trim() : name;
+								if (!finalName) return;
+								props.onCreateItem?.(props.currentProjectRoot!, finalName, isDir ? "directory" : "file");
+								setCreateItemOpen(false);
+								setCreateItemName("");
+							}}
+						/>
+						<div className="config-modal-actions">
+							<button
+								className="config-btn"
+								onClick={() => {
+									setCreateItemOpen(false);
+									setCreateItemName("");
+								}}
+							>
+								{t("common.cancel")}
+							</button>
+							<button
+								className="config-btn primary"
+								disabled={!createItemName.trim()}
+								onClick={() => {
+									const name = createItemName.trim();
+									if (!name) return;
+									const isDir = name.endsWith("/") || name.endsWith("\\");
+									const finalName = isDir ? name.slice(0, -1).trim() : name;
+									if (!finalName) return;
+									props.onCreateItem?.(props.currentProjectRoot!, finalName, isDir ? "directory" : "file");
+									setCreateItemOpen(false);
+									setCreateItemName("");
+								}}
+							>
+								{t("common.confirm")}
+							</button>
+						</div>
+					</div>
+				</div>
 			)}
 		</div>
 	);

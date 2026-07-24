@@ -9,6 +9,25 @@ import vm from "node:vm";
 
 const require = createRequire(import.meta.url);
 
+function loadTranspiledModule(filePath, overrides = new Map()) {
+	const source = readFileSync(filePath, "utf8");
+	const { outputText } = ts.transpileModule(source, {
+		compilerOptions: {
+			module: ts.ModuleKind.CommonJS,
+			target: ts.ScriptTarget.ES2022,
+		},
+	});
+	const sandbox = {
+		clearTimeout,
+		exports: {},
+		process,
+		require: (id) => overrides.has(id) ? overrides.get(id) : require(id),
+		setTimeout,
+	};
+	vm.runInNewContext(outputText, sandbox, { filename: filePath });
+	return sandbox.exports;
+}
+
 function loadCodexMetaModule() {
 	const source = readFileSync("src/shared/codexSessionMeta.ts", "utf8");
 	const { outputText } = ts.transpileModule(source, {
@@ -31,6 +50,15 @@ function loadSessionScanner(homePath, fsOverrides = {}) {
 		},
 	});
 	const codexMeta = loadCodexMetaModule();
+	const messageContent = loadTranspiledModule(
+		"src/main/pi/messageContent.ts",
+		new Map([["../feishu/docActions", { stripFeishuDocActionHint: (text) => text }]]),
+	);
+	const sessionSummaryCache = loadTranspiledModule(
+		"src/main/sessions/sessionSummaryCache.ts",
+		new Map([["electron", { app: { getPath: () => homePath } }]]),
+	);
+	const wslPaths = loadTranspiledModule("src/main/wsl/WslPaths.ts");
 	const sandbox = {
 		AbortController,
 		AbortSignal,
@@ -39,8 +67,18 @@ function loadSessionScanner(homePath, fsOverrides = {}) {
 		exports: {},
 		setTimeout,
 		require: (id) => {
-			if (id === "electron") return { app: { getPath: () => homePath } };
+			if (id === "electron") {
+				return {
+					app: {
+						getPath: (key) => (key === "home" ? homePath : join(homePath, String(key))),
+					},
+					shell: { trashItem: async () => {} },
+				};
+			}
 			if (id === "../../shared/codexSessionMeta") return codexMeta;
+			if (id === "../pi/messageContent") return messageContent;
+			if (id === "./sessionSummaryCache") return sessionSummaryCache;
+			if (id === "../wsl/WslPaths") return wslPaths;
 			if (id === "node:fs") return { ...require(id), ...fsOverrides };
 			return require(id);
 		},
@@ -93,7 +131,8 @@ test("aborts a hung WSL scan before the renderer watchdog and allows a clean ret
 		scanner.wslConfig = { distro: "Ubuntu", user: "dev", home: "/home/dev" };
 		scanner.scanTimeoutMs = 10;
 		let attempts = 0;
-		scanner.collectWslJsonl = async (signal) => {
+		// collectWslJsonl(sessionsDir, signal?)：支持自定义 sessionDir 后首参为扫描根
+		scanner.collectWslJsonl = async (_sessionsDir, signal) => {
 			attempts += 1;
 			if (attempts > 1) return [];
 			return new Promise((_resolve, reject) => {
@@ -162,6 +201,7 @@ test("groups WSL child sessions with POSIX parent paths", async () => {
 	const home = mkdtempSync(join(tmpdir(), "pideck-wsl-subagent-scanner-"));
 	try {
 		const projectPath = "/mnt/f/git-optimize";
+		const selectedProjectPath = "//wsl.localhost/Ubuntu/mnt/f/git-optimize";
 		const sessionsRoot = "/home/dev/.pi/agent/sessions";
 		const parentFile = `${sessionsRoot}/--mnt-f-git-optimize--/parent.jsonl`;
 		const forkParentFile = `${sessionsRoot}/--mnt-f-git-optimize--/fork-parent.jsonl`;
@@ -192,10 +232,15 @@ test("groups WSL child sessions with POSIX parent paths", async () => {
 			if (value == null) throw new Error(`missing WSL fixture: ${filePath}`);
 			return value.slice(0, 4096);
 		};
-		scanner.readWslFileMtime = async () => 1;
+		scanner.readWslFileVersion = async (filePath) => ({
+			mtimeMs: 1,
+			size: files.get(filePath)?.length ?? 0,
+		});
 		scanner.existsWslFile = async (filePath) => files.has(filePath);
+		// 避免 resolveScanRoots 走真实 wsl.exe 探测自定义 sessionDir
+		scanner.existsWslDir = async () => false;
 
-		const summaries = await scanner.list(projectPath);
+		const summaries = await scanner.list(selectedProjectPath);
 		assert.equal(summaries.length, 4);
 		assert.equal(summaries.find((item) => item.filePath === childFile)?.parentSessionPath, parentFile);
 		assert.equal(summaries.find((item) => item.filePath === forkChildFile)?.parentSessionPath, forkParentFile);
@@ -322,5 +367,75 @@ test("resolves fork child with absolute Windows parent path via parentSession he
 		assert.equal(forkSummary.parentSessionPath, parentFile);
 	} finally {
 		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+test("reads project sessionDir from .pi/settings.json and lists local sessions", async () => {
+	const home = mkdtempSync(join(tmpdir(), "pideck-session-dir-"));
+	const projectRoot = mkdtempSync(join(tmpdir(), "pideck-session-dir-project-"));
+	try {
+		// 模拟 xxljob 场景：项目 .pi/settings.json 指定 sessionDir=.pi/sessions
+		mkdirSync(join(projectRoot, ".pi"), { recursive: true });
+		writeFileSync(
+			join(projectRoot, ".pi", "settings.json"),
+			JSON.stringify({ sessionDir: ".pi/sessions" }),
+			"utf8",
+		);
+
+		const localSessionDir = join(projectRoot, ".pi", "sessions");
+		const localSession = join(localSessionDir, "2026-07-24_local.jsonl");
+		const localChild = join(localSessionDir, "2026-07-24_local", "run-1", "run-0", "session.jsonl");
+		writeSession(localSession, session("Project local session", projectRoot));
+		writeSession(localChild, [
+			...session("subagent-worker-local-0", projectRoot),
+			{ type: "custom", customType: "pi-subagents.child-session", data: { schemaVersion: 1 } },
+		]);
+
+		// 历史会话仍在全局 encoded-cwd 目录
+		const legacyDir = join(
+			home,
+			".pi",
+			"agent",
+			"sessions",
+			`--${projectRoot.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`,
+		);
+		const legacySession = join(legacyDir, "legacy.jsonl");
+		writeSession(legacySession, session("Legacy global session", projectRoot));
+
+		const { SessionScanner } = loadSessionScanner(home);
+		const summaries = await new SessionScanner().list(projectRoot);
+		const paths = new Set(summaries.map((item) => item.filePath));
+
+		assert.equal(paths.has(localSession), true);
+		assert.equal(paths.has(localChild), true);
+		assert.equal(paths.has(legacySession), true);
+		assert.equal(summaries.find((item) => item.filePath === localSession)?.name, "Project local session");
+		assert.equal(summaries.find((item) => item.filePath === localChild)?.parentSessionPath, localSession);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+		rmSync(projectRoot, { recursive: true, force: true });
+	}
+});
+
+test("falls back to global sessionDir when project settings omit it", async () => {
+	const home = mkdtempSync(join(tmpdir(), "pideck-global-session-dir-"));
+	const projectRoot = mkdtempSync(join(tmpdir(), "pideck-global-session-dir-project-"));
+	try {
+		mkdirSync(join(home, ".pi", "agent"), { recursive: true });
+		writeFileSync(
+			join(home, ".pi", "agent", "settings.json"),
+			JSON.stringify({ sessionDir: ".pi/sessions" }),
+			"utf8",
+		);
+
+		const localSession = join(projectRoot, ".pi", "sessions", "from-global-config.jsonl");
+		writeSession(localSession, session("From global sessionDir", projectRoot));
+
+		const { SessionScanner } = loadSessionScanner(home);
+		const summaries = await new SessionScanner().list(projectRoot);
+		assert.equal(summaries.some((item) => item.filePath === localSession), true);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+		rmSync(projectRoot, { recursive: true, force: true });
 	}
 });
