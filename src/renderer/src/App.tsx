@@ -50,6 +50,7 @@ import {
   Minimize2,
   RefreshCw,
   HatGlasses,
+  Copy,
   X,
 } from "lucide-react";
 import { subscribeToNotice, showNotice } from "./utils/notice";
@@ -6792,8 +6793,44 @@ export function App() {
                               : "app-notice"
                         }
                         role={appNotice.kind === "error" ? "alert" : "status"}
+                        // 允许选中复制；错误类消息额外提供一键复制，避免长报错只能眼看
+                        onMouseEnter={() => {
+                          if (appNoticeTimeoutRef.current) {
+                            window.clearTimeout(appNoticeTimeoutRef.current);
+                            appNoticeTimeoutRef.current = null;
+                          }
+                        }}
+                        onMouseLeave={() => {
+                          if (!appNotice) return;
+                          if (appNoticeTimeoutRef.current) {
+                            window.clearTimeout(appNoticeTimeoutRef.current);
+                          }
+                          appNoticeTimeoutRef.current = window.setTimeout(() => {
+                            setAppNotice(null);
+                            appNoticeTimeoutRef.current = null;
+                          }, 1200);
+                        }}
                       >
-                        {appNotice.message}
+                        <span className="app-notice-text" title={appNotice.message}>
+                          {appNotice.message}
+                        </span>
+                        <button
+                          type="button"
+                          className="app-notice-copy"
+                          title={t("common.copy")}
+                          aria-label={t("common.copy")}
+                          onClick={async (event) => {
+                            event.stopPropagation();
+                            try {
+                              await navigator.clipboard.writeText(appNotice.message);
+                              showNotice(t("copy.success"), 1200);
+                            } catch {
+                              showNotice(t("copy.failed"), 2000, "error");
+                            }
+                          }}
+                        >
+                          <Copy size={13} strokeWidth={1.8} aria-hidden="true" />
+                        </button>
                       </div>
                     )}
                   {sessionActionsOpen && activeAgentId && (
