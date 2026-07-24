@@ -2,8 +2,8 @@ import { execFile } from "node:child_process";
 import { app, shell } from "electron";
 import { closeSync, existsSync, openSync, readFileSync, readSync } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve } from "node:path";
-import { basename as posixBasename, dirname as posixDirname, join as posixJoin } from "node:path/posix";
+import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
+import { basename as posixBasename, dirname as posixDirname, isAbsolute as posixIsAbsolute, join as posixJoin } from "node:path/posix";
 import type { ChatMessage, ChatRole, SessionSummary } from "../../shared/types";
 import { getCodexSessionThreadInfo } from "../../shared/codexSessionMeta";
 import { extractMessageText, extractThinkingRaw } from "../pi/messageContent";
@@ -19,6 +19,12 @@ export class SessionScanner {
   private scanTimeoutMs = 18_000;
   private readonly summaryCache = new SessionSummaryCache<SessionSummary | null>();
   private summaryCacheFileSetKey = "";
+  /**
+   * 最近一次 list() 解析出的会话扫描根目录。
+   * 默认 ~/.pi/agent/sessions，加上 settings 中的 sessionDir（如项目 .pi/sessions）。
+   * 供子会话父路径推断作为边界。
+   */
+  private activeScanRoots: string[] = [];
 
   /**
    * wsl.exe 命令与启动模式。优先绝对路径，
@@ -59,9 +65,14 @@ export class SessionScanner {
     void this.summaryCache.reloadFromDisk();
   }
 
-  /** WSL 中 pi session 目录（基于动态获取的 home） */
+  /** WSL 中 pi 默认 session 目录（基于动态获取的 home） */
   private get wslSessionsDir(): string {
     return `${this.wslConfig!.home}/.pi/agent/sessions`;
+  }
+
+  /** 当前环境下的默认会话根目录（全局 encoded-cwd 布局） */
+  private get defaultSessionsRoot(): string {
+    return this.wslConfig ? this.wslSessionsDir : this.root;
   }
 
   /** 判断文件路径是否为 WSL Linux 路径（以 / 开头且属于当前 WSL 配置） */
@@ -183,9 +194,8 @@ export class SessionScanner {
 
   // ── 会话列表扫描 ─────────────────────────────────────────────
 
-  /** 通过 wsl.exe 递归查找所有 .jsonl 文件，返回 Linux 绝对路径 */
-  private async collectWslJsonl(signal?: AbortSignal): Promise<string[]> {
-    const sessionsDir = this.wslSessionsDir;
+  /** 通过 wsl.exe 在指定目录递归查找 *.jsonl，返回 Linux 绝对路径 */
+  private async collectWslJsonl(sessionsDir: string, signal?: AbortSignal): Promise<string[]> {
     return new Promise((resolve, reject) => {
       execFile(this.wslExePath, [
         "-d", this.wslConfig!.distro, "-u", this.wslConfig!.user,
@@ -205,6 +215,7 @@ export class SessionScanner {
   }
 
   async list(projectPath?: string): Promise<SessionSummary[]> {
+    // 匹配用路径：WSL 模式下转 /mnt/...，与会话 JSONL 内 cwd 对齐。
     const normalizedProjectPath = projectPath && this.wslConfig
       ? toWslLinuxPath(projectPath, this.wslConfig)
       : projectPath;
@@ -224,11 +235,15 @@ export class SessionScanner {
       // 重启后先恢复磁盘摘要缓存，避免全量重读 JSONL。
       await this.summaryCache.ensureLoaded();
 
-      // WSL 模式 vs Windows 模式：互斥扫描，不会同时展示两个环境的会话。
-      // WSL 启用时仅扫描 WSL 会话目录，否则仅扫描 Windows 本地会话目录。
+      // 扫描根 = 默认全局 sessions + 项目/全局 sessionDir（如 <project>/.pi/sessions）。
+      // pi 配置 sessionDir 后不再写 encoded-cwd 子目录，必须额外扫该路径。
+      const scanRoots = await this.resolveScanRoots(projectPath, normalizedProjectPath);
+      this.activeScanRoots = scanRoots;
+
+      // WSL 模式 vs 本地模式：互斥扫描，不会同时展示两个环境的会话。
       const files = this.wslConfig
-        ? await this.collectWslJsonl(signal).catch(rethrowAbort([] as string[]))
-        : await this.collectJsonl(this.root).catch(() => [] as string[]);
+        ? await this.collectFromRootsWsl(scanRoots, signal).catch(rethrowAbort([] as string[]))
+        : await this.collectFromRootsLocal(scanRoots);
       const fileSetKey = [...files].sort().join("\n");
       if (fileSetKey !== this.summaryCacheFileSetKey) {
         // 仅修剪当前环境下已消失文件，保留未变化会话的摘要命中（含磁盘恢复的条目）。
@@ -246,7 +261,7 @@ export class SessionScanner {
       if (!normalizedProjectPath) {
         return validSummaries.sort((a, b) => b.updatedAt - a.updatedAt);
       }
-      // 异步 isSameProject 过滤
+      // 异步 isSameProject 过滤（自定义 sessionDir 下的文件也会按 cwd/路径归属判断）
       const matched = await Promise.all(
         validSummaries.map(summary => this.isSameProject(summary, normalizedProjectPath, signal))
       );
@@ -259,6 +274,161 @@ export class SessionScanner {
     } finally {
       if (scanTimer) clearTimeout(scanTimer);
     }
+  }
+
+  /**
+   * 解析本次应扫描的会话根目录。
+   * 始终包含默认全局目录（保留历史会话）；若 settings 配置了 sessionDir 且目录存在则追加。
+   *
+   * @param hostProjectPath 项目原始路径（通常是 Windows 路径，用于读 .pi/settings.json）
+   * @param runtimeProjectPath 运行时 cwd 路径（WSL 下已是 /mnt/...，用于解析相对 sessionDir）
+   */
+  private async resolveScanRoots(
+    hostProjectPath?: string,
+    runtimeProjectPath?: string,
+  ): Promise<string[]> {
+    const roots: string[] = [this.defaultSessionsRoot];
+    if (!hostProjectPath || !runtimeProjectPath) return roots;
+
+    const configured = await this.resolveConfiguredSessionDir(hostProjectPath, runtimeProjectPath);
+    if (!configured) return roots;
+
+    const normalizedConfigured = this.normalize(configured);
+    if (roots.some((root) => this.normalize(root) === normalizedConfigured)) return roots;
+
+    const exists = this.wslConfig
+      ? await this.existsWslDir(configured)
+      : existsSync(configured);
+    if (exists) roots.push(configured);
+    return roots;
+  }
+
+  /**
+   * 读取 pi 的 sessionDir 配置并解析为可扫描绝对路径。
+   * 优先级：项目 `.pi/settings.json` > 全局 `~/.pi/agent/settings.json`。
+   */
+  private async resolveConfiguredSessionDir(
+    hostProjectPath: string,
+    runtimeProjectPath: string,
+  ): Promise<string | undefined> {
+    const projectSettingsPath = join(this.toHostReadablePath(hostProjectPath), ".pi", "settings.json");
+    const projectRaw = await this.readSessionDirSettingLocal(projectSettingsPath);
+
+    const globalRaw = this.wslConfig
+      ? await this.readSessionDirSettingWsl(`${this.wslConfig.home}/.pi/agent/settings.json`)
+      : await this.readSessionDirSettingLocal(join(app.getPath("home"), ".pi", "agent", "settings.json"));
+
+    const raw = projectRaw ?? globalRaw;
+    if (!raw) return undefined;
+    return this.resolveSessionDirPath(raw, runtimeProjectPath);
+  }
+
+  private async readSessionDirSettingLocal(settingsPath: string): Promise<string | undefined> {
+    try {
+      if (!existsSync(settingsPath)) return undefined;
+      const raw = await readFile(settingsPath, "utf8");
+      const parsed = JSON.parse(raw) as { sessionDir?: unknown };
+      return typeof parsed.sessionDir === "string" && parsed.sessionDir.trim()
+        ? parsed.sessionDir.trim()
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async readSessionDirSettingWsl(settingsPath: string): Promise<string | undefined> {
+    try {
+      const raw = await this.readWslFile(settingsPath);
+      const parsed = JSON.parse(raw) as { sessionDir?: unknown };
+      return typeof parsed.sessionDir === "string" && parsed.sessionDir.trim()
+        ? parsed.sessionDir.trim()
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * 将 sessionDir 配置解析为扫描用绝对路径。
+   * 对齐 pi：展开 `~`；相对路径相对项目 cwd（非 settings 文件目录）。
+   */
+  private resolveSessionDirPath(sessionDir: string, projectCwd: string): string {
+    const expanded = this.expandHomePrefix(sessionDir);
+    if (this.wslConfig) {
+      const normalized = expanded.replace(/\\/g, "/");
+      if (posixIsAbsolute(normalized)) return normalized;
+      if (/^[A-Za-z]:[\\/]/.test(expanded)) {
+        return toWslLinuxPath(expanded, this.wslConfig);
+      }
+      return posixJoin(projectCwd.replace(/\\/g, "/"), normalized);
+    }
+    if (isAbsolute(expanded) || /^[A-Za-z]:[\\/]/.test(expanded)) {
+      return resolve(expanded);
+    }
+    return resolve(projectCwd, expanded);
+  }
+
+  /** 展开 `~` / `~/...`；WSL 下使用 WSL home */
+  private expandHomePrefix(input: string): string {
+    const home = this.wslConfig?.home ?? app.getPath("home");
+    if (input === "~") return home;
+    if (input.startsWith("~/") || input.startsWith("~\\")) {
+      return this.wslConfig
+        ? `${home}/${input.slice(2).replace(/\\/g, "/")}`
+        : join(home, input.slice(2));
+    }
+    return input;
+  }
+
+  /**
+   * 把可能的 /mnt/<drive>/... 转成 Windows 盘符路径，便于宿主 fs 读取项目 settings。
+   * 非 /mnt 的 Linux 路径保持原样（由 WSL 链路处理）。
+   */
+  private toHostReadablePath(path: string): string {
+    const match = path.replace(/\\/g, "/").match(/^\/mnt\/([a-zA-Z])\/(.*)$/);
+    if (!match) return path;
+    return `${match[1].toUpperCase()}:\\${match[2].replace(/\//g, "\\")}`;
+  }
+
+  private async existsWslDir(wslPath: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      execFile(this.wslExePath, ["-d", this.wslConfig!.distro, "-u", this.wslConfig!.user, "test", "-d", wslPath], {
+        shell: this.wslShell,
+        encoding: "utf8",
+        timeout: 5_000,
+        windowsHide: true,
+      }, (err) => resolve(!err));
+    });
+  }
+
+  private async collectFromRootsLocal(roots: string[]): Promise<string[]> {
+    const all: string[] = [];
+    const seen = new Set<string>();
+    for (const root of roots) {
+      const files = await this.collectJsonl(root).catch(() => [] as string[]);
+      for (const file of files) {
+        const key = this.normalize(file);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        all.push(file);
+      }
+    }
+    return all;
+  }
+
+  private async collectFromRootsWsl(roots: string[], signal?: AbortSignal): Promise<string[]> {
+    const all: string[] = [];
+    const seen = new Set<string>();
+    for (const root of roots) {
+      const files = await this.collectWslJsonl(root, signal).catch(() => [] as string[]);
+      for (const file of files) {
+        const key = this.normalize(file);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        all.push(file);
+      }
+    }
+    return all;
   }
 
   // ── 会话操作：rename / delete / copy / exportHtml / readMessages ─
@@ -683,7 +853,8 @@ export class SessionScanner {
     // 仅处理 .jsonl 文件
     if (!filePath.toLowerCase().endsWith(".jsonl")) return undefined;
 
-    const normalizedRoot = this.normalize(this.root);
+    // 自定义 sessionDir 与默认根并存时，以包含该文件的最近扫描根为边界。
+    const normalizedRoot = this.normalize(this.findSessionsRootForFile(filePath));
     let currentDir = dirname(filePath);
 
     for (let depth = 0; depth < 10; depth++) {
@@ -751,7 +922,7 @@ export class SessionScanner {
   private async inferWslParentSessionFromPath(filePath: string, signal?: AbortSignal): Promise<string | undefined> {
     if (!filePath.toLowerCase().endsWith(".jsonl") || !this.wslConfig) return undefined;
 
-    const normalizedRoot = this.normalize(this.wslSessionsDir);
+    const normalizedRoot = this.normalize(this.findSessionsRootForFile(filePath));
     let currentDir = posixDirname(filePath);
     for (let depth = 0; depth < 10; depth++) {
       const normalizedDir = this.normalize(currentDir);
@@ -890,7 +1061,7 @@ export class SessionScanner {
           // path.join 在 Windows 上不会以盘符根路径重置，需用 resolve。
           : resolve(dirname(filePath), forkParentSession);
         const normalizedResolved = this.normalize(resolved);
-        const normalizedSessionsRoot = this.normalize(isWsl ? this.wslSessionsDir : this.root);
+        const normalizedSessionsRoot = this.normalize(this.findSessionsRootForFile(filePath));
         // header 来自外部 JSONL；仅允许引用当前 sessions 根目录内的现有文件，避免路径穿越或误挂载。
         const isInsideSessionsRoot =
           normalizedResolved !== normalizedSessionsRoot &&
@@ -985,11 +1156,44 @@ export class SessionScanner {
 
   private inferProjectPathFromFile(filePath: string) {
     const normalized = filePath.replace(/\\/g, "/");
+    // 默认布局：~/.pi/agent/sessions/<encoded-cwd>/...
     const marker = "/.pi/agent/sessions/";
     const index = normalized.toLowerCase().indexOf(marker);
-    if (index === -1) return undefined;
-    const encoded = normalized.slice(index + marker.length).split("/")[0];
-    return this.decodeSessionDir(encoded);
+    if (index !== -1) {
+      const encoded = normalized.slice(index + marker.length).split("/")[0];
+      return this.decodeSessionDir(encoded);
+    }
+    // 常见项目级 sessionDir：<project>/.pi/sessions/...
+    const customMarker = "/.pi/sessions/";
+    const customIndex = normalized.toLowerCase().lastIndexOf(customMarker);
+    if (customIndex !== -1) {
+      return this.normalize(normalized.slice(0, customIndex));
+    }
+    return undefined;
+  }
+
+  /** 找到包含 filePath 的最近（最长路径）扫描根。 */
+  private findSessionsRootForFile(filePath: string): string {
+    const normalizedFile = this.normalize(filePath);
+    const roots = this.activeScanRoots.length > 0
+      ? this.activeScanRoots
+      : [this.defaultSessionsRoot];
+
+    let bestRoot = this.defaultSessionsRoot;
+    let bestLen = -1;
+    for (const root of roots) {
+      const normalizedRoot = this.normalize(root);
+      if (
+        normalizedFile === normalizedRoot ||
+        normalizedFile.startsWith(`${normalizedRoot}/`)
+      ) {
+        if (normalizedRoot.length > bestLen) {
+          bestRoot = root;
+          bestLen = normalizedRoot.length;
+        }
+      }
+    }
+    return bestRoot;
   }
 
   private decodeSessionDir(encoded: string) {
@@ -1012,10 +1216,36 @@ export class SessionScanner {
     const normalizedSessionProject = summary.projectPath ? this.normalize(summary.projectPath) : "";
     if (normalizedSessionProject === normalizedProject) return true;
     if (await this.isParentSessionForProject(normalizedSessionProject, normalizedProject, summary.filePath, signal)) return true;
+
+    // 项目级自定义 sessionDir（如 <project>/.pi/sessions）下的文件默认归属该项目。
+    // 该布局不再使用 encoded-cwd 子目录，safePathToken 无法从路径反推项目。
+    if (this.isUnderProjectSessionDir(summary.filePath, projectPath)) return true;
+
     const filePathMatch = this.normalize(summary.filePath).includes(this.safePathToken(projectPath));
     if (!filePathMatch && summary.parentSessionPath) {
     }
     return filePathMatch;
+  }
+
+  /**
+   * 判断会话文件是否位于项目的自定义 sessionDir 扫描根下。
+   * activeScanRoots 中除默认全局根外的目录即配置的 sessionDir。
+   */
+  private isUnderProjectSessionDir(filePath: string, projectPath: string): boolean {
+    const normalizedFile = this.normalize(filePath);
+    const defaultRoot = this.normalize(this.defaultSessionsRoot);
+    const normalizedProject = this.normalize(projectPath);
+    for (const root of this.activeScanRoots) {
+      const normalizedRoot = this.normalize(root);
+      if (normalizedRoot === defaultRoot) continue;
+      if (normalizedFile === normalizedRoot || normalizedFile.startsWith(`${normalizedRoot}/`)) {
+        // 相对 sessionDir 通常落在项目目录内；绝对共享目录仍靠 cwd 过滤。
+        if (normalizedRoot === normalizedProject || normalizedRoot.startsWith(`${normalizedProject}/`)) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   private async isParentSessionForProject(sessionProject: string, projectPath: string, filePath: string, signal?: AbortSignal) {
