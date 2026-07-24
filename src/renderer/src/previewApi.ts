@@ -750,6 +750,7 @@ export function createPreviewApi(): PiDesktopApi {
 			],
 			editMessage: async () => undefined,
 			deleteMessage: async () => undefined,
+			prepareResend: async () => ({ text: "Preview prompt" }),
 			onState: noop,
 			onFocusTarget: noop,
 			onMessages: ((

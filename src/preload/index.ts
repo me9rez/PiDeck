@@ -44,6 +44,7 @@ import type {
 	FileTreeNode,
 	ForkMessage,
 	GitBranchInfo,
+	ImageContent,
 	CommitDetail,
 	GitCommitFileDiff,
 	GitWorkspaceDiffGroup,
@@ -784,6 +785,13 @@ const api = {
 				agentId,
 				messageId,
 			) as Promise<void>,
+		// 同文件重发准备：截断原用户消息及其后续，返回可重新 prompt 的原文。
+		prepareResend: (agentId: string, messageId: string) =>
+			ipcRenderer.invoke(
+				ipcChannels.agentsPrepareResend,
+				agentId,
+				messageId,
+			) as Promise<{ text: string; images?: ImageContent[] }>,
 		reload: (agentId: string) =>
 			ipcRenderer.invoke(ipcChannels.agentsReload, agentId) as Promise<void>,
 		restart: (agentId: string) =>
