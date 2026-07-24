@@ -38,6 +38,11 @@ import type { SettingsStore } from "../settings/SettingsStore";
 import type { ConfigManager } from "../config/ConfigManager";
 import type { RpcLogger } from "../logging/RpcLogger";
 import type { AppLogger } from "../logging/AppLogger";
+import {
+	toWindowsHostPath,
+	toWslLinuxPath,
+	type WslEnvironment,
+} from "../wsl/WslPaths";
 
 /** 项目信任确认弹窗的用户选择 */
 export type ProjectTrustChoice = "trust-remember" | "trust-session" | "deny";
@@ -128,6 +133,7 @@ export class AgentManager {
 	private readonly abortedDuringAsk = new Set<string>();
 	/** 待处理的项目信任确认请求。key 为 requestId，用于在 Agent 启动前等待用户的信任决策。 */
 	private readonly pendingTrustRequests = new Map<string, { resolve: (choice: ProjectTrustChoice) => void }>();
+	private wslEnvironment: WslEnvironment | null = null;
 
 	constructor(
 		private readonly getProject: (id: string) => Project | undefined,
@@ -137,6 +143,24 @@ export class AgentManager {
 		private readonly rpcLogger?: RpcLogger,
 		private readonly appLogger?: AppLogger,
 	) {}
+
+	configureWsl(environment: WslEnvironment | null): void {
+		this.wslEnvironment = environment;
+	}
+
+	/** Windows 主进程文件操作必须使用可由 host 访问的路径。 */
+	private toSessionHostPath(sessionPath: string): string {
+		return this.wslEnvironment
+			? toWindowsHostPath(sessionPath, this.wslEnvironment)
+			: sessionPath;
+	}
+
+	/** Pi/RPC/session identity 在 WSL 模式下始终使用 Linux 逻辑路径。 */
+	private toSessionProtocolPath(sessionPath: string): string {
+		return this.wslEnvironment
+			? toWslLinuxPath(sessionPath, this.wslEnvironment)
+			: sessionPath;
+	}
 
 	list() {
 		return [...this.agents.values()]
@@ -168,7 +192,7 @@ export class AgentManager {
 		agentId = "_viewer",
 		sessionContent?: string,
 	): Promise<ChatMessage[]> {
-		const content = sessionContent ?? await readFile(sessionPath, "utf8");
+		const content = sessionContent ?? await readFile(this.toSessionHostPath(sessionPath), "utf8");
 		const entries: Array<{
 			id: string;
 			parentId: string | null;
@@ -409,8 +433,11 @@ export class AgentManager {
 	}
 
 	async create(input: CreateAgentInput) {
-		const sessionKey = this.normalizeSessionPathForCompare(input.sessionPath);
-		if (!sessionKey) return this.createUnlocked(input);
+		const normalizedInput = input.sessionPath
+			? { ...input, sessionPath: this.toSessionProtocolPath(input.sessionPath) }
+			: input;
+		const sessionKey = this.normalizeSessionPathForCompare(normalizedInput.sessionPath);
+		if (!sessionKey) return this.createUnlocked(normalizedInput);
 
 		const existingForSession = this.findRuntimeBySessionKey(sessionKey);
 		if (existingForSession) return existingForSession.tab;
@@ -420,7 +447,7 @@ export class AgentManager {
 
 		// 历史会话激活属于“一个 sessionPath 只能对应一个 Agent”的业务规则；
 		// 先登记 in-flight Promise，再启动真实创建，防止第二次点击绕过 agents map 检查。
-		const createPromise = this.createUnlocked(input).finally(() => {
+		const createPromise = this.createUnlocked(normalizedInput).finally(() => {
 			this.creatingSessionAgents.delete(sessionKey);
 		});
 		this.creatingSessionAgents.set(sessionKey, createPromise);
@@ -428,13 +455,21 @@ export class AgentManager {
 	}
 
 	private normalizeSessionPathForCompare(sessionPath?: string) {
-		return sessionPath?.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+		if (!sessionPath) return undefined;
+		const normalized = this.toSessionProtocolPath(sessionPath)
+			.replace(/\\/g, "/")
+			.replace(/\/+$/, "");
+		// Native Windows and /mnt drive paths inherit case-insensitive host semantics.
+		// WSL-internal paths retain Linux case sensitivity so distinct sessions are not deduplicated.
+		return !this.wslEnvironment || /^\/mnt\/[a-z](?:\/|$)/i.test(normalized)
+			? normalized.toLowerCase()
+			: normalized;
 	}
 
 	private getHistoryAutoLoadDecision(sessionPath?: string): { shouldLoad: boolean; sizeBytes?: number } {
 		if (!sessionPath) return { shouldLoad: true };
 		try {
-			const sizeBytes = statSync(sessionPath).size;
+			const sizeBytes = statSync(this.toSessionHostPath(sessionPath)).size;
 			return {
 				shouldLoad: sizeBytes <= AgentManager.MAX_AUTO_HISTORY_LOAD_BYTES,
 				sizeBytes,
@@ -458,7 +493,7 @@ export class AgentManager {
 		const t0 = Date.now();
 		let content: string;
 		try {
-			content = await readFile(sessionPath, "utf8");
+			content = await readFile(this.toSessionHostPath(sessionPath), "utf8");
 		} catch (error) {
 			void this.appLogger?.warn("agent", "Failed to read session file for recent messages", {
 				sessionPath,
@@ -522,7 +557,7 @@ export class AgentManager {
 	}> {
 		let content: string;
 		try {
-			content = sessionContent ?? await readFile(sessionPath, "utf8");
+			content = sessionContent ?? await readFile(this.toSessionHostPath(sessionPath), "utf8");
 		} catch (error) {
 			void this.appLogger?.warn("agent", "Failed to read session file for archive parsing", {
 				sessionPath,
@@ -1499,7 +1534,7 @@ export class AgentManager {
 	 */
 	private async getLatestCacheMessageHitRate(sessionPath: string): Promise<number | undefined> {
 		try {
-			const raw = await readFile(sessionPath, "utf8");
+			const raw = await readFile(this.toSessionHostPath(sessionPath), "utf8");
 			const lines = raw.split(/\r?\n/);
 			// 从后往前遍历，找到最后一条 assistant 消息
 			for (let i = lines.length - 1; i >= 0; i--) {
@@ -1822,11 +1857,13 @@ export class AgentManager {
 		const runtime = this.requireRuntime(agentId);
 		const sessionPath = runtime.tab.sessionPath;
 		if (!sessionPath) throw new Error("Session path not available for reload");
+		const sessionHostPath = this.toSessionHostPath(sessionPath);
+		const sessionProtocolPath = this.toSessionProtocolPath(sessionPath);
 
 		const markerId = randomUUID();
 
 		try {
-			const raw = await readFile(sessionPath, "utf8");
+			const raw = await readFile(sessionHostPath, "utf8");
 			const lines = raw.split(/\r?\n/);
 			if (lines.length === 0 || !lines[0].trim()) {
 				throw new Error("Session file is empty");
@@ -1837,7 +1874,7 @@ export class AgentManager {
 			delete firstLine._reloadMarker; // 先清除旧的，确保值不同
 			firstLine._reloadMarker = markerId;
 			lines[0] = JSON.stringify(firstLine);
-			await writeFile(sessionPath, lines.join("\n"), "utf8");
+			await writeFile(sessionHostPath, lines.join("\n"), "utf8");
 
 			void this.appLogger?.info("agent", "Session reload: switch_session start", {
 				agentId,
@@ -1847,7 +1884,7 @@ export class AgentManager {
 
 			const response = await runtime.process.client.request({
 				type: "switch_session",
-				sessionPath,
+				sessionPath: sessionProtocolPath,
 			}, 30_000);
 
 			void this.appLogger?.info("agent", "Session reload: switch_session done", {
@@ -1859,13 +1896,13 @@ export class AgentManager {
 
 			// �ָ���һ�У��Ƴ� _reloadMarker �ֶΣ������ļ���ԭʼ״̬
 			try {
-				const afterRaw = await readFile(sessionPath, "utf8");
+				const afterRaw = await readFile(sessionHostPath, "utf8");
 				const afterLines = afterRaw.split(/\r?\n/);
 				if (afterLines.length > 0 && afterLines[0].includes("_reloadMarker")) {
 					const restored = JSON.parse(afterLines[0]) as Record<string, unknown>;
 					delete restored._reloadMarker;
 					afterLines[0] = JSON.stringify(restored);
-					await writeFile(sessionPath, afterLines.join("\n"), "utf8");
+					await writeFile(sessionHostPath, afterLines.join("\n"), "utf8");
 				}
 			} catch {
 				// _reloadMarker �ֶ����� residue ���ᵼ�� pi ���Է�����������Ӱ���Ựʹ��
@@ -1921,8 +1958,9 @@ export class AgentManager {
 	private async backupSessionFile(sessionPath: string): Promise<void> {
 		const maxBackups = 3;
 		try {
-			const dir = dirname(sessionPath);
-			const base = basename(sessionPath);
+			const sessionHostPath = this.toSessionHostPath(sessionPath);
+			const dir = dirname(sessionHostPath);
+			const base = basename(sessionHostPath);
 			const { readdir, copyFile, unlink } = await import("node:fs/promises");
 			const backupPrefix = `${base}.`;
 			const backupSuffix = ".edit-backup";
@@ -1942,7 +1980,7 @@ export class AgentManager {
 
 			// 创建新备份
 			const backupPath = join(dir, `${base}.${Date.now()}${backupSuffix}`);
-			await copyFile(sessionPath, backupPath);
+			await copyFile(sessionHostPath, backupPath);
 		} catch {
 			// 备份失败不影响主流程
 			void this.appLogger?.warn("agent", "Session file backup failed", { sessionPath });
@@ -1954,8 +1992,9 @@ export class AgentManager {
 	 */
 	private findLatestBackup(sessionPath: string): string | null {
 		try {
-			const dir = dirname(sessionPath);
-			const base = basename(sessionPath);
+			const sessionHostPath = this.toSessionHostPath(sessionPath);
+			const dir = dirname(sessionHostPath);
+			const base = basename(sessionHostPath);
 			const backupPrefix = `${base}.`;
 			const backupSuffix = ".edit-backup";
 			const allFiles = readdirSync(dir).filter(
@@ -2124,8 +2163,9 @@ export class AgentManager {
 			const runtime = this.requireRuntime(agentId);
 			const sessionPath = runtime.tab.sessionPath;
 			if (!sessionPath) throw new Error("Session not persisted");
+			const sessionHostPath = this.toSessionHostPath(sessionPath);
 
-			const raw = await readFile(sessionPath, "utf8").catch(() => "");
+			const raw = await readFile(sessionHostPath, "utf8").catch(() => "");
 			if (!raw) throw new Error("Session file is empty");
 			const lines = raw.split(/\r?\n/);
 
@@ -2161,7 +2201,7 @@ export class AgentManager {
 
 			// 4. 写回 JSONL
 			lines[lineIndex] = JSON.stringify(entry);
-			await writeFile(sessionPath, lines.join("\n"), "utf8");
+			await writeFile(sessionHostPath, lines.join("\n"), "utf8");
 
 			// 5. 使用 _reloadMarker 重载 pi 会话
 			// 注意：不再手动更新桌面端内存——reloadSession 内部调用 loadMessages
@@ -2181,7 +2221,7 @@ export class AgentManager {
 					const backupPath = this.findLatestBackup(sessionPath);
 					if (backupPath) {
 						const backupContent = await readFile(backupPath, "utf8");
-						await writeFile(sessionPath, backupContent, "utf8");
+						await writeFile(sessionHostPath, backupContent, "utf8");
 						await this.loadMessages(agentId).catch(() => {});
 					}
 				} catch (restoreError) {
@@ -2222,8 +2262,9 @@ export class AgentManager {
 			const runtime = this.requireRuntime(agentId);
 			const sessionPath = runtime.tab.sessionPath;
 			if (!sessionPath) throw new Error("Session not persisted");
+			const sessionHostPath = this.toSessionHostPath(sessionPath);
 
-			const raw = await readFile(sessionPath, "utf8").catch(() => "");
+			const raw = await readFile(sessionHostPath, "utf8").catch(() => "");
 			if (!raw) throw new Error("Session file is empty");
 			const lines = raw.split(/\r?\n/);
 
@@ -2267,7 +2308,7 @@ export class AgentManager {
 				originalEntryId: deletedEntryId ?? `unknown-${messageId}`,
 				ts: Date.now(),
 			});
-			await writeFile(sessionPath, lines.join("\n"), "utf8");
+			await writeFile(sessionHostPath, lines.join("\n"), "utf8");
 
 			// 5. 使用 _reloadMarker 重载 pi 会话
 			// 不再手动更新 desktop 内存——reloadSession 内部调用 loadMessages
@@ -2287,7 +2328,7 @@ export class AgentManager {
 					const backupPath = this.findLatestBackup(sessionPath);
 					if (backupPath) {
 						const backupContent = await readFile(backupPath, "utf8");
-						await writeFile(sessionPath, backupContent, "utf8");
+						await writeFile(sessionHostPath, backupContent, "utf8");
 						await this.loadMessages(agentId).catch(() => {});
 					}
 				} catch (restoreError) {
@@ -2324,6 +2365,7 @@ export class AgentManager {
 			const runtime = this.requireRuntime(agentId);
 			const sessionPath = runtime.tab.sessionPath;
 			if (!sessionPath) throw new Error("Session not persisted");
+			const sessionHostPath = this.toSessionHostPath(sessionPath);
 
 			const messages = this.messages.get(agentId);
 			if (!messages) throw new Error("No messages for agent");
@@ -2331,7 +2373,7 @@ export class AgentManager {
 			if (!msg) throw new Error("Message not found");
 			if (msg.role !== "user") throw new Error("Only user messages can be resent");
 
-			const raw = await readFile(sessionPath, "utf8").catch(() => "");
+			const raw = await readFile(sessionHostPath, "utf8").catch(() => "");
 			if (!raw) throw new Error("Session file is empty");
 			const lines = raw.split(/\r?\n/);
 			let lineIndex = -1;
@@ -2396,7 +2438,7 @@ export class AgentManager {
 				}
 			}
 
-			await writeFile(sessionPath, lines.join("\n"), "utf8");
+			await writeFile(sessionHostPath, lines.join("\n"), "utf8");
 
 			try {
 				await this.reloadSession(agentId);
@@ -2412,7 +2454,7 @@ export class AgentManager {
 					const backupPath = this.findLatestBackup(sessionPath);
 					if (backupPath) {
 						const backupContent = await readFile(backupPath, "utf8");
-						await writeFile(sessionPath, backupContent, "utf8");
+						await writeFile(sessionHostPath, backupContent, "utf8");
 						await this.loadMessages(agentId).catch(() => {});
 					}
 				} catch (restoreError) {
@@ -2568,7 +2610,7 @@ export class AgentManager {
 	async switchSession(agentId: string, sessionPath: string) {
 		const runtime = this.requireRuntime(agentId);
 		const response = await runtime.process.client.request(
-			{ type: "switch_session", sessionPath },
+			{ type: "switch_session", sessionPath: this.toSessionProtocolPath(sessionPath) },
 			120_000,
 		);
 		await this.refreshRuntimeAfterSessionReplacement(agentId);
@@ -3122,15 +3164,19 @@ export class AgentManager {
 	 * 需要信任才能加载的资源（.pi 下的配置/扩展/skills 等，或项目级 .agents/skills）。
 	 * 用户全局 ~/.agents/skills 视为可信，不触发信任确认。
 	 */
-	private hasTrustRequiringResources(cwd: string): boolean {
-		const configDir = join(cwd, ".pi");
+	private hasTrustRequiringResources(hostCwd: string): boolean {
+		const configDir = join(hostCwd, ".pi");
 		if (
 			AgentManager.TRUST_REQUIRING_RESOURCE_FILES.some((file) => existsSync(join(configDir, file)))
 		) {
 			return true;
 		}
-		const userAgentsSkillsDir = join(homedir(), ".agents", "skills");
-		let currentDir = cwd;
+		const userAgentsSkillsDir = join(
+			this.wslEnvironment?.windowsHome ?? homedir(),
+			".agents",
+			"skills",
+		);
+		let currentDir = hostCwd;
 		while (true) {
 			const agentsSkillsDir = join(currentDir, ".agents", "skills");
 			if (agentsSkillsDir !== userAgentsSkillsDir && existsSync(agentsSkillsDir)) {
@@ -3157,8 +3203,13 @@ export class AgentManager {
 	 *   - deny：用 --no-approve 本次以不信任模式启动，pi 不加载项目级资源，Agent 仍可创建。
 	 */
 	private async ensureProjectTrust(project: Project): Promise<"approve" | "no-approve" | undefined> {
-		const cwd = project.path;
-		if (!this.hasTrustRequiringResources(cwd)) {
+		const cwd = this.wslEnvironment
+			? toWslLinuxPath(project.path, this.wslEnvironment)
+			: project.path;
+		const hostCwd = this.wslEnvironment
+			? toWindowsHostPath(project.path, this.wslEnvironment)
+			: project.path;
+		if (!this.hasTrustRequiringResources(hostCwd)) {
 			// 干净项目：pi 无需加载项目级资源，pi-desktop 自动记入信任，避免每次创建 Agent 重复检查。
 			void this.appLogger?.info("agent", "Agent ensure trusted directory start", { cwd });
 			await this.configManager.ensureTrustedDirectory(cwd);
