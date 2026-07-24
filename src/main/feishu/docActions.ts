@@ -24,6 +24,42 @@ export function stripFeishuActionMarkers(text: string): string {
  * - 去掉 PiDeck 内部能力提示与宿主注入说明
  * 只保留用户可见的最终回复。
  */
+/** 宿主注入给模型的内部指令边界（不应对用户展示）。 */
+export const HOST_INSTRUCTION_START = "[PIDECK_HOST_INSTRUCTION]";
+export const HOST_INSTRUCTION_END = "[/PIDECK_HOST_INSTRUCTION]";
+
+/**
+ * 把宿主指令与用户原文打包成发给模型的 message。
+ * 指令包在标记内，展示层会剥离，只保留用户原文。
+ */
+export function wrapHostInstruction(instruction: string, userMessage: string): string {
+	const instr = instruction.trim();
+	const user = userMessage ?? "";
+	if (!instr) return user;
+	return `${HOST_INSTRUCTION_START}\n${instr}\n${HOST_INSTRUCTION_END}\n\n${user}`;
+}
+
+/**
+ * 剥离宿主注入的内部指令，只保留用户可见输入。
+ * 兼容历史会话：未加标记时，按已知飞书指令前缀剥离。
+ */
+export function stripHostInstruction(text: string): string {
+	if (!text) return "";
+	let next = text.replace(/\r\n/g, "\n");
+	// 新格式：明确边界标记
+	next = next.replace(
+		/\[PIDECK_HOST_INSTRUCTION\][\s\S]*?\[\/PIDECK_HOST_INSTRUCTION\]\s*/g,
+		"",
+	);
+	// 历史格式：指令直接拼在用户消息前（双换行分隔）
+	next = next.replace(/^当前会话已连接飞书聊天。[\s\S]*?\n\n/, "");
+	// 飞书来源尾部宿主说明
+	next = next
+		.replace(/\n{0,2}\[这是飞书群聊消息。请直接回复用户。\]\s*$/g, "")
+		.replace(/\n{0,2}\[飞书群聊消息。请直接回复用户。\]\s*$/g, "");
+	return next.trim();
+}
+
 export function sanitizeFeishuUserVisibleText(text: string): string {
 	if (!text) return "";
 	let next = text.replace(/\r\n/g, "\n");
@@ -31,13 +67,11 @@ export function sanitizeFeishuUserVisibleText(text: string): string {
 	next = next.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "");
 	// 兼容模型直接输出未闭合标签的情况
 	next = next.replace(/<\/?thinking>/gi, "");
+	next = stripHostInstruction(next);
 	next = stripFeishuDocActionHint(next);
 	next = stripFeishuActionMarkers(next);
 	// 去掉宿主注入的飞书动作说明（若模型回显）
-	next = next
-		.replace(/^当前会话已连接飞书聊天[\s\S]*?(?:\n{2,}|$)/, "")
-		.replace(/\n{0,2}\[这是飞书群聊消息[\s\S]*?\]\s*$/g, "")
-		.replace(/\n{0,2}\[飞书群聊消息[\s\S]*?\]\s*$/g, "");
+	next = next.replace(/^当前会话已连接飞书聊天[\s\S]*?(?:\n{2,}|$)/, "");
 	return next.replace(/\n{3,}/g, "\n\n").trim();
 }
 

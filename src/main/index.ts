@@ -114,7 +114,7 @@ import {
 	validateExternalEditorCommand,
 } from "./editors/EditorDetector";
 import { FeishuBridge } from "./feishu/FeishuBridge";
-import { wantsFeishuDoc } from "./feishu/docActions";
+import { wantsFeishuDoc, wrapHostInstruction } from "./feishu/docActions";
 import { resolveFeishuFileSendIntent } from "./feishu/fileIntent";
 import {
 	listBots,
@@ -3142,9 +3142,13 @@ function registerIpc() {
 				}
 			}
 		}
+		// agentMessage 用隐藏标记包裹宿主指令，UI/历史展示只显示用户原文。
 		const result = await agentManager.sendPrompt(
 			agentInstruction
-				? { ...input, agentMessage: `${agentInstruction}\n\n${input.message}` }
+				? {
+						...input,
+						agentMessage: wrapHostInstruction(agentInstruction, input.message),
+					}
 				: input,
 		);
 		void appLogger.info("agent", "Prompt sent", {

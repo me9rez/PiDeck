@@ -1048,6 +1048,7 @@ export class AgentManager {
 		this.emitState();
 
 		// 乐观更新：在等待 RPC 返回前先把用户消息写入会话，让用户立即看到自己的消息。
+		// 只展示用户原文；agentMessage 里的宿主指令不进 UI 气泡。
 		// 如果后续 RPC 失败，再追加错误消息；用户消息本身仍保留在聊天中（用户确已发送）。
 		this.addMessage(
 			input.agentId,
